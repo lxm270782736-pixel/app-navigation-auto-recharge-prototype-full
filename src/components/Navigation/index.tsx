@@ -11,6 +11,8 @@ import {
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
+import { useROS } from '@/contexts/ROSContext';
+import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, NavigationGoal, TaskType, TaskConfig } from '@/types';
 
 enum OperationMode {
@@ -21,6 +23,7 @@ enum OperationMode {
 export const Navigation: React.FC = () => {
   const { mapId } = useParams<{ mapId: string }>();
   const navigate = useNavigate();
+  const { connectionStatus } = useROS();
 
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
@@ -54,6 +57,10 @@ export const Navigation: React.FC = () => {
 
   // 订阅机器人位置
   useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      return;
+    }
+
     const unsubscribe = rosService.subscribeTopic<any>(
       '/amcl_pose',
       'geometry_msgs/PoseWithCovarianceStamped',
@@ -78,7 +85,7 @@ export const Navigation: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [connectionStatus]);
 
   const handleMapClick = (x: number, y: number) => {
     if (operationMode === OperationMode.LOCALIZE) {

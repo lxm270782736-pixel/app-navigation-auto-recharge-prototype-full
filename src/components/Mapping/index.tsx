@@ -4,16 +4,23 @@ import { Card, Button, message, Modal, Input, Spin } from 'antd';
 import { ArrowLeftOutlined, StopOutlined } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
+import { useROS } from '@/contexts/ROSContext';
+import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
 
 export const Mapping: React.FC = () => {
   const navigate = useNavigate();
+  const { connectionStatus } = useROS();
   const [isMapping, setIsMapping] = useState(false);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [mapName, setMapName] = useState('');
   const [currentMapData, setCurrentMapData] = useState<Partial<MapData> | null>(null);
 
   useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      return;
+    }
+
     // 自动启动建图
     startMapping();
 
@@ -23,10 +30,14 @@ export const Mapping: React.FC = () => {
         rosService.stopMapping().catch(console.error);
       }
     };
-  }, []);
+  }, [connectionStatus]);
 
   // 订阅地图话题
   useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      return;
+    }
+
     const unsubscribe = rosService.subscribeTopic<any>(
       '/map',
       'nav_msgs/OccupancyGrid',
@@ -48,7 +59,7 @@ export const Mapping: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [connectionStatus]);
 
   const startMapping = async () => {
     try {
@@ -115,7 +126,7 @@ export const Mapping: React.FC = () => {
       message.success('地图保存成功');
 
       setSaveModalVisible(false);
-      navigate('/');
+      navigate('/maps');
     } catch (error) {
       message.error('保存地图失败');
       console.error('Failed to save map:', error);
@@ -127,10 +138,10 @@ export const Mapping: React.FC = () => {
       <div style={{ marginBottom: '24px' }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/maps')}
           style={{ marginRight: '16px' }}
         >
-          返回
+          返回地图管理
         </Button>
       </div>
 

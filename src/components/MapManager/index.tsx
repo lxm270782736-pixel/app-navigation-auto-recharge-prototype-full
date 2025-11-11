@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, List, Modal, Empty, message } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { mapStorageService } from '@/services/storage';
 import type { MapData } from '@/types';
 import dayjs from 'dayjs';
@@ -47,7 +47,16 @@ export const MapManager: React.FC = () => {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, fontSize: '24px' }}>地图管理</h1>
+        <div>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/')}
+            style={{ marginRight: '16px' }}
+          >
+            返回主页
+          </Button>
+          <span style={{ fontSize: '24px', fontWeight: 'bold' }}>地图管理</span>
+        </div>
         <Button
           type="primary"
           icon={<PlusOutlined />}
