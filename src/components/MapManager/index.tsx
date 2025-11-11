@@ -46,17 +46,16 @@ export const MapManager: React.FC = () => {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '16px' }}>
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/')}
+        >
+          返回主页
+        </Button>
+      </div>
       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/')}
-            style={{ marginRight: '16px' }}
-          >
-            返回主页
-          </Button>
-          <span style={{ fontSize: '24px', fontWeight: 'bold' }}>地图管理</span>
-        </div>
+        <h1 style={{ margin: 0, fontSize: '28px' }}>地图管理</h1>
         <Button
           type="primary"
           icon={<PlusOutlined />}
