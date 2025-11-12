@@ -13,12 +13,14 @@ import {
   AimOutlined,
   PlayCircleOutlined,
   StopOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose, MapData, NavigationGoal, TaskType, TaskConfig } from '@/types';
 import { MapCanvas } from '@/components/common/MapCanvas';
+import { mapStorageService } from '@/services/storage';
 
 enum OperationMode {
   LOCALIZE = 'localize', // 定位模式
@@ -239,6 +241,65 @@ export const Dashboard: React.FC = () => {
     setSelectedTasks(checkedValues);
   };
 
+  // 保存地图
+  const handleSaveMap = () => {
+    if (!currentMap) {
+      message.error('当前没有地图数据');
+      return;
+    }
+
+    Modal.confirm({
+      title: '保存地图',
+      content: (
+        <div>
+          <p>确认保存当前实时地图吗？</p>
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            地图尺寸: {currentMap.width} × {currentMap.height} px<br />
+            分辨率: {currentMap.resolution.toFixed(3)} m/px
+          </p>
+        </div>
+      ),
+      onOk: () => {
+        try {
+          // 生成地图名称
+          const timestamp = new Date().toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          }).replace(/\//g, '-');
+          const mapName = `实时地图_${timestamp}`;
+
+          // 生成缩略图
+          const thumbnail = mapStorageService.generateThumbnail(
+            currentMap.data,
+            currentMap.width,
+            currentMap.height
+          );
+
+          // 创建地图数据副本
+          const mapToSave: MapData = {
+            ...currentMap,
+            id: Date.now().toString(),
+            name: mapName,
+            createdAt: new Date().toISOString(),
+            thumbnail, // 添加缩略图
+          };
+
+          // 保存地图
+          mapStorageService.saveMap(mapToSave);
+          message.success(`地图已保存为 "${mapName}"`);
+        } catch (error) {
+          console.error('保存地图失败:', error);
+          message.error('保存地图失败');
+        }
+      },
+    });
+  };
+
   const statusInfo = getConnectionStatusInfo();
 
   return (
@@ -345,6 +406,14 @@ export const Dashboard: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>当前实时地图</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <Button
+                  type="default"
+                  icon={<SaveOutlined />}
+                  onClick={handleSaveMap}
+                  size="small"
+                >
+                  保存地图
+                </Button>
                 <Radio.Group
                   value={operationMode}
                   onChange={(e) => setOperationMode(e.target.value)}

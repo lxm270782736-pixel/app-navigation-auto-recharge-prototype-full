@@ -21,7 +21,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onMapClick,
   className,
   showRobotTrail = true,
-  showCoordinateSystem = true,
+  showCoordinateSystem = false,
   showOperationHints = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -235,11 +235,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // 绘制机器人位置
     if (robotPose) {
       const robotPos = worldToMap(robotPose.x, robotPose.y, mapData);
-      console.log('[MapCanvas] 机器人位置:', {
-        world: { x: robotPose.x, y: robotPose.y, theta: robotPose.theta },
-        map: { x: robotPos.x, y: robotPos.y },
-        mapSize: { width: mapData.width, height: mapData.height }
-      });
+      // console.log('[MapCanvas] 机器人位置:', {
+      //   world: { x: robotPose.x, y: robotPose.y, theta: robotPose.theta },
+      //   map: { x: robotPos.x, y: robotPos.y },
+      //   mapSize: { width: mapData.width, height: mapData.height }
+      // });
       drawRobot(ctx, robotPos.x, robotPos.y, robotPose.theta, '#52c41a', '机器人', mapData);
     }
 
@@ -256,29 +256,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [mapData, robotPose, goalPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd]);
 
   // 处理鼠标滚轮缩放
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const rect = container.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
 
-    // 计算缩放因子（更平滑的缩放）
-    const delta = -event.deltaY;
-    const scaleFactor = delta > 0 ? 1.15 : 1 / 1.15;
-    const newScale = Math.max(minScale, Math.min(maxScale, scale * scaleFactor));
+      const rect = container.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
 
-    // 计算缩放后的偏移，使缩放中心在鼠标位置
-    const scaleRatio = newScale / scale;
-    const newOffsetX = mouseX - (mouseX - offset.x) * scaleRatio;
-    const newOffsetY = mouseY - (mouseY - offset.y) * scaleRatio;
+      // 计算缩放因子（更平滑的缩放）
+      const delta = -event.deltaY;
+      const scaleFactor = delta > 0 ? 1.15 : 1 / 1.15;
+      const newScale = Math.max(minScale, Math.min(maxScale, scale * scaleFactor));
 
-    setScale(newScale);
-    setOffset({ x: newOffsetX, y: newOffsetY });
-  };
+      // 计算缩放后的偏移，使缩放中心在鼠标位置
+      const scaleRatio = newScale / scale;
+      const newOffsetX = mouseX - (mouseX - offset.x) * scaleRatio;
+      const newOffsetY = mouseY - (mouseY - offset.y) * scaleRatio;
+
+      setScale(newScale);
+      setOffset({ x: newOffsetX, y: newOffsetY });
+    };
+
+    // 使用原生事件监听器，设置 passive: false 来允许 preventDefault
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [scale, offset, minScale, maxScale]);
 
   // 处理鼠标按下（开始拖动或设置方向）
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -527,7 +536,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       {/* 地图容器 */}
       <div
         ref={containerRef}
-        onWheel={handleWheel}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}

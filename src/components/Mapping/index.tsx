@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, message, Modal, Input, Spin } from 'antd';
-import { ArrowLeftOutlined, StopOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, StopOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
@@ -16,21 +16,14 @@ export const Mapping: React.FC = () => {
   const [mapName, setMapName] = useState('');
   const [currentMapData, setCurrentMapData] = useState<Partial<MapData> | null>(null);
 
+  // 组件卸载时停止建图
   useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      return;
-    }
-
-    // 自动启动建图
-    startMapping();
-
     return () => {
-      // 组件卸载时停止建图
       if (isMapping) {
         rosService.stopMapping().catch(console.error);
       }
     };
-  }, [connectionStatus]);
+  }, [isMapping]);
 
   // 订阅地图话题
   useEffect(() => {
@@ -138,31 +131,65 @@ export const Mapping: React.FC = () => {
       <div style={{ marginBottom: '24px' }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/maps')}
+          onClick={() => navigate('/')}
           style={{ marginRight: '16px' }}
         >
-          返回地图管理
+          返回主页
         </Button>
       </div>
 
       <Card
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>正在建图</span>
-            <Button
-              type="primary"
-              danger
-              icon={<StopOutlined />}
-              onClick={stopMapping}
-              disabled={!isMapping}
-            >
-              结束建图
-            </Button>
+            <span>SLAM 建图</span>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {!isMapping ? (
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={startMapping}
+                  disabled={connectionStatus !== ConnectionStatus.CONNECTED}
+                >
+                  开始建图
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={stopMapping}
+                >
+                  结束建图
+                </Button>
+              )}
+            </div>
           </div>
         }
       >
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          {isMapping ? (
+          {connectionStatus !== ConnectionStatus.CONNECTED ? (
+            <>
+              <p style={{ fontSize: '16px', color: '#999' }}>
+                等待 ROS 连接...
+              </p>
+              <p style={{ color: '#999' }}>
+                请确保 ROS 主节点正在运行
+              </p>
+            </>
+          ) : !isMapping ? (
+            <>
+              <PlayCircleOutlined style={{ fontSize: '64px', color: '#1890ff', marginBottom: '24px' }} />
+              <p style={{ fontSize: '16px' }}>
+                准备开始建图
+              </p>
+              <p style={{ color: '#999' }}>
+                点击"开始建图"按钮启动 SLAM 建图功能
+              </p>
+              <p style={{ color: '#999', marginTop: '16px' }}>
+                建图过程中请使用遥控器控制机器人移动，探索环境
+              </p>
+            </>
+          ) : (
             <>
               <Spin size="large" />
               <p style={{ marginTop: '24px', fontSize: '16px' }}>
@@ -172,8 +199,6 @@ export const Mapping: React.FC = () => {
                 遥控手柄已自动启动，完成后点击"结束建图"按钮
               </p>
             </>
-          ) : (
-            <p>建图已停止</p>
           )}
         </div>
 
@@ -181,7 +206,7 @@ export const Mapping: React.FC = () => {
           <div style={{ marginTop: '24px', padding: '16px', background: '#f5f5f5', borderRadius: '4px' }}>
             <h4>当前地图信息</h4>
             <p>尺寸: {currentMapData.width} × {currentMapData.height} 像素</p>
-            <p>分辨率: {currentMapData.resolution} 米/像素</p>
+            <p>分辨率: {currentMapData.resolution?.toFixed(3)} 米/像素</p>
           </div>
         )}
       </Card>
