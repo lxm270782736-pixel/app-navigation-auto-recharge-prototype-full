@@ -20,7 +20,8 @@ export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
   const [robotPose, setRobotPose] = useState<Pose | null>(null);
-  const [batteryLevel, setBatteryLevel] = useState<number>(85);
+  // 暂时使用固定电池电量，等待真实 ROS 环境提供电池话题
+  const [batteryLevel] = useState<number>(85);
   const [velocity, setVelocity] = useState({ linear: 0, angular: 0 });
 
   // 订阅机器人位姿
@@ -30,8 +31,8 @@ export const Dashboard: React.FC = () => {
     }
 
     const unsubscribe = rosService.subscribeTopic<any>(
-      '/amcl_pose',
-      'geometry_msgs/PoseWithCovarianceStamped',
+      '/odom',
+      'nav_msgs/Odometry',
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
@@ -55,23 +56,24 @@ export const Dashboard: React.FC = () => {
   }, [connectionStatus]);
 
   // 订阅电池状态
-  useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      return;
-    }
+  // 注意：真实 ROS 环境中暂时没有 /battery_state 话题，暂时注释掉
+  // useEffect(() => {
+  //   if (connectionStatus !== ConnectionStatus.CONNECTED) {
+  //     return;
+  //   }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
-      '/battery_state',
-      'sensor_msgs/BatteryState',
-      (batteryMsg) => {
-        setBatteryLevel(batteryMsg.percentage * 100);
-      }
-    );
+  //   const unsubscribe = rosService.subscribeTopic<any>(
+  //     '/battery_state',
+  //     'sensor_msgs/BatteryState',
+  //     (batteryMsg) => {
+  //       setBatteryLevel(batteryMsg.percentage * 100);
+  //     }
+  //   );
 
-    return () => {
-      unsubscribe();
-    };
-  }, [connectionStatus]);
+  //   return () => {
+  //     unsubscribe();
+  //   };
+  // }, [connectionStatus]);
 
   // 订阅速度信息
   useEffect(() => {

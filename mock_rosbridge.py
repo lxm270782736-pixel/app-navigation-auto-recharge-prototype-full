@@ -17,7 +17,9 @@ class MockROSBridge:
         self.subscriptions = {}
         self.mapping_active = False
         self.map_data = self.generate_sample_map()
-        self.robot_pose = {"x": 0.0, "y": 0.0, "theta": 0.0}
+        # 初始位置设置在地图中心可见区域
+        self.robot_pose = {"x": 2.0, "y": 2.0, "theta": 0.0}
+        self.movement_time = 0.0
 
     def generate_sample_map(self):
         """生成示例地图数据"""
@@ -103,8 +105,10 @@ class MockROSBridge:
         # 开始发布该话题的数据
         if topic == "/map":
             asyncio.create_task(self.publish_map(websocket))
-        elif topic == "/amcl_pose":
+        elif topic == "/odom":
             asyncio.create_task(self.publish_robot_pose(websocket))
+        elif topic == "/amcl_pose":
+            asyncio.create_task(self.publish_amcl_pose(websocket))
 
     async def handle_unsubscribe(self, websocket, data):
         """处理取消订阅"""
@@ -179,21 +183,28 @@ class MockROSBridge:
             await asyncio.sleep(1.0)
 
     async def publish_robot_pose(self, websocket):
-        """定期发布机器人位姿"""
-        while websocket in self.clients and "/amcl_pose" in self.subscriptions:
-            # 模拟机器人轻微移动
-            self.robot_pose["x"] += random.uniform(-0.01, 0.01)
-            self.robot_pose["y"] += random.uniform(-0.01, 0.01)
-            self.robot_pose["theta"] += random.uniform(-0.02, 0.02)
+        """定期发布机器人位姿（使用 nav_msgs/Odometry）"""
+        while websocket in self.clients and "/odom" in self.subscriptions:
+            # 模拟机器人沿圆形轨迹移动
+            self.movement_time += 0.1
+            radius = 3.0
+            center_x = 2.0
+            center_y = 2.0
+
+            # 圆形运动
+            self.robot_pose["x"] = center_x + radius * math.cos(self.movement_time * 0.2)
+            self.robot_pose["y"] = center_y + radius * math.sin(self.movement_time * 0.2)
+            self.robot_pose["theta"] = self.movement_time * 0.2 + math.pi / 2
 
             message = {
                 "op": "publish",
-                "topic": "/amcl_pose",
+                "topic": "/odom",
                 "msg": {
                     "header": {
-                        "frame_id": "map",
+                        "frame_id": "odom",
                         "stamp": {"secs": int(time.time()), "nsecs": 0}
                     },
+                    "child_frame_id": "base_link",
                     "pose": {
                         "pose": {
                             "position": {
@@ -207,6 +218,13 @@ class MockROSBridge:
                                 "z": math.sin(self.robot_pose["theta"] / 2),
                                 "w": math.cos(self.robot_pose["theta"] / 2)
                             }
+                        },
+                        "covariance": [0] * 36
+                    },
+                    "twist": {
+                        "twist": {
+                            "linear": {"x": 0.0, "y": 0.0, "z": 0.0},
+                            "angular": {"x": 0.0, "y": 0.0, "z": 0.0}
                         },
                         "covariance": [0] * 36
                     }
@@ -227,7 +245,7 @@ async def main():
     print("监听地址: ws://localhost:9090")
     print("支持的功能:")
     print("  ✓ 地图数据发布 (/map)")
-    print("  ✓ 机器人位姿发布 (/amcl_pose)")
+    print("  ✓ 机器人里程计发布 (/odom)")
     print("  ✓ 初始位姿设置 (/initialpose)")
     print("  ✓ 建图服务 (/start_mapping, /stop_mapping)")
     print("  ✓ 地图保存 (/save_map)")

@@ -136,8 +136,8 @@ class ROSService {
 
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
-      serverName: '/move_base',
-      actionName: 'move_base_msgs/MoveBaseAction',
+      serverName: '/move_chassis_to_server',
+      actionName: 'astribot_msgs/MoveChassisToAction',
     });
 
     const goalMessage = new ROSLIB.Goal({
@@ -161,16 +161,28 @@ class ROSService {
             },
           },
         },
+        use_default_config: true,
       },
     });
 
-    return new Promise((resolve) => {
-      goalMessage.on('result', () => {
+    return new Promise((resolve, _reject) => {
+      goalMessage.on('result', (result: any) => {
+        console.log('Navigation result received:', result);
+        // 发送导航结果事件
+        this.emit('navigation-result', {
+          success: result.status?.status === 3, // SUCCEEDED = 3 in actionlib
+          result,
+        });
         resolve();
       });
 
       goalMessage.on('feedback', (feedback: any) => {
+        console.log('Navigation feedback:', feedback);
         this.emit('navigation-feedback', feedback);
+      });
+
+      goalMessage.on('status', (status: any) => {
+        console.log('Navigation status:', status);
       });
 
       goalMessage.send();
@@ -183,8 +195,8 @@ class ROSService {
 
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
-      serverName: '/move_base',
-      actionName: 'move_base_msgs/MoveBaseAction',
+      serverName: '/move_chassis_to_server',
+      actionName: 'astribot_msgs/MoveChassisToAction',
     });
 
     actionClient.cancel();
@@ -248,6 +260,18 @@ class ROSService {
         covariance: new Array(36).fill(0),
       },
     });
+  }
+
+  // 订阅实时地图数据
+  subscribeMap(callback: (mapData: MapData) => void): () => void {
+    return this.subscribeTopic<any>(
+      '/map',
+      'nav_msgs/OccupancyGrid',
+      (rosMap) => {
+        const mapData = this.convertROSMapToMapData(rosMap);
+        callback(mapData);
+      }
+    );
   }
 
   // 转换ROS地图数据到内部格式

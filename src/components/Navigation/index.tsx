@@ -62,8 +62,8 @@ export const Navigation: React.FC = () => {
     }
 
     const unsubscribe = rosService.subscribeTopic<any>(
-      '/amcl_pose',
-      'geometry_msgs/PoseWithCovarianceStamped',
+      '/odom',
+      'nav_msgs/Odometry',
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
@@ -86,6 +86,29 @@ export const Navigation: React.FC = () => {
       unsubscribe();
     };
   }, [connectionStatus]);
+
+  // 监听导航结果
+  useEffect(() => {
+    const handleNavigationResult = (data: { success: boolean; result: any }) => {
+      console.log('[Navigation] 导航结果:', data);
+      if (data.success) {
+        message.success('导航成功！可以开始新一轮导航');
+        // 重置导航状态，但保留目标点供参考
+        setIsNavigating(false);
+        // 如果想清除目标点，取消注释下一行
+        // setGoalPose(undefined);
+      } else {
+        message.error('导航失败');
+        setIsNavigating(false);
+      }
+    };
+
+    rosService.on('navigation-result', handleNavigationResult);
+
+    return () => {
+      rosService.off('navigation-result', handleNavigationResult);
+    };
+  }, []);
 
   const handleMapClick = (x: number, y: number) => {
     if (operationMode === OperationMode.LOCALIZE) {
@@ -155,72 +178,79 @@ export const Navigation: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* 顶部工具栏 */}
+      <div
+        style={{
+          padding: '16px 24px',
+          background: '#fff',
+          borderBottom: '1px solid #f0f0f0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+        }}
+      >
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>
           返回
         </Button>
+        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+          地图: {mapData.name}
+        </div>
+        <div style={{ marginLeft: 'auto' }}>
+          <Radio.Group
+            value={operationMode}
+            onChange={(e) => setOperationMode(e.target.value)}
+            buttonStyle="solid"
+          >
+            <Radio.Button value={OperationMode.LOCALIZE}>
+              <AimOutlined /> 定位模式
+            </Radio.Button>
+            <Radio.Button value={OperationMode.SET_GOAL}>
+              <EnvironmentOutlined /> 设置目标点
+            </Radio.Button>
+          </Radio.Group>
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '24px' }}>
-        {/* 左侧：地图展示 */}
-        <Card title={`地图: ${mapData.name}`}>
-          <div style={{ marginBottom: '16px' }}>
-            <Radio.Group
-              value={operationMode}
-              onChange={(e) => setOperationMode(e.target.value)}
-              buttonStyle="solid"
-            >
-              <Radio.Button value={OperationMode.LOCALIZE}>
-                <AimOutlined /> 定位模式
-              </Radio.Button>
-              <Radio.Button value={OperationMode.SET_GOAL}>
-                <EnvironmentOutlined /> 设置目标点
-              </Radio.Button>
-            </Radio.Group>
-          </div>
+      {/* 地图区域（全屏） */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <MapCanvas
+          mapData={mapData}
+          robotPose={robotPose}
+          goalPose={goalPose}
+          onMapClick={handleMapClick}
+        />
 
-          <div
-            style={{
-              border: '1px solid #d9d9d9',
-              borderRadius: '4px',
-              overflow: 'auto',
-              maxHeight: '70vh',
-            }}
-          >
-            <MapCanvas
-              mapData={mapData}
-              robotPose={robotPose}
-              goalPose={goalPose}
-              onMapClick={handleMapClick}
-            />
-          </div>
-
-          <div style={{ marginTop: '16px', color: '#999', fontSize: '14px' }}>
-            {operationMode === OperationMode.LOCALIZE ? (
-              <p>
-                <AimOutlined /> 点击地图设置机器人的初始位置
-              </p>
-            ) : (
-              <p>
-                <EnvironmentOutlined /> 点击地图选择导航目标点
-              </p>
-            )}
-          </div>
-        </Card>
-
-        {/* 右侧：控制面板 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* 浮动控制面板 */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            width: '320px',
+            maxHeight: 'calc(100vh - 120px)',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            zIndex: 100,
+          }}
+        >
           {/* 导航控制 */}
-          <Card title="导航控制">
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Card
+            title="导航控制"
+            size="small"
+            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
               {!robotPose && (
                 <div
                   style={{
-                    padding: '12px',
+                    padding: '8px',
                     background: '#fff7e6',
                     border: '1px solid #ffd591',
                     borderRadius: '4px',
+                    fontSize: '12px',
                   }}
                 >
                   请先在地图上点击设置机器人初始位置
@@ -230,10 +260,11 @@ export const Navigation: React.FC = () => {
               {robotPose && !goalPose && (
                 <div
                   style={{
-                    padding: '12px',
+                    padding: '8px',
                     background: '#e6f7ff',
                     border: '1px solid #91d5ff',
                     borderRadius: '4px',
+                    fontSize: '12px',
                   }}
                 >
                   请切换到"设置目标点"模式，在地图上选择目标位置
@@ -242,19 +273,18 @@ export const Navigation: React.FC = () => {
 
               {goalPose && (
                 <div>
-                  <p style={{ marginBottom: '8px' }}>
+                  <p style={{ marginBottom: '4px', fontSize: '12px' }}>
                     <strong>目标位置:</strong>
                   </p>
-                  <p style={{ fontSize: '12px', color: '#666' }}>
-                    X: {goalPose.x.toFixed(2)} m<br />
-                    Y: {goalPose.y.toFixed(2)} m
+                  <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
+                    X: {goalPose.x.toFixed(2)} m | Y: {goalPose.y.toFixed(2)} m
                   </p>
                 </div>
               )}
 
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 block
                 icon={<PlayCircleOutlined />}
                 onClick={handleStartNavigation}
@@ -266,7 +296,7 @@ export const Navigation: React.FC = () => {
               {isNavigating && (
                 <Button
                   danger
-                  size="large"
+                  size="middle"
                   block
                   icon={<StopOutlined />}
                   onClick={handleStopNavigation}
@@ -278,48 +308,90 @@ export const Navigation: React.FC = () => {
           </Card>
 
           {/* 附加任务 */}
-          <Card title="附加任务">
+          <Card
+            title="附加任务"
+            size="small"
+            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
+          >
             <Checkbox.Group
               style={{ width: '100%' }}
               onChange={handleTaskChange}
               value={selectedTasks}
             >
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Checkbox value="wait">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Checkbox value="wait" style={{ fontSize: '13px' }}>
                   到达后停留
                   {selectedTasks.includes('wait' as TaskType) && (
-                    <div style={{ marginTop: '8px', marginLeft: '24px' }}>
+                    <div style={{ marginTop: '6px', marginLeft: '24px' }}>
                       <InputNumber
                         min={1}
                         max={60}
                         value={waitDuration}
                         onChange={(value) => setWaitDuration(value || 5)}
                         addonAfter="秒"
-                        style={{ width: '120px' }}
+                        size="small"
+                        style={{ width: '110px' }}
                       />
                     </div>
                   )}
                 </Checkbox>
 
-                <Checkbox value="trajectory">执行预设轨迹</Checkbox>
+                <Checkbox value="trajectory" style={{ fontSize: '13px' }}>
+                  执行预设轨迹
+                </Checkbox>
 
-                <Checkbox value="photo">自动拍照</Checkbox>
+                <Checkbox value="photo" style={{ fontSize: '13px' }}>
+                  自动拍照
+                </Checkbox>
               </Space>
             </Checkbox.Group>
           </Card>
 
           {/* 机器人状态 */}
-          <Card title="机器人状态" size="small">
+          <Card
+            title="机器人状态"
+            size="small"
+            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
+          >
             {robotPose ? (
               <div style={{ fontSize: '12px' }}>
-                <p>X: {robotPose.x.toFixed(2)} m</p>
-                <p>Y: {robotPose.y.toFixed(2)} m</p>
-                <p>朝向: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°</p>
+                <p style={{ margin: '4px 0' }}>X: {robotPose.x.toFixed(2)} m</p>
+                <p style={{ margin: '4px 0' }}>Y: {robotPose.y.toFixed(2)} m</p>
+                <p style={{ margin: '4px 0' }}>
+                  朝向: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°
+                </p>
               </div>
             ) : (
-              <p style={{ color: '#999' }}>未定位</p>
+              <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>未定位</p>
             )}
           </Card>
+        </div>
+
+        {/* 底部操作提示 */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '16px',
+            right: '350px',
+            background: 'rgba(0, 0, 0, 0.75)',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: '4px',
+            fontSize: '13px',
+            maxWidth: '300px',
+            zIndex: 100,
+            fontWeight: '500',
+          }}
+        >
+          {operationMode === OperationMode.LOCALIZE ? (
+            <div>
+              <AimOutlined /> 点击地图设置机器人的初始位置
+            </div>
+          ) : (
+            <div>
+              <EnvironmentOutlined /> 点击地图选择导航目标点
+            </div>
+          )}
         </div>
       </div>
     </div>
