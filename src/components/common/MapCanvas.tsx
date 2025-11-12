@@ -1,5 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import type { MapData, Pose, PathPoint } from '@/types';
+import { rosService } from '@/services/ros';
+import { useROS } from '@/contexts/ROSContext';
+import { ConnectionStatus } from '@/types';
 
 interface MapCanvasProps {
   mapData: MapData;
@@ -11,11 +14,14 @@ interface MapCanvasProps {
   showRobotTrail?: boolean; // 是否显示机器人轨迹
   showCoordinateSystem?: boolean; // 是否显示坐标系
   showOperationHints?: boolean; // 是否显示操作提示
+  showRobotPose?: boolean; // 是否显示机器人位姿信息（自动订阅）
+  disableDirectionSetting?: boolean; // 禁用方向设置模式（用于地图编辑时连续编辑）
+  brushSize?: number; // 画笔大小（用于显示预览圆圈）
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
   mapData,
-  robotPose,
+  robotPose: externalRobotPose,
   goalPose,
   path,
   onMapClick,
@@ -23,9 +29,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   showRobotTrail = true,
   showCoordinateSystem = false,
   showOperationHints = true,
+  showRobotPose = false,
+  disableDirectionSetting = false,
+  brushSize = 0,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { connectionStatus } = useROS();
 
   // 缩放和平移状态
   const [scale, setScale] = useState(1);
@@ -42,8 +52,51 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [directionStart, setDirectionStart] = useState<{ x: number; y: number } | null>(null);
   const [directionEnd, setDirectionEnd] = useState<{ x: number; y: number } | null>(null);
 
+  // 连续编辑状态（用于地图编辑模式）
+  const [isContinuousEditing, setIsContinuousEditing] = useState(false);
+
+  // 画笔预览位置（画布坐标）
+  const [brushPreviewPos, setBrushPreviewPos] = useState<{ x: number; y: number } | null>(null);
+
   // 机器人轨迹
   const [robotTrail, setRobotTrail] = useState<Array<{ x: number; y: number }>>([]);
+
+  // 内部订阅的机器人位姿（当showRobotPose为true时自动订阅）
+  const [internalRobotPose, setInternalRobotPose] = useState<Pose | null>(null);
+
+  // 使用内部订阅的位姿或外部传入的位姿
+  const robotPose = showRobotPose ? internalRobotPose : externalRobotPose;
+
+  // 订阅机器人位姿（当showRobotPose为true时）
+  useEffect(() => {
+    if (!showRobotPose || connectionStatus !== ConnectionStatus.CONNECTED) {
+      return;
+    }
+
+    const unsubscribe = rosService.subscribeTopic<any>(
+      '/odom',
+      'nav_msgs/Odometry',
+      (poseMsg) => {
+        const position = poseMsg.pose.pose.position;
+        const orientation = poseMsg.pose.pose.orientation;
+
+        const theta = Math.atan2(
+          2.0 * (orientation.w * orientation.z + orientation.x * orientation.y),
+          1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z)
+        );
+
+        setInternalRobotPose({
+          x: position.x,
+          y: position.y,
+          theta,
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [showRobotPose, connectionStatus]);
 
   // 更新机器人轨迹
   useEffect(() => {
@@ -253,7 +306,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isSettingDirection && directionStart && directionEnd) {
       drawDirectionLine(ctx, directionStart.x, directionStart.y, directionEnd.x, directionEnd.y);
     }
-  }, [mapData, robotPose, goalPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd]);
+
+    // 绘制画笔预览圆圈
+    if (brushPreviewPos && brushSize > 0 && disableDirectionSetting) {
+      drawBrushPreview(ctx, brushPreviewPos.x, brushPreviewPos.y, brushSize);
+    }
+  }, [mapData, robotPose, goalPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting]);
 
   // 处理鼠标滚轮缩放
   useEffect(() => {
@@ -318,11 +376,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    // 左键开始设置方向
+    // 左键开始设置方向或连续编辑
     if (event.button === 0 && onMapClick) {
-      setIsSettingDirection(true);
-      setDirectionStart({ x: canvasX, y: canvasY });
-      setDirectionEnd({ x: canvasX, y: canvasY });
+      if (disableDirectionSetting) {
+        // 连续编辑模式：立即调用onMapClick并开始跟踪
+        const worldPos = mapToWorld(canvasX, canvasY, mapData);
+        onMapClick(worldPos.x, worldPos.y);
+        setIsContinuousEditing(true);
+      } else {
+        // 方向设置模式：记录起点和终点
+        setIsSettingDirection(true);
+        setDirectionStart({ x: canvasX, y: canvasY });
+        setDirectionEnd({ x: canvasX, y: canvasY });
+      }
     }
   };
 
@@ -331,27 +397,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
+    const rect = container.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    const canvasX = (mouseX - offset.x) / scale;
+    const canvasY = (mouseY - offset.y) / scale;
+
+    // 更新画笔预览位置（当处于编辑模式时）
+    if (disableDirectionSetting && brushSize > 0) {
+      setBrushPreviewPos({ x: canvasX, y: canvasY });
+    }
+
     if (isDragging) {
       setOffset({
         x: event.clientX - dragStart.x,
         y: event.clientY - dragStart.y,
       });
+    } else if (isContinuousEditing && onMapClick && disableDirectionSetting) {
+      // 连续编辑模式：持续调用onMapClick
+      const worldPos = mapToWorld(canvasX, canvasY, mapData);
+      onMapClick(worldPos.x, worldPos.y);
     } else if (isSettingDirection && directionStart) {
       // 更新方向终点
-      const rect = container.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
-
-      const canvasX = (mouseX - offset.x) / scale;
-      const canvasY = (mouseY - offset.y) / scale;
-
       setDirectionEnd({ x: canvasX, y: canvasY });
     }
   };
 
   // 处理鼠标松开（结束拖动或完成方向设置）
   const handleMouseUp = () => {
-    if (isSettingDirection && directionStart && directionEnd && onMapClick) {
+    if (isContinuousEditing) {
+      // 结束连续编辑
+      setIsContinuousEditing(false);
+    } else if (isSettingDirection && directionStart && directionEnd && onMapClick) {
       // 计算方向角度
       const dx = directionEnd.x - directionStart.x;
       const dy = directionEnd.y - directionStart.y;
@@ -538,7 +616,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ref={containerRef}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => {
+          handleMouseUp();
+          setBrushPreviewPos(null); // 清除画笔预览
+        }}
         onContextMenu={handleContextMenu}
         style={{
           width: '100%',
@@ -561,6 +642,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
       </div>
 
+      {/* 机器人位姿显示 */}
+      {showRobotPose && robotPose && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '80px',
+            left: '10px',
+            background: 'rgba(255, 255, 255, 0.95)',
+            padding: '12px 16px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            zIndex: 10,
+            fontSize: '12px',
+            minWidth: '180px',
+          }}
+        >
+          <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>🤖 机器人位姿</div>
+          <div style={{ lineHeight: '1.6' }}>
+            <div>X: {robotPose.x.toFixed(2)} m</div>
+            <div>Y: {robotPose.y.toFixed(2)} m</div>
+            <div>θ: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°</div>
+          </div>
+        </div>
+      )}
+
       {/* 操作提示 */}
       {showOperationHints && (
         <div
@@ -577,24 +683,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }}
         >
           <div>🖱️ 滚轮：缩放</div>
-          <div>🖱️ Ctrl+拖动 或 中键拖动：平移</div>
+          <div>🖱️ 中键拖动：平移</div>
           <div>🖱️ 左键点击并拖动：设置位置和方向</div>
-          {robotPose && (
-            <>
-              <div style={{ marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '4px' }}>
-                <div>🤖 机器人位置:</div>
-                <div style={{ fontSize: '11px', opacity: 0.9 }}>
-                  X: {robotPose.x.toFixed(2)}m, Y: {robotPose.y.toFixed(2)}m, theta: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°
-                </div>
-
-              </div>
-              {showRobotTrail && robotTrail.length > 0 && (
-                <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                  轨迹点数: {robotTrail.length}
-                </div>
-              )}
-            </>
-          )}
         </div>
       )}
     </div>
@@ -784,7 +874,7 @@ function drawRobot(
   y: number,
   theta: number,
   color: string,
-  label: string,
+  _label: string,
   mapData: MapData
 ) {
   ctx.save();
@@ -1051,6 +1141,50 @@ function drawGoal(
 
   // ctx.fillStyle = '#ffffff';
   // ctx.fillText(label, centerX, labelY + 4);
+
+  ctx.restore();
+}
+
+// 绘制画笔预览圆圈
+function drawBrushPreview(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  brushSize: number
+) {
+  ctx.save();
+
+  const radius = Math.floor(brushSize / 2);
+
+  // 绘制外圈（渐变）
+  const gradient = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius);
+  gradient.addColorStop(0, 'rgba(24, 144, 255, 0.3)');
+  gradient.addColorStop(0.7, 'rgba(24, 144, 255, 0.2)');
+  gradient.addColorStop(1, 'rgba(24, 144, 255, 0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 绘制边框
+  ctx.strokeStyle = 'rgba(24, 144, 255, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 绘制中心十字
+  ctx.strokeStyle = 'rgba(24, 144, 255, 0.6)';
+  ctx.lineWidth = 1;
+  const crossSize = 5;
+  ctx.beginPath();
+  ctx.moveTo(x - crossSize, y);
+  ctx.lineTo(x + crossSize, y);
+  ctx.moveTo(x, y - crossSize);
+  ctx.lineTo(x, y + crossSize);
+  ctx.stroke();
 
   ctx.restore();
 }

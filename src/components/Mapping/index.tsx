@@ -7,6 +7,7 @@ import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
+import { MapCanvas } from '@/components/common/MapCanvas';
 
 export const Mapping: React.FC = () => {
   const navigate = useNavigate();
@@ -166,47 +167,120 @@ export const Mapping: React.FC = () => {
           </div>
         }
       >
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          {connectionStatus !== ConnectionStatus.CONNECTED ? (
-            <>
-              <p style={{ fontSize: '16px', color: '#999' }}>
-                等待 ROS 连接...
-              </p>
-              <p style={{ color: '#999' }}>
-                请确保 ROS 主节点正在运行
-              </p>
-            </>
-          ) : !isMapping ? (
-            <>
-              <PlayCircleOutlined style={{ fontSize: '64px', color: '#1890ff', marginBottom: '24px' }} />
-              <p style={{ fontSize: '16px' }}>
-                准备开始建图
-              </p>
-              <p style={{ color: '#999' }}>
-                点击"开始建图"按钮启动 SLAM 建图功能
-              </p>
-              <p style={{ color: '#999', marginTop: '16px' }}>
-                建图过程中请使用遥控器控制机器人移动，探索环境
-              </p>
-            </>
-          ) : (
-            <>
-              <Spin size="large" />
-              <p style={{ marginTop: '24px', fontSize: '16px' }}>
-                建图进行中，请使用遥控器控制机器人移动
-              </p>
-              <p style={{ color: '#999' }}>
-                遥控手柄已自动启动，完成后点击"结束建图"按钮
-              </p>
-            </>
-          )}
-        </div>
+        {/* 如果有地图数据则显示地图,否则显示状态提示 */}
+        {currentMapData && currentMapData.data && currentMapData.data.length > 0 ? (
+          <div>
+            {/* 地图显示区域容器 */}
+            <div style={{ position: 'relative' }}>
+              {/* 地图画布 */}
+              <div style={{
+                height: '600px',
+                background: '#f0f0f0',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                position: 'relative'
+              }}>
+                <MapCanvas
+                  mapData={{
+                    id: 'temp',
+                    name: '建图中',
+                    createdAt: new Date().toISOString(),
+                    thumbnail: '',
+                    width: currentMapData.width!,
+                    height: currentMapData.height!,
+                    resolution: currentMapData.resolution!,
+                    origin: currentMapData.origin!,
+                    data: currentMapData.data,
+                  }}
+                  showRobotPose={true}
+                  showRobotTrail={true}
+                  showCoordinateSystem={false}
+                  showOperationHints={false}
+                />
 
-        {currentMapData && (
-          <div style={{ marginTop: '24px', padding: '16px', background: '#f5f5f5', borderRadius: '4px' }}>
-            <h4>当前地图信息</h4>
-            <p>尺寸: {currentMapData.width} × {currentMapData.height} 像素</p>
-            <p>分辨率: {currentMapData.resolution?.toFixed(3)} 米/像素</p>
+                {/* 状态指示器 */}
+                {isMapping && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '16px',
+                    left: '16px',
+                    background: 'rgba(255, 255, 255, 0.95)',
+                    padding: '12px 16px',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    zIndex: 10,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Spin size="small" />
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>● 建图进行中</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 操作提示 - 与MapCanvas平级 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '16px',
+                  left: '16px',
+                  background: 'rgba(0, 0, 0, 0.75)',
+                  color: 'white',
+                  padding: '12px 16px',
+                  borderRadius: '4px',
+                  fontSize: '13px',
+                  zIndex: 10,
+                  fontWeight: '500',
+                }}
+              >
+                <div>🖱️ 滚轮缩放、中键拖动平移</div>
+                <div style={{ marginTop: '4px' }}>🎮 使用遥控器控制机器人移动探索环境</div>
+                <div style={{ marginTop: '4px' }}>✅ 完成后点击"结束建图"按钮保存</div>
+              </div>
+            </div>
+
+            {/* 地图信息 */}
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '13px' }}>
+              <span>尺寸: {currentMapData.width} × {currentMapData.height} px</span>
+              <span>分辨率: {currentMapData.resolution?.toFixed(3)} m/px</span>
+              <span style={{ color: '#999' }}>💡 实时地图更新中</span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            {connectionStatus !== ConnectionStatus.CONNECTED ? (
+              <>
+                <p style={{ fontSize: '16px', color: '#999' }}>
+                  等待 ROS 连接...
+                </p>
+                <p style={{ color: '#999' }}>
+                  请确保 ROS 主节点正在运行
+                </p>
+              </>
+            ) : !isMapping ? (
+              <>
+                <PlayCircleOutlined style={{ fontSize: '64px', color: '#1890ff', marginBottom: '24px' }} />
+                <p style={{ fontSize: '16px' }}>
+                  准备开始建图
+                </p>
+                <p style={{ color: '#999' }}>
+                  点击"开始建图"按钮启动 SLAM 建图功能
+                </p>
+                <p style={{ color: '#999', marginTop: '16px' }}>
+                  建图过程中请使用遥控器控制机器人移动，探索环境
+                </p>
+              </>
+            ) : (
+              <>
+                <Spin size="large" />
+                <p style={{ marginTop: '24px', fontSize: '16px' }}>
+                  建图进行中，等待地图数据...
+                </p>
+                <p style={{ color: '#999' }}>
+                  遥控手柄已自动启动，请使用遥控器控制机器人移动
+                </p>
+              </>
+            )}
           </div>
         )}
       </Card>

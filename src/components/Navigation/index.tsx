@@ -16,7 +16,7 @@ import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, NavigationGoal, TaskType, TaskConfig } from '@/types';
 
 enum OperationMode {
-  LOCALIZE = 'localize', // 定位模式
+  LOCALIZE = 'localize', // 手动重定位
   SET_GOAL = 'set_goal', // 设置目标点模式
 }
 
@@ -203,7 +203,7 @@ export const Navigation: React.FC = () => {
             buttonStyle="solid"
           >
             <Radio.Button value={OperationMode.LOCALIZE}>
-              <AimOutlined /> 定位模式
+              <AimOutlined /> 手动重定位
             </Radio.Button>
             <Radio.Button value={OperationMode.SET_GOAL}>
               <EnvironmentOutlined /> 设置目标点

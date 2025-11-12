@@ -23,7 +23,7 @@ import { MapCanvas } from '@/components/common/MapCanvas';
 import { mapStorageService } from '@/services/storage';
 
 enum OperationMode {
-  LOCALIZE = 'localize', // 定位模式
+  LOCALIZE = 'localize', // 手动重定位
   SET_GOAL = 'set_goal', // 设置目标点模式
 }
 
@@ -37,6 +37,7 @@ export const Dashboard: React.FC = () => {
 
   // 实时地图和导航控制相关状态
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
+  const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
   const [isNavigating, setIsNavigating] = useState(false);
   const [operationMode, setOperationMode] = useState<OperationMode>(
@@ -122,15 +123,23 @@ export const Dashboard: React.FC = () => {
 
   // 订阅实时地图数据
   useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) return;
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      // 断开连接时,如果有地图则标记为历史地图
+      if (currentMap) {
+        setIsMapRealtime(false);
+      }
+      return;
+    }
 
     const unsubscribe = rosService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
+      setIsMapRealtime(true); // 接收到实时地图数据
     });
 
     return () => {
       unsubscribe();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionStatus]);
 
   // 监听导航结果
@@ -307,7 +316,7 @@ export const Dashboard: React.FC = () => {
       {/* 标题栏 */}
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ fontSize: '28px', marginBottom: '8px' }}>
-          <RobotOutlined /> 机器人控制中心
+          <RobotOutlined /> 机器人建图导航
         </h1>
         <p style={{ color: '#666', fontSize: '14px' }}>实时监控机器人状态和性能</p>
       </div>
@@ -399,12 +408,12 @@ export const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 当前实时地图 - 带导航控制 */}
+      {/* 当前地图 - 带导航控制 */}
       {currentMap && (
         <Card
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>当前实时地图</span>
+              <span>当前地图</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <Button
                   type="default"
@@ -421,14 +430,18 @@ export const Dashboard: React.FC = () => {
                   size="small"
                 >
                   <Radio.Button value={OperationMode.LOCALIZE}>
-                    <AimOutlined /> 定位模式
+                    <AimOutlined /> 手动重定位
                   </Radio.Button>
                   <Radio.Button value={OperationMode.SET_GOAL}>
                     <EnvironmentOutlined /> 设置目标点
                   </Radio.Button>
                 </Radio.Group>
-                <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#52c41a' }}>
-                  ● 实时更新
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: 'normal',
+                  color: isMapRealtime ? '#52c41a' : '#ff4d4f'
+                }}>
+                  ● {isMapRealtime ? '实时更新' : '历史地图'}
                 </span>
               </div>
             </div>
@@ -640,7 +653,7 @@ export const Dashboard: React.FC = () => {
               <EnvironmentOutlined style={{ fontSize: '48px', color: '#1890ff' }} />
               <h3 style={{ marginTop: '16px', fontSize: '18px' }}>地图管理</h3>
               <p style={{ color: '#999', marginTop: '8px' }}>
-                查看、创建和管理地图
+                查看、编辑和管理地图
               </p>
             </div>
           </Card>
