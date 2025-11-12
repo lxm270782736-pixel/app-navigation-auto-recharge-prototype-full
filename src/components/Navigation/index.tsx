@@ -110,14 +110,14 @@ export const Navigation: React.FC = () => {
     };
   }, []);
 
-  const handleMapClick = (x: number, y: number) => {
+  const handleMapClick = (x: number, y: number, theta?: number) => {
     if (operationMode === OperationMode.LOCALIZE) {
       // 设置初始位姿
       Modal.confirm({
         title: '设置初始位姿',
         content: '确认将机器人定位到此位置吗？',
         onOk: () => {
-          const pose: Pose = { x, y, theta: 0 };
+          const pose: Pose = { x, y, theta: theta || 0 };
           rosService.setInitialPose(pose);
           setRobotPose(pose);
           message.success('初始位姿已设置');
@@ -126,9 +126,9 @@ export const Navigation: React.FC = () => {
       });
     } else if (operationMode === OperationMode.SET_GOAL) {
       // 设置目标点
-      const pose: Pose = { x, y, theta: 0 };
+      const pose: Pose = { x, y, theta: theta || 0 };
       setGoalPose(pose);
-      message.info('目标点已设置，请调整方向或直接开始导航');
+      message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
     }
   };
 
@@ -354,12 +354,8 @@ export const Navigation: React.FC = () => {
             style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
           >
             {robotPose ? (
-              <div style={{ fontSize: '12px' }}>
-                <p style={{ margin: '4px 0' }}>X: {robotPose.x.toFixed(2)} m</p>
-                <p style={{ margin: '4px 0' }}>Y: {robotPose.y.toFixed(2)} m</p>
-                <p style={{ margin: '4px 0' }}>
-                  朝向: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°
-                </p>
+              <div style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
+                X: {robotPose.x.toFixed(2)}m | Y: {robotPose.y.toFixed(2)}m | θ: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°
               </div>
             ) : (
               <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>未定位</p>
