@@ -32,6 +32,20 @@ export interface PathPoint {
 export interface NavigationGoal {
   pose: Pose;
   tasks: TaskConfig[];
+  actionConfig?: NavigationActionConfig; // Action配置
+}
+
+// 导航 Action 配置
+export interface NavigationActionConfig {
+  use_default_config: boolean; // 是否使用默认配置
+  safe_dist?: number; // 底层避障的最小安全距离 (m)
+  v_max?: number; // 最大速度 (m/s)
+  w_max?: number; // 最大角速度 (rad/s)
+  a_max?: number; // 最大加速度 (m/s²)
+  dw_max?: number; // 最大转向加速度 (rad/s²)
+  is_holonomic?: boolean; // 是否为全向运动 (true=全向, false=差速)
+  deaccelaration_dist?: number; // 减速策略距离 (m)
+  deaccelaration_ratio?: number; // 减速策略系数
 }
 
 // 任务类型

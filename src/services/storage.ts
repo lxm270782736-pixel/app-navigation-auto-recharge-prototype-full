@@ -5,6 +5,9 @@ const MAP_DATA_KEY_PREFIX = 'astribot_map_data_'; // 单独存储地图数据
 const THUMBNAIL_MAX_SIZE = 200; // 缩略图最大尺寸
 const THUMBNAIL_QUALITY = 0.6; // 缩略图质量 (0.0 - 1.0)
 
+// HTTP API 基础 URL
+const API_BASE_URL = 'http://localhost:8080/api';
+
 // 地图元数据（不包含大量的地图数据）
 interface MapMetadata {
   id: string;
@@ -23,8 +26,31 @@ interface MapMetadata {
 
 // 地图存储服务
 class MapStorageService {
+  private useServerStorage = true; // 是否使用服务器存储
+
   // 获取所有地图（仅元数据）
-  getAllMaps(): MapData[] {
+  async getAllMaps(): Promise<MapData[]> {
+    // 优先尝试从服务器获取
+    if (this.useServerStorage) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/maps`);
+        if (response.ok) {
+          const maps = await response.json();
+          console.log('从服务器加载地图:', maps.length);
+          return maps;
+        }
+      } catch (error) {
+        console.warn('从服务器加载地图失败，使用本地存储:', error);
+        this.useServerStorage = false;
+      }
+    }
+
+    // 降级到本地存储
+    return this.getAllMapsFromLocalStorage();
+  }
+
+  // 从本地存储获取所有地图
+  private getAllMapsFromLocalStorage(): MapData[] {
     const stored = localStorage.getItem(MAP_STORAGE_KEY);
     if (!stored) return [];
 
@@ -32,7 +58,7 @@ class MapStorageService {
       const metadataList: MapMetadata[] = JSON.parse(stored);
       // 加载每个地图的完整数据
       return metadataList.map((metadata) => {
-        const data = this.getMapData(metadata.id);
+        const data = this.getMapDataFromLocalStorage(metadata.id);
         return {
           ...metadata,
           data: data || [],
@@ -58,7 +84,7 @@ class MapStorageService {
   }
 
   // 获取单个地图的数据
-  private getMapData(mapId: string): number[] | null {
+  private getMapDataFromLocalStorage(mapId: string): number[] | null {
     const dataKey = MAP_DATA_KEY_PREFIX + mapId;
     const stored = localStorage.getItem(dataKey);
     if (!stored) return null;
@@ -153,7 +179,33 @@ class MapStorageService {
   }
 
   // 保存地图
-  saveMap(map: MapData): void {
+  async saveMap(map: MapData): Promise<void> {
+    // 优先尝试保存到服务器
+    if (this.useServerStorage) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/maps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(map),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('地图已保存到服务器:', result.message);
+          return;
+        }
+      } catch (error) {
+        console.warn('保存到服务器失败，使用本地存储:', error);
+        this.useServerStorage = false;
+      }
+    }
+
+    // 降级到本地存储
+    this.saveMapToLocalStorage(map);
+  }
+
+  // 保存到本地存储
+  private saveMapToLocalStorage(map: MapData): void {
     try {
       // 分离元数据和地图数据
       const metadata: MapMetadata = {
@@ -185,7 +237,7 @@ class MapStorageService {
       // 保存元数据列表
       localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(metadataList));
 
-      console.log(`地图 ${map.name} 保存成功`);
+      console.log(`地图 ${map.name} 保存成功（本地存储）`);
       console.log(`原始数据大小: ${map.data.length * 4} bytes`);
       console.log(`压缩后大小: ${compressedData.length} bytes`);
       console.log(`压缩率: ${((1 - compressedData.length / (map.data.length * 4)) * 100).toFixed(2)}%`);
@@ -196,7 +248,30 @@ class MapStorageService {
   }
 
   // 删除地图
-  deleteMap(mapId: string): void {
+  async deleteMap(mapId: string): Promise<void> {
+    // 优先尝试从服务器删除
+    if (this.useServerStorage) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/maps/${mapId}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          console.log('地图已从服务器删除:', mapId);
+          return;
+        }
+      } catch (error) {
+        console.warn('从服务器删除失败，使用本地存储:', error);
+        this.useServerStorage = false;
+      }
+    }
+
+    // 降级到本地存储
+    this.deleteMapFromLocalStorage(mapId);
+  }
+
+  // 从本地存储删除
+  private deleteMapFromLocalStorage(mapId: string): void {
     // 删除地图数据
     const dataKey = MAP_DATA_KEY_PREFIX + mapId;
     localStorage.removeItem(dataKey);
@@ -208,12 +283,33 @@ class MapStorageService {
   }
 
   // 获取单个地图
-  getMap(mapId: string): MapData | null {
+  async getMap(mapId: string): Promise<MapData | null> {
+    // 优先尝试从服务器获取
+    if (this.useServerStorage) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/maps/${mapId}`);
+        if (response.ok) {
+          const map = await response.json();
+          console.log('从服务器加载地图:', mapId);
+          return map;
+        }
+      } catch (error) {
+        console.warn('从服务器加载地图失败，使用本地存储:', error);
+        this.useServerStorage = false;
+      }
+    }
+
+    // 降级到本地存储
+    return this.getMapFromLocalStorage(mapId);
+  }
+
+  // 从本地存储获取单个地图
+  private getMapFromLocalStorage(mapId: string): MapData | null {
     const metadataList = this.getAllMapMetadata();
     const metadata = metadataList.find((m) => m.id === mapId);
     if (!metadata) return null;
 
-    const data = this.getMapData(mapId);
+    const data = this.getMapDataFromLocalStorage(mapId);
     if (!data) return null;
 
     return {
@@ -274,15 +370,15 @@ class MapStorageService {
   }
 
   // 生成默认地图名称
-  generateDefaultMapName(): string {
-    const maps = this.getAllMaps();
-    const unnamedMaps = maps.filter((m) => m.name.startsWith('未命名地图'));
+  async generateDefaultMapName(): Promise<string> {
+    const maps = await this.getAllMaps();
+    const unnamedMaps = maps.filter((m: MapData) => m.name.startsWith('未命名地图'));
     const numbers = unnamedMaps
-      .map((m) => {
+      .map((m: MapData) => {
         const match = m.name.match(/未命名地图(\d+)/);
         return match ? parseInt(match[1], 10) : 0;
       })
-      .filter((n) => !isNaN(n));
+      .filter((n: number) => !isNaN(n));
 
     const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
     return `未命名地图${maxNumber + 1}`;

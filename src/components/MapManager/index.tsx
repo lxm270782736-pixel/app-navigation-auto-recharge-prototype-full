@@ -20,8 +20,8 @@ export const MapManager: React.FC = () => {
     loadMaps();
   }, []);
 
-  const loadMaps = () => {
-    const allMaps = mapStorageService.getAllMaps();
+  const loadMaps = async () => {
+    const allMaps = await mapStorageService.getAllMaps();
     setMaps(allMaps);
   };
 
@@ -38,9 +38,9 @@ export const MapManager: React.FC = () => {
     setDeleteModalVisible(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedMap) {
-      mapStorageService.deleteMap(selectedMap.id);
+      await mapStorageService.deleteMap(selectedMap.id);
       message.success('地图已删除');
       loadMaps();
       setDeleteModalVisible(false);

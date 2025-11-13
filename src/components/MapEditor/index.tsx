@@ -52,26 +52,30 @@ export const MapEditor: React.FC = () => {
 
   // 初始化地图数据并保存初始状态到历史
   useEffect(() => {
-    if (!mapId) {
-      message.error('地图ID无效');
-      navigate('/maps');
-      return;
-    }
+    const loadMap = async () => {
+      if (!mapId) {
+        message.error('地图ID无效');
+        navigate('/maps');
+        return;
+      }
 
-    // 加载地图数据
-    const map = mapStorageService.getMap(mapId);
-    if (!map) {
-      message.error('地图不存在');
-      navigate('/maps');
-      return;
-    }
+      // 加载地图数据
+      const map = await mapStorageService.getMap(mapId);
+      if (!map) {
+        message.error('地图不存在');
+        navigate('/maps');
+        return;
+      }
 
-    setMapData(map);
-    setMapName(map.name);
+      setMapData(map);
+      setMapName(map.name);
 
-    // 初始化历史记录
-    setHistory([{ data: [...map.data], timestamp: Date.now() }]);
-    setHistoryIndex(0);
+      // 初始化历史记录
+      setHistory([{ data: [...map.data], timestamp: Date.now() }]);
+      setHistoryIndex(0);
+    };
+
+    loadMap();
   }, [mapId, navigate]);
 
   // 保存当前状态到历史记录
@@ -211,7 +215,7 @@ export const MapEditor: React.FC = () => {
     }
   }, [mapData, editTool, brushSize]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!mapData) return;
 
     if (!mapName.trim()) {
@@ -232,17 +236,17 @@ export const MapEditor: React.FC = () => {
     );
     updatedMap.thumbnail = thumbnail;
 
-    mapStorageService.saveMap(updatedMap);
+    await mapStorageService.saveMap(updatedMap);
     message.success('地图已保存');
     setIsEditing(false);
     setHasUnsavedChanges(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!mapData) return;
 
     if (window.confirm(`确定要删除地图 "${mapData.name}" 吗？此操作不可恢复。`)) {
-      mapStorageService.deleteMap(mapData.id);
+      await mapStorageService.deleteMap(mapData.id);
       message.success('地图已删除');
       navigate('/maps');
     }

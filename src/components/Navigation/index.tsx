@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, message, Radio, Checkbox, Space, Modal, InputNumber } from 'antd';
+import { Button, message, Modal } from 'antd';
 import {
   ArrowLeftOutlined,
   AimOutlined,
   EnvironmentOutlined,
-  PlayCircleOutlined,
-  StopOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
+import { NavigationControl, OperationMode } from '@/components/common/NavigationControl';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, NavigationGoal, TaskType, TaskConfig } from '@/types';
-
-enum OperationMode {
-  LOCALIZE = 'localize', // 手动重定位
-  SET_GOAL = 'set_goal', // 设置目标点模式
-}
+import type { MapData, Pose } from '@/types';
 
 export const Navigation: React.FC = () => {
   const { mapId } = useParams<{ mapId: string }>();
@@ -32,27 +26,35 @@ export const Navigation: React.FC = () => {
   const [operationMode, setOperationMode] = useState<OperationMode>(
     OperationMode.LOCALIZE
   );
-
-  // 任务配置
-  const [selectedTasks, setSelectedTasks] = useState<TaskType[]>([]);
-  const [waitDuration, setWaitDuration] = useState(5);
+  // 导航状态信息
+  const [navigationStatus, setNavigationStatus] = useState<string>('');
+  const [navigationFeedback, setNavigationFeedback] = useState<{
+    distance_to_goal?: number;
+    progress?: number;
+    eta?: number;
+    current_task?: string;
+  }>({});
 
   useEffect(() => {
-    if (!mapId) {
-      message.error('地图ID无效');
-      navigate('/');
-      return;
-    }
+    const loadMap = async () => {
+      if (!mapId) {
+        message.error('地图ID无效');
+        navigate('/');
+        return;
+      }
 
-    // 加载地图数据
-    const map = mapStorageService.getMap(mapId);
-    if (!map) {
-      message.error('地图不存在');
-      navigate('/');
-      return;
-    }
+      // 加载地图数据
+      const map = await mapStorageService.getMap(mapId);
+      if (!map) {
+        message.error('地图不存在');
+        navigate('/');
+        return;
+      }
 
-    setMapData(map);
+      setMapData(map);
+    };
+
+    loadMap();
   }, [mapId, navigate]);
 
   // 订阅机器人位置
@@ -87,28 +89,111 @@ export const Navigation: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  // 监听导航结果
+  // 监听导航事件（始终监听，但只在必要时处理）
   useEffect(() => {
-    const handleNavigationResult = (data: { success: boolean; result: any }) => {
+    const handleNavigationResult = (data: any) => {
       console.log('[Navigation] 导航结果:', data);
+      console.log('[Navigation] 当前 isNavigating 状态:', isNavigating);
+
       if (data.success) {
-        message.success('导航成功！可以开始新一轮导航');
-        // 重置导航状态，但保留目标点供参考
+        // 导航成功
+        message.success({
+          content: '导航成功！机器人已到达目标位置',
+          duration: 3,
+        });
+        console.log('[Navigation] 设置 isNavigating = false (成功)');
         setIsNavigating(false);
+        // 清除导航状态信息
+        setNavigationStatus('');
+        setNavigationFeedback({});
+        // 保留目标点供参考，用户可以继续导航到相同位置
         // 如果想清除目标点，取消注释下一行
         // setGoalPose(undefined);
       } else {
-        message.error('导航失败');
+        // 导航失败
+        let errorMsg = '导航失败';
+
+        if (data.actionPreempted) {
+          errorMsg = '导航已取消';
+        } else if (data.actionAborted) {
+          errorMsg = '导航中止';
+          if (data.errorMessage) {
+            errorMsg += `: ${data.errorMessage}`;
+          }
+        } else if (data.errorMessage) {
+          errorMsg = `导航失败: ${data.errorMessage}`;
+        }
+
+        message.error({
+          content: errorMsg,
+          duration: 5,
+        });
+        console.log('[Navigation] 设置 isNavigating = false (失败/取消)');
         setIsNavigating(false);
+        // 清除导航状态信息
+        setNavigationStatus('');
+        setNavigationFeedback({});
+      }
+
+      // 打印详细状态信息供调试
+      console.log('[Navigation] 状态详情:', {
+        statusText: data.statusText,
+        actionStatus: data.actionStatus,
+        resultData: data.resultData,
+      });
+    };
+
+    // 监听导航反馈（进度信息）
+    const handleNavigationFeedback = (data: any) => {
+      console.log('[Navigation] 导航反馈:', data);
+
+      // 更新导航反馈状态
+      setNavigationFeedback({
+        distance_to_goal: data.distance_to_goal,
+        progress: data.progress,
+        eta: data.eta,
+        current_task: data.current_task,
+      });
+
+      // 打印日志
+      if (data.distance_to_goal !== undefined) {
+        console.log(`[Navigation] 距离目标: ${data.distance_to_goal.toFixed(2)}m`);
+      }
+
+      if (data.current_task) {
+        console.log(`[Navigation] 当前任务: ${data.current_task}`);
+      }
+
+      if (data.progress !== undefined) {
+        console.log(`[Navigation] 进度: ${(data.progress * 100).toFixed(1)}%`);
       }
     };
 
+    // 监听导航状态更新
+    const handleNavigationStatus = (data: any) => {
+      console.log('[Navigation] 导航状态:', data.text);
+      setNavigationStatus(data.text);
+    };
+
+    // 始终订阅事件
     rosService.on('navigation-result', handleNavigationResult);
+    rosService.on('navigation-feedback', handleNavigationFeedback);
+    rosService.on('navigation-status', handleNavigationStatus);
+
+    console.log('[Navigation] 导航事件监听已设置');
 
     return () => {
       rosService.off('navigation-result', handleNavigationResult);
+      rosService.off('navigation-feedback', handleNavigationFeedback);
+      rosService.off('navigation-status', handleNavigationStatus);
+      console.log('[Navigation] 导航事件监听已清除');
     };
-  }, []);
+  }, []); // 只在组件挂载时设置一次
+
+  // 监控 isNavigating 状态变化
+  useEffect(() => {
+    console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
+  }, [isNavigating]);
 
   const handleMapClick = (x: number, y: number, theta?: number) => {
     if (operationMode === OperationMode.LOCALIZE) {
@@ -130,47 +215,6 @@ export const Navigation: React.FC = () => {
       setGoalPose(pose);
       message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
     }
-  };
-
-  const handleStartNavigation = async () => {
-    if (!goalPose) {
-      message.error('请先设置目标点');
-      return;
-    }
-
-    try {
-      // 构建任务配置
-      const tasks: TaskConfig[] = selectedTasks.map((taskType) => {
-        const task: TaskConfig = { type: taskType };
-        if (taskType === 'wait') {
-          task.params = { duration: waitDuration };
-        }
-        return task;
-      });
-
-      const goal: NavigationGoal = {
-        pose: goalPose,
-        tasks,
-      };
-
-      setIsNavigating(true);
-      await rosService.sendNavigationGoal(goal);
-      message.success('导航已开始');
-    } catch (error) {
-      message.error('导航失败');
-      console.error('Navigation failed:', error);
-      setIsNavigating(false);
-    }
-  };
-
-  const handleStopNavigation = () => {
-    rosService.cancelNavigation();
-    setIsNavigating(false);
-    message.info('导航已取消');
-  };
-
-  const handleTaskChange = (checkedValues: any[]) => {
-    setSelectedTasks(checkedValues);
   };
 
   if (!mapData) {
@@ -195,20 +239,6 @@ export const Navigation: React.FC = () => {
         </Button>
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
           地图: {mapData.name}
-        </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <Radio.Group
-            value={operationMode}
-            onChange={(e) => setOperationMode(e.target.value)}
-            buttonStyle="solid"
-          >
-            <Radio.Button value={OperationMode.LOCALIZE}>
-              <AimOutlined /> 手动重定位
-            </Radio.Button>
-            <Radio.Button value={OperationMode.SET_GOAL}>
-              <EnvironmentOutlined /> 设置目标点
-            </Radio.Button>
-          </Radio.Group>
         </div>
       </div>
 
@@ -236,131 +266,17 @@ export const Navigation: React.FC = () => {
             zIndex: 100,
           }}
         >
-          {/* 导航控制 */}
-          <Card
-            title="导航控制"
-            size="small"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-          >
-            <Space direction="vertical" style={{ width: '100%' }} size="small">
-              {!robotPose && (
-                <div
-                  style={{
-                    padding: '8px',
-                    background: '#fff7e6',
-                    border: '1px solid #ffd591',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                  }}
-                >
-                  请先在地图上点击设置机器人初始位置
-                </div>
-              )}
-
-              {robotPose && !goalPose && (
-                <div
-                  style={{
-                    padding: '8px',
-                    background: '#e6f7ff',
-                    border: '1px solid #91d5ff',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                  }}
-                >
-                  请切换到"设置目标点"模式，在地图上选择目标位置
-                </div>
-              )}
-
-              {goalPose && (
-                <div>
-                  <p style={{ marginBottom: '4px', fontSize: '12px' }}>
-                    <strong>目标位置:</strong>
-                  </p>
-                  <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
-                    X: {goalPose.x.toFixed(2)} m | Y: {goalPose.y.toFixed(2)} m
-                  </p>
-                </div>
-              )}
-
-              <Button
-                type="primary"
-                size="middle"
-                block
-                icon={<PlayCircleOutlined />}
-                onClick={handleStartNavigation}
-                disabled={!robotPose || !goalPose || isNavigating}
-              >
-                开始导航
-              </Button>
-
-              {isNavigating && (
-                <Button
-                  danger
-                  size="middle"
-                  block
-                  icon={<StopOutlined />}
-                  onClick={handleStopNavigation}
-                >
-                  停止导航
-                </Button>
-              )}
-            </Space>
-          </Card>
-
-          {/* 附加任务 */}
-          <Card
-            title="附加任务"
-            size="small"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-          >
-            <Checkbox.Group
-              style={{ width: '100%' }}
-              onChange={handleTaskChange}
-              value={selectedTasks}
-            >
-              <Space direction="vertical" style={{ width: '100%' }} size="small">
-                <Checkbox value="wait" style={{ fontSize: '13px' }}>
-                  到达后停留
-                  {selectedTasks.includes('wait' as TaskType) && (
-                    <div style={{ marginTop: '6px', marginLeft: '24px' }}>
-                      <InputNumber
-                        min={1}
-                        max={60}
-                        value={waitDuration}
-                        onChange={(value) => setWaitDuration(value || 5)}
-                        addonAfter="秒"
-                        size="small"
-                        style={{ width: '110px' }}
-                      />
-                    </div>
-                  )}
-                </Checkbox>
-
-                <Checkbox value="trajectory" style={{ fontSize: '13px' }}>
-                  执行预设轨迹
-                </Checkbox>
-
-                <Checkbox value="photo" style={{ fontSize: '13px' }}>
-                  自动拍照
-                </Checkbox>
-              </Space>
-            </Checkbox.Group>
-          </Card>
-
-          {/* 机器人状态 */}
-          <Card
-            title="机器人状态"
-            size="small"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-          >
-            {robotPose ? (
-              <div style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
-                X: {robotPose.x.toFixed(2)}m | Y: {robotPose.y.toFixed(2)}m | θ: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°
-              </div>
-            ) : (
-              <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>未定位</p>
-            )}
-          </Card>
+          <NavigationControl
+            robotPose={robotPose || null}
+            goalPose={goalPose}
+            isNavigating={isNavigating}
+            operationMode={operationMode}
+            onOperationModeChange={setOperationMode}
+            onNavigationStart={() => setIsNavigating(true)}
+            onNavigationStop={() => setIsNavigating(false)}
+            navigationStatus={navigationStatus}
+            navigationFeedback={navigationFeedback}
+          />
         </div>
 
         {/* 底部操作提示 */}

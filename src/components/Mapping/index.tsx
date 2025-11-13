@@ -72,7 +72,7 @@ export const Mapping: React.FC = () => {
       setIsMapping(false);
 
       // 生成默认地图名称
-      const defaultName = mapStorageService.generateDefaultMapName();
+      const defaultName = await mapStorageService.generateDefaultMapName();
       setMapName(defaultName);
       setSaveModalVisible(true);
     } catch (error) {
@@ -116,7 +116,7 @@ export const Mapping: React.FC = () => {
         data: currentMapData.data,
       };
 
-      mapStorageService.saveMap(mapData);
+      await mapStorageService.saveMap(mapData);
       message.success('地图保存成功');
 
       setSaveModalVisible(false);
