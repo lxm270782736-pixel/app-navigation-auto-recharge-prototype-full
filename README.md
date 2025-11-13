@@ -103,6 +103,7 @@
 - **通信库**: roslib 1.3.0
 - **协议**: WebSocket
 - **后端**: ROS 1 (Melodic/Noetic)
+- **任务系统**: 可扩展的附加任务架构（支持15+任务类型）
 
 ## 系统架构
 
@@ -579,6 +580,8 @@ MIT License
 - [导航事件处理](./NAVIGATION_EVENTS.md) - 导航结果和反馈的处理方式
 - [坐标系说明](./COORDINATE_SYSTEM.md) - 坐标转换和显示
 - [调试指南](./DEBUG_ROBOT_DISPLAY.md) - 机器人显示调试
+- [任务系统架构](./TASK_SYSTEM.md) - 可扩展任务系统架构设计
+- [任务使用指南](./TASK_USAGE_GUIDE.md) - 附加任务系统使用说明
 - [更新日志](./CHANGELOG.md) - 版本更新记录
 - [测试报告](./TEST_REPORT.md) - 测试覆盖和结果
 

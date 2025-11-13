@@ -1,3 +1,87 @@
+// 任务系统类型 - 从专用模块导入并重新导出
+import type {
+  TaskConfig as TaskConfigType,
+  TaskParams,
+  WaitTaskParams,
+  PhotoTaskParams,
+  TrajectoryTaskParams,
+  ScanTaskParams,
+  InspectTaskParams,
+  SoundTaskParams,
+  DisplayTaskParams,
+  SignalTaskParams,
+  PickupTaskParams,
+  PlaceTaskParams,
+  ChargeTaskParams,
+  SequenceTaskParams,
+  ParallelTaskParams,
+  ConditionalTaskParams,
+  LoopTaskParams,
+  CustomTaskParams,
+  TaskCondition,
+  TaskExecutionState,
+  TaskTemplate,
+  TaskExecutionResult,
+  TaskFeedback,
+} from './task';
+
+import {
+  TaskType,
+  TaskStatus,
+  createWaitTask,
+  createPhotoTask,
+  createSequenceTask,
+  createParallelTask,
+  isWaitTask,
+  isPhotoTask,
+  isTrajectoryTask,
+  isSequenceTask,
+  isParallelTask,
+  validateTaskConfig,
+} from './task';
+
+// 重新导出任务类型
+export type TaskConfig = TaskConfigType;
+export type {
+  TaskParams,
+  WaitTaskParams,
+  PhotoTaskParams,
+  TrajectoryTaskParams,
+  ScanTaskParams,
+  InspectTaskParams,
+  SoundTaskParams,
+  DisplayTaskParams,
+  SignalTaskParams,
+  PickupTaskParams,
+  PlaceTaskParams,
+  ChargeTaskParams,
+  SequenceTaskParams,
+  ParallelTaskParams,
+  ConditionalTaskParams,
+  LoopTaskParams,
+  CustomTaskParams,
+  TaskCondition,
+  TaskExecutionState,
+  TaskTemplate,
+  TaskExecutionResult,
+  TaskFeedback,
+};
+
+export {
+  TaskType,
+  TaskStatus,
+  createWaitTask,
+  createPhotoTask,
+  createSequenceTask,
+  createParallelTask,
+  isWaitTask,
+  isPhotoTask,
+  isTrajectoryTask,
+  isSequenceTask,
+  isParallelTask,
+  validateTaskConfig,
+};
+
 // 地图数据类型
 export interface MapData {
   id: string;
@@ -46,22 +130,6 @@ export interface NavigationActionConfig {
   is_holonomic?: boolean; // 是否为全向运动 (true=全向, false=差速)
   deaccelaration_dist?: number; // 减速策略距离 (m)
   deaccelaration_ratio?: number; // 减速策略系数
-}
-
-// 任务类型
-export enum TaskType {
-  WAIT = 'wait', // 停留
-  TRAJECTORY = 'trajectory', // 播放轨迹
-  PHOTO = 'photo', // 拍照
-}
-
-// 任务配置
-export interface TaskConfig {
-  type: TaskType;
-  params?: {
-    duration?: number; // 停留时长（秒）
-    trajectoryId?: string; // 轨迹ID
-  };
 }
 
 // 机器人状态

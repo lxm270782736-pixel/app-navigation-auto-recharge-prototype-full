@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Space, Button, Radio, Checkbox, InputNumber, Switch, Collapse, message } from 'antd';
+import React, { useState } from 'react';
+import { Card, Space, Button, Radio, Switch, Collapse, message, InputNumber } from 'antd';
 import {
   AimOutlined,
   EnvironmentOutlined,
@@ -8,7 +8,8 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
-import type { Pose, NavigationGoal, TaskType, TaskConfig, NavigationActionConfig } from '@/types';
+import type { Pose, NavigationGoal, TaskConfig, NavigationActionConfig } from '@/types';
+import { TaskConfigurationModal, TaskListView } from './TaskConfigurationModal';
 
 const { Panel } = Collapse;
 
@@ -49,15 +50,21 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
 }) => {
 
   // 调试日志：监控 isNavigating 状态变化
-  useEffect(() => {
-    console.log('[NavigationControl] isNavigating 状态变化:', isNavigating);
-    console.log('[NavigationControl] navigationStatus:', navigationStatus);
-    console.log('[NavigationControl] navigationFeedback:', navigationFeedback);
-  }, [isNavigating, navigationStatus, navigationFeedback]);
+  // useEffect(() => {
+  //   console.log('[NavigationControl] isNavigating 状态变化:', isNavigating);
+  //   console.log('[NavigationControl] navigationStatus:', navigationStatus);
+  //   console.log('[NavigationControl] navigationFeedback:', navigationFeedback);
+  // }, [isNavigating, navigationStatus, navigationFeedback]);
 
   // 任务配置
-  const [selectedTasks, setSelectedTasks] = useState<TaskType[]>([]);
-  const [waitDuration, setWaitDuration] = useState(5);
+  const [tasks, setTasks] = useState<TaskConfig[]>([]);
+  const [taskConfigModalVisible, setTaskConfigModalVisible] = useState(false);
+
+  const handleSaveTasks = (newTasks: TaskConfig[]) => {
+    setTasks(newTasks);
+    setTaskConfigModalVisible(false);
+    message.success(`已保存 ${newTasks.length} 个任务`);
+  };
 
   // 导航参数配置
   const [actionConfig, setActionConfig] = useState<NavigationActionConfig>({
@@ -72,10 +79,6 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     deaccelaration_ratio: 0.5,
   });
 
-  const handleTaskChange = (checkedValues: any[]) => {
-    setSelectedTasks(checkedValues);
-  };
-
   const handleStartNavigation = async () => {
     if (!goalPose) {
       message.error('请先设置目标点');
@@ -83,26 +86,16 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     }
 
     try {
-      // 构建任务配置
-      const tasks: TaskConfig[] = selectedTasks.map((taskType) => {
-        const task: TaskConfig = { type: taskType };
-        if (taskType === 'wait') {
-          task.params = { duration: waitDuration };
-        }
-        return task;
-      });
-
       const goal: NavigationGoal = {
         pose: goalPose,
-        tasks,
+        tasks, // 使用任务配置面板的任务列表
         actionConfig, // 添加导航参数配置
       };
 
-      console.log('[NavigationControl] 开始导航，调用 onNavigationStart');
+      // console.log('[NavigationControl] 开始导航，调用 onNavigationStart');
       onNavigationStart(); // 先设置状态
-      message.success('导航已开始'); // 移除立即提示，通过导航状态显示
       await rosService.sendNavigationGoal(goal);
-      
+      // message.success('导航已开始'); // 移除立即提示，通过导航状态显示
     } catch (error) {
       message.error('导航失败');
       console.error('Navigation failed:', error);
@@ -112,7 +105,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
 
   const handleStopNavigation = () => {
     rosService.cancelNavigation();
-    message.info('导航已取消'); // 移除立即提示，等待服务器响应
+    // message.info('导航已取消'); // 移除立即提示，等待服务器响应
     onNavigationStop();
   };
 
@@ -295,39 +288,19 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
         size="small"
         style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
       >
-        <Checkbox.Group
-          style={{ width: '100%' }}
-          onChange={handleTaskChange}
-          value={selectedTasks}
-        >
-          <Space direction="vertical" style={{ width: '100%' }} size="small">
-            <Checkbox value="wait" style={{ fontSize: '13px' }}>
-              到达后停留
-              {selectedTasks.includes('wait' as TaskType) && (
-                <div style={{ marginTop: '6px', marginLeft: '24px' }}>
-                  <InputNumber
-                    min={1}
-                    max={60}
-                    value={waitDuration}
-                    onChange={(value) => setWaitDuration(value || 5)}
-                    addonAfter="秒"
-                    size="small"
-                    style={{ width: '110px' }}
-                  />
-                </div>
-              )}
-            </Checkbox>
-
-            <Checkbox value="trajectory" style={{ fontSize: '13px' }}>
-              执行预设轨迹
-            </Checkbox>
-
-            <Checkbox value="photo" style={{ fontSize: '13px' }}>
-              自动拍照
-            </Checkbox>
-          </Space>
-        </Checkbox.Group>
+        <TaskListView
+          tasks={tasks}
+          onConfigure={() => setTaskConfigModalVisible(true)}
+        />
       </Card>
+
+      {/* 任务配置模态框 */}
+      <TaskConfigurationModal
+        visible={taskConfigModalVisible}
+        tasks={tasks}
+        onSave={handleSaveTasks}
+        onCancel={() => setTaskConfigModalVisible(false)}
+      />
 
       {/* 导航参数 */}
       <Card

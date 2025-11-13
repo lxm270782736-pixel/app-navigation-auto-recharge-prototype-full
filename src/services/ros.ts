@@ -191,6 +191,14 @@ class ROSService {
       }
     }
 
+    // 添加任务配置（如果有）
+    if (goal.tasks && goal.tasks.length > 0) {
+      // 将任务配置序列化为 JSON 字符串发送给 ROS
+      // ROS 端可以解析这个 JSON 来执行相应的任务
+      goalMessageData.tasks = JSON.stringify(goal.tasks);
+      console.log('[ROS] Sending tasks with navigation goal:', goal.tasks);
+    }
+
     const goalMessage = new ROSLIB.Goal({
       actionClient,
       goalMessage: goalMessageData, 

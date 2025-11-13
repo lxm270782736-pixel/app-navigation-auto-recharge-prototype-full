@@ -92,8 +92,8 @@ export const Navigation: React.FC = () => {
   // 监听导航事件（始终监听，但只在必要时处理）
   useEffect(() => {
     const handleNavigationResult = (data: any) => {
-      console.log('[Navigation] 导航结果:', data);
-      console.log('[Navigation] 当前 isNavigating 状态:', isNavigating);
+      // console.log('[Navigation] 导航结果:', data);
+      // console.log('[Navigation] 当前 isNavigating 状态:', isNavigating);
 
       if (data.success) {
         // 导航成功
@@ -101,7 +101,7 @@ export const Navigation: React.FC = () => {
           content: '导航成功！机器人已到达目标位置',
           duration: 3,
         });
-        console.log('[Navigation] 设置 isNavigating = false (成功)');
+        // console.log('[Navigation] 设置 isNavigating = false (成功)');
         setIsNavigating(false);
         // 清除导航状态信息
         setNavigationStatus('');
@@ -128,7 +128,7 @@ export const Navigation: React.FC = () => {
           content: errorMsg,
           duration: 5,
         });
-        console.log('[Navigation] 设置 isNavigating = false (失败/取消)');
+        // console.log('[Navigation] 设置 isNavigating = false (失败/取消)');
         setIsNavigating(false);
         // 清除导航状态信息
         setNavigationStatus('');
@@ -136,16 +136,16 @@ export const Navigation: React.FC = () => {
       }
 
       // 打印详细状态信息供调试
-      console.log('[Navigation] 状态详情:', {
-        statusText: data.statusText,
-        actionStatus: data.actionStatus,
-        resultData: data.resultData,
-      });
+      // console.log('[Navigation] 状态详情:', {
+      //   statusText: data.statusText,
+      //   actionStatus: data.actionStatus,
+      //   resultData: data.resultData,
+      // });
     };
 
     // 监听导航反馈（进度信息）
     const handleNavigationFeedback = (data: any) => {
-      console.log('[Navigation] 导航反馈:', data);
+      // console.log('[Navigation] 导航反馈:', data);
 
       // 更新导航反馈状态
       setNavigationFeedback({
@@ -156,22 +156,22 @@ export const Navigation: React.FC = () => {
       });
 
       // 打印日志
-      if (data.distance_to_goal !== undefined) {
-        console.log(`[Navigation] 距离目标: ${data.distance_to_goal.toFixed(2)}m`);
-      }
+      // if (data.distance_to_goal !== undefined) {
+      //   console.log(`[Navigation] 距离目标: ${data.distance_to_goal.toFixed(2)}m`);
+      // }
 
-      if (data.current_task) {
-        console.log(`[Navigation] 当前任务: ${data.current_task}`);
-      }
+      // if (data.current_task) {
+      //   console.log(`[Navigation] 当前任务: ${data.current_task}`);
+      // }
 
-      if (data.progress !== undefined) {
-        console.log(`[Navigation] 进度: ${(data.progress * 100).toFixed(1)}%`);
-      }
+      // if (data.progress !== undefined) {
+      //   console.log(`[Navigation] 进度: ${(data.progress * 100).toFixed(1)}%`);
+      // }
     };
 
     // 监听导航状态更新
     const handleNavigationStatus = (data: any) => {
-      console.log('[Navigation] 导航状态:', data.text);
+      // console.log('[Navigation] 导航状态:', data.text);
       setNavigationStatus(data.text);
     };
 
@@ -180,20 +180,20 @@ export const Navigation: React.FC = () => {
     rosService.on('navigation-feedback', handleNavigationFeedback);
     rosService.on('navigation-status', handleNavigationStatus);
 
-    console.log('[Navigation] 导航事件监听已设置');
+    // console.log('[Navigation] 导航事件监听已设置');
 
     return () => {
       rosService.off('navigation-result', handleNavigationResult);
       rosService.off('navigation-feedback', handleNavigationFeedback);
       rosService.off('navigation-status', handleNavigationStatus);
-      console.log('[Navigation] 导航事件监听已清除');
+      // console.log('[Navigation] 导航事件监听已清除');
     };
   }, []); // 只在组件挂载时设置一次
 
   // 监控 isNavigating 状态变化
-  useEffect(() => {
-    console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
-  }, [isNavigating]);
+  // useEffect(() => {
+  //   console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
+  // }, [isNavigating]);
 
   const handleMapClick = (x: number, y: number, theta?: number) => {
     if (operationMode === OperationMode.LOCALIZE) {

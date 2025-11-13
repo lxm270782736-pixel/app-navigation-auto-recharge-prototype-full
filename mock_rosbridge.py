@@ -324,6 +324,21 @@ class MockROSBridge:
             w_max = goal.get("w_max", 1.0)
 
             print(f"导航参数: use_default={use_default_config}, safe_dist={safe_dist}, v_max={v_max}, w_max={w_max}")
+
+            # 提取任务配置（如果有）
+            tasks_json = goal.get("tasks", "")
+            if tasks_json:
+                try:
+                    self.navigation_tasks = json.loads(tasks_json)
+                    print(f"收到 {len(self.navigation_tasks)} 个附加任务:")
+                    for i, task in enumerate(self.navigation_tasks):
+                        print(f"  任务 {i+1}: {task.get('type')} - {task.get('params', {})}")
+                except json.JSONDecodeError:
+                    print(f"解析任务配置失败: {tasks_json}")
+                    self.navigation_tasks = []
+            else:
+                self.navigation_tasks = []
+
             print(f"开始导航: 从 ({self.robot_pose['x']:.2f}, {self.robot_pose['y']:.2f}) 到 ({goal_x:.2f}, {goal_y:.2f})")
 
             # 启动导航任务
@@ -441,15 +456,20 @@ class MockROSBridge:
         if not self.navigation_active:
             return
 
-        # 导航成功
-        self.navigation_active = False
-
         # 确保机器人到达目标位置
         self.robot_pose["x"] = goal_x
         self.robot_pose["y"] = goal_y
         self.robot_pose["theta"] = goal_theta
 
         print(f"导航完成: 到达目标点 ({goal_x:.2f}, {goal_y:.2f})")
+
+        # 执行附加任务（如果有）
+        if self.navigation_tasks:
+            print(f"\n开始执行 {len(self.navigation_tasks)} 个附加任务...")
+            await self.execute_tasks(websocket, action_id, self.navigation_tasks)
+
+        # 导航成功
+        self.navigation_active = False
 
         # 发送成功结果
         result_message = {
@@ -472,6 +492,172 @@ class MockROSBridge:
             await websocket.send(json.dumps(result_message))
         except:
             pass
+
+    async def execute_tasks(self, websocket, action_id, tasks):
+        """执行附加任务列表"""
+        for i, task in enumerate(tasks):
+            if not self.navigation_active:
+                print("任务执行被取消")
+                return
+
+            task_type = task.get("type", "unknown")
+            task_params = task.get("params", {})
+            task_name = task.get("name", f"任务 {i+1}")
+
+            print(f"\n执行任务 {i+1}/{len(tasks)}: {task_name} ({task_type})")
+
+            # 发送任务反馈
+            feedback_message = {
+                "op": "action_feedback",
+                "id": action_id,
+                "action": "/move_chassis_to_server",
+                "values": {
+                    "current_task": f"{task_name} ({task_type})",
+                    "distance_to_goal": 0.0,
+                    "progress": 1.0,
+                }
+            }
+
+            try:
+                await websocket.send(json.dumps(feedback_message))
+            except:
+                pass
+
+            # 根据任务类型执行不同的操作
+            if task_type == "wait":
+                # 等待任务
+                duration = task_params.get("duration", 5)
+                print(f"  等待 {duration} 秒...")
+                await asyncio.sleep(duration)
+                print(f"  等待完成")
+
+            elif task_type == "photo":
+                # 拍照任务
+                camera_id = task_params.get("cameraId", "default")
+                count = task_params.get("count", 1)
+                interval = task_params.get("interval", 1)
+                print(f"  使用相机 {camera_id} 拍摄 {count} 张照片...")
+                for j in range(count):
+                    print(f"    拍照 {j+1}/{count}")
+                    await asyncio.sleep(interval if j < count - 1 else 0.5)
+                print(f"  拍照完成")
+
+            elif task_type == "trajectory":
+                # 轨迹任务
+                trajectory_id = task_params.get("trajectoryId", "unknown")
+                print(f"  执行轨迹 {trajectory_id}...")
+                await asyncio.sleep(2)
+                print(f"  轨迹执行完成")
+
+            elif task_type == "scan":
+                # 扫描任务
+                scan_type = task_params.get("scanType", "3d")
+                duration = task_params.get("duration", 5)
+                scan_range = task_params.get("range", 5.0)
+                print(f"  执行 {scan_type} 扫描 (范围: {scan_range}m, 时长: {duration}s)...")
+                await asyncio.sleep(duration)
+                print(f"  扫描完成，已保存扫描数据")
+
+            elif task_type == "inspect":
+                # 目标检测任务
+                target_type = task_params.get("targetType", "object")
+                confidence = task_params.get("confidenceThreshold", 0.7)
+                timeout = task_params.get("timeout", 10)
+                print(f"  开始检测目标: {target_type} (置信度阈值: {confidence})...")
+                await asyncio.sleep(2)
+                # 模拟检测结果
+                detected = random.random() > 0.3
+                if detected:
+                    print(f"  检测成功: 发现 {target_type}")
+                else:
+                    print(f"  未检测到目标: {target_type}")
+
+            elif task_type == "sound":
+                # 声音任务
+                text = task_params.get("text", "")
+                audio_file = task_params.get("audioFile", "")
+                volume = task_params.get("volume", 70)
+                language = task_params.get("language", "zh-CN")
+                print(f"  播放声音 (音量: {volume}%):")
+                if text:
+                    print(f"    TTS文本: {text} (语言: {language})")
+                elif audio_file:
+                    print(f"    音频文件: {audio_file}")
+                await asyncio.sleep(1.5)
+                print(f"  声音播放完成")
+
+            elif task_type == "display":
+                # 显示信息任务
+                message_text = task_params.get("message", "")
+                duration = task_params.get("duration", 5)
+                position = task_params.get("position", "center")
+                print(f"  显示消息 ({position}): {message_text}")
+                print(f"  显示时长: {duration}秒")
+                await asyncio.sleep(duration)
+                print(f"  消息显示完成")
+
+            elif task_type == "signal":
+                # 信号灯任务
+                pattern = task_params.get("pattern", "blink")
+                color = task_params.get("color", "green")
+                duration = task_params.get("duration", 3)
+                frequency = task_params.get("frequency", 2)
+                print(f"  信号灯: {color} {pattern} (频率: {frequency}Hz)")
+                await asyncio.sleep(duration)
+                print(f"  信号灯关闭")
+
+            elif task_type == "pickup":
+                # 拾取任务
+                object_type = task_params.get("objectType", "object")
+                grasp_type = task_params.get("graspType", "top")
+                force = task_params.get("force", 50)
+                print(f"  准备拾取物体: {object_type} (抓取方式: {grasp_type}, 力度: {force}%)")
+                await asyncio.sleep(2)
+                # 模拟成功率
+                success = random.random() > 0.2
+                if success:
+                    print(f"  拾取成功")
+                else:
+                    print(f"  拾取失败，请重试")
+
+            elif task_type == "place":
+                # 放置任务
+                location = task_params.get("location", {"x": 0, "y": 0, "z": 0})
+                place_type = task_params.get("placeType", "normal")
+                print(f"  放置物体到 ({location['x']:.2f}, {location['y']:.2f}, {location['z']:.2f})")
+                print(f"  放置方式: {place_type}")
+                await asyncio.sleep(1.5)
+                print(f"  放置完成")
+
+            elif task_type == "charge":
+                # 充电任务
+                target_level = task_params.get("targetLevel", 100)
+                print(f"  开始充电，目标电量: {target_level}%")
+                # 模拟充电过程
+                for i in range(3):
+                    await asyncio.sleep(1)
+                    current_level = 50 + (i + 1) * 10
+                    print(f"    当前电量: {current_level}%")
+                print(f"  充电完成")
+
+            elif task_type == "sequence":
+                # 顺序任务
+                sub_tasks = task_params.get("tasks", [])
+                print(f"  开始执行顺序任务 ({len(sub_tasks)} 个子任务)")
+                await self.execute_tasks(websocket, action_id, sub_tasks)
+
+            elif task_type == "parallel":
+                # 并行任务
+                sub_tasks = task_params.get("tasks", [])
+                print(f"  开始并行执行任务 ({len(sub_tasks)} 个子任务)")
+                # 简化处理：顺序执行但打印为并行
+                await self.execute_tasks(websocket, action_id, sub_tasks)
+
+            else:
+                print(f"  未知任务类型: {task_type}，跳过")
+                await asyncio.sleep(0.5)
+
+        print(f"\n所有任务执行完成！")
 
     async def send_action_status(self, websocket, action_id, status):
         """发送 Action 状态"""
