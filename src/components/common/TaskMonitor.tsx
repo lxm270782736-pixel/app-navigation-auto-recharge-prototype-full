@@ -111,7 +111,7 @@ export const TaskMonitor: React.FC<TaskMonitorProps> = ({ tasks, compact = false
               <span style={{ flex: 1, fontSize: 11 }}>
                 {index + 1}. {task.message || task.taskId}
               </span>
-              <Tag size="small" color={getStatusColor(task.status)}>
+              <Tag color={getStatusColor(task.status)}>
                 {getStatusText(task.status)}
               </Tag>
             </div>

@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Modal, Button, Space, Tag, Empty } from 'antd';
+import { Modal, Button, Space, Tag, Empty, Segmented } from 'antd';
 import {
   SettingOutlined,
   CloseOutlined,
   CheckOutlined,
+  UnorderedListOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { TaskConfig } from '@/types';
 import { TaskConfigPanel } from './TaskConfigPanel';
+import { TaskFlowEditor } from '../TaskFlowEditor';
 
 interface TaskConfigurationModalProps {
   visible: boolean;
@@ -22,6 +25,7 @@ export const TaskConfigurationModal: React.FC<TaskConfigurationModalProps> = ({
   onCancel,
 }) => {
   const [tasks, setTasks] = useState<TaskConfig[]>(initialTasks);
+  const [viewMode, setViewMode] = useState<'list' | 'flow'>('list');
 
   const handleSave = () => {
     onSave(tasks);
@@ -66,12 +70,35 @@ export const TaskConfigurationModal: React.FC<TaskConfigurationModalProps> = ({
       }
     >
       <div style={{ marginBottom: 16 }}>
-        <p style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>
-          在此页面配置机器人到达目标点后需要执行的附加任务。支持多种任务类型，任务将按顺序执行。
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <p style={{ fontSize: 14, color: '#666', margin: 0 }}>
+            在此页面配置机器人到达目标点后需要执行的附加任务。支持多种任务类型，任务将按顺序执行。
+          </p>
+
+          <Segmented
+            value={viewMode}
+            onChange={(value) => setViewMode(value as 'list' | 'flow')}
+            options={[
+              {
+                label: '列表模式',
+                value: 'list',
+                icon: <UnorderedListOutlined />,
+              },
+              {
+                label: '流程图模式',
+                value: 'flow',
+                icon: <ApartmentOutlined />,
+              },
+            ]}
+          />
+        </div>
       </div>
 
-      <TaskConfigPanel value={tasks} onChange={setTasks} />
+      {viewMode === 'list' ? (
+        <TaskConfigPanel value={tasks} onChange={setTasks} />
+      ) : (
+        <TaskFlowEditor tasks={tasks} onChange={setTasks} />
+      )}
     </Modal>
   );
 };
@@ -122,7 +149,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({ tasks, onConfigure }
   };
 
   const renderTaskSummary = (task: TaskConfig): string => {
-    const params = task.params || {};
+    const params = task.params as any || {};
 
     switch (task.type) {
       case 'wait':

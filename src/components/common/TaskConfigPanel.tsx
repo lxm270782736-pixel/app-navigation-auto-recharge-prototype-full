@@ -5,7 +5,6 @@ import {
   Select,
   InputNumber,
   Input,
-  Switch,
   Space,
   Divider,
   Radio,
@@ -46,14 +45,6 @@ import {
   createWaitTask,
   createPhotoTask,
   validateTaskConfig,
-  type WaitTaskParams,
-  type PhotoTaskParams,
-  type TrajectoryTaskParams,
-  type ScanTaskParams,
-  type SoundTaskParams,
-  type InspectTaskParams,
-  type DisplayTaskParams,
-  type SignalTaskParams,
 } from '@/types';
 
 const { Panel } = Collapse;
@@ -117,8 +108,8 @@ export const TaskConfigPanel: React.FC<TaskConfigPanelProps> = ({ value = [], on
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const oldIndex = tasks.findIndex((task, index) => `task-${index}` === active.id);
-      const newIndex = tasks.findIndex((task, index) => `task-${index}` === over.id);
+      const oldIndex = tasks.findIndex((_, index) => `task-${index}` === active.id);
+      const newIndex = tasks.findIndex((_, index) => `task-${index}` === over.id);
 
       const newTasks = arrayMove(tasks, oldIndex, newIndex);
       updateTasks(newTasks);
@@ -683,7 +674,7 @@ function renderTaskParamsEditor(
 
 // 渲染任务摘要
 function renderTaskSummary(task: TaskConfig): string {
-  const params = task.params || {};
+  const params = task.params as any || {};
 
   switch (task.type) {
     case TaskType.WAIT:
