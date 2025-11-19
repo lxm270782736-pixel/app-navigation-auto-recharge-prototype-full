@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input } from 'antd';
-import { ClockCircleOutlined } from '@ant-design/icons';
+import { Card, InputNumber, Input, Button } from 'antd';
+import { ClockCircleOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 
 export const WaitTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [duration, setDuration] = useState(data.duration || 5);
   const [label, setLabel] = useState(data.label || '等待');
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="custom-task-node">
@@ -32,23 +33,38 @@ export const WaitTaskNode: React.FC<NodeProps> = ({ data }) => {
               style={{ fontWeight: 'bold', flex: 1 }}
               bordered={false}
             />
-          </div>
-
-          <div>
-            <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>等待时长</div>
-            <InputNumber
+            <Button
+              type="text"
               size="small"
-              min={1}
-              max={600}
-              value={duration}
-              onChange={(value) => {
-                setDuration(value || 5);
-                data.duration = value || 5;
-              }}
-              addonAfter="秒"
-              style={{ width: '100%' }}
+              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ padding: '0 4px' }}
             />
           </div>
+
+          {!collapsed && (
+            <div>
+              <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>等待时长</div>
+              <InputNumber
+                size="small"
+                min={1}
+                max={600}
+                value={duration}
+                onChange={(value) => {
+                  setDuration(value || 5);
+                  data.duration = value || 5;
+                }}
+                addonAfter="秒"
+                style={{ width: '100%' }}
+              />
+            </div>
+          )}
+
+          {collapsed && (
+            <div style={{ fontSize: 11, color: '#666' }}>
+              {duration} 秒
+            </div>
+          )}
         </div>
       </Card>
 

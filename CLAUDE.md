@@ -101,12 +101,24 @@ Located in `src/types/task.ts` - highly modular design supporting 15+ task types
 - Composite: SEQUENCE, PARALLEL, CONDITIONAL, LOOP
 - Custom: CUSTOM (via ROS service)
 
+**Task Configuration UI**
+- **Modal-based editing**: Separate configuration interface from navigation panel
+- **Dual mode support**: List mode (drag-drop reordering) + Flow mode (visual programming)
+- **Visual Flow Editor** (src/components/TaskFlowEditor/):
+  - React Flow-based Scratch-like visual programming interface
+  - Drag-and-drop task nodes from palette
+  - Connect nodes to define execution flow
+  - Support for parallel execution and conditional branching
+  - Real-time parameter editing in node cards
+  - See VISUAL_TASK_FLOW_EDITOR.md for detailed usage
+
 **Adding New Tasks**
 1. Add to `TaskType` enum in src/types/task.ts
 2. Define `NewTaskParams` interface and add to `TaskParams` union
-3. Add UI controls in src/components/common/NavigationControl.tsx
-4. Implement execution in mock_rosbridge.py `execute_tasks()`
-5. Implement in real ROS action server
+3. Add UI controls in src/components/common/TaskConfigPanel.tsx
+4. Create visual node in src/components/TaskFlowEditor/nodes/ (optional)
+5. Implement execution in mock_rosbridge.py `execute_tasks()`
+6. Implement in real ROS action server
 
 See TASK_SYSTEM.md for architectural details and TASK_USAGE_GUIDE.md for examples.
 
@@ -180,20 +192,56 @@ The `mock_rosbridge.py` implements:
 
 ## Important Files
 
+### Core Services
 - `src/services/ros.ts` - Core ROS communication service
+- `src/services/storage.ts` - Map storage service (HTTP API + localStorage fallback)
 - `src/contexts/ROSContext.tsx` - React context provider
+
+### Task System
 - `src/types/task.ts` - Extensible task system types (400+ lines)
+- `src/components/common/TaskConfigPanel.tsx` - List-based task configuration
+- `src/components/common/TaskConfigurationModal.tsx` - Modal with dual-mode support
+- `src/components/TaskFlowEditor/` - Visual flow editor components:
+  - `index.tsx` - Main editor component
+  - `TaskPalette.tsx` - Drag-and-drop task palette
+  - `nodes/` - Custom task node components (10+ types)
+  - `utils/converter.ts` - Flow ↔ Tasks conversion logic
+
+### Map System
 - `src/components/common/MapCanvas.tsx` - Map rendering engine
+- `src/components/MapEditor/` - Interactive map editor
+- `src/components/MapManager/` - Map list and management
+
+### Navigation
 - `src/components/common/NavigationControl.tsx` - Navigation UI with task configuration
-- `mock_rosbridge.py` - Development mock server
+- `src/components/Navigation/` - Navigation page
+
+### Mock Server
+- `mock_rosbridge.py` - Development mock server (WebSocket + HTTP)
 
 ## Documentation References
 
-- TASK_SYSTEM.md - Extensible task architecture design
-- NAVIGATION_EVENTS.md - Navigation result/feedback/status handling
-- MOCK_NAVIGATION.md - Mock server navigation implementation
-- ROS_INTEGRATION.md - Real ROS backend integration
-- STARTUP_SCRIPTS.md - Detailed script explanations
+### Core Documentation
+- **CLAUDE.md** - This file, project overview and guidelines
+- **README.md** - Project setup and quick start
+
+### Task System
+- **TASK_SYSTEM.md** - Extensible task architecture design
+- **VISUAL_TASK_FLOW_EDITOR.md** - Visual flow editor usage guide
+- **VISUAL_TASK_EDITOR_RESEARCH.md** - Technology selection research
+- **TASK_USAGE_GUIDE.md** - Task system usage examples
+- **TASK_QUICKSTART.md** - 5-minute quick start
+
+### Map System
+- **MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture analysis and ROS Service migration plan
+
+### Navigation System
+- **NAVIGATION_EVENTS.md** - Navigation result/feedback/status handling
+- **MOCK_NAVIGATION.md** - Mock server navigation implementation
+- **ROS_INTEGRATION.md** - Real ROS backend integration
+
+### Development
+- **STARTUP_SCRIPTS.md** - Detailed script explanations
 
 ## Code Style Notes
 

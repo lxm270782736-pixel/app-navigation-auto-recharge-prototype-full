@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import ReactFlow, {
   Node,
   Connection,
@@ -11,8 +11,9 @@ import ReactFlow, {
   Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import './TaskFlowEditor.css';
 import { Button, Space, message } from 'antd';
-import { SaveOutlined, UndoOutlined } from '@ant-design/icons';
+import { SaveOutlined, UndoOutlined, DeleteOutlined } from '@ant-design/icons';
 import { TaskConfig } from '@/types';
 import { flowToTasks, tasksToFlow } from './utils/converter';
 import { WaitTaskNode } from './nodes/WaitTaskNode';
@@ -50,6 +51,48 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlow.edges);
 
+  // 监听键盘事件删除选中的节点和连接
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        // 删除选中的节点
+        setNodes((nds) => nds.filter((node) => !node.selected));
+
+        // 删除选中的边
+        setEdges((eds) => eds.filter((edge) => !edge.selected));
+
+        const hasSelectedItems = nodes.some(n => n.selected) || edges.some(e => e.selected);
+        if (hasSelectedItems) {
+          message.success('已删除选中项');
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [nodes, edges, setNodes, setEdges]);
+
+  // 删除选中项的处理函数
+  const handleDelete = useCallback(() => {
+    const selectedNodes = nodes.filter((node) => node.selected);
+    const selectedEdges = edges.filter((edge) => edge.selected);
+
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) {
+      message.warning('请先选中要删除的节点或连接线');
+      return;
+    }
+
+    // 删除选中的节点和边
+    setNodes((nds) => nds.filter((node) => !node.selected));
+    setEdges((eds) => eds.filter((edge) => !edge.selected));
+
+    message.success(
+      `已删除 ${selectedNodes.length} 个节点和 ${selectedEdges.length} 条连接线`
+    );
+  }, [nodes, edges, setNodes, setEdges]);
+
   const onConnect = useCallback(
     (params: Connection) => {
       setEdges((eds) => addEdge(params, eds));
@@ -82,8 +125,11 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
       };
 
       setNodes((nds) => nds.concat(newNode));
+
+      // 检查是否存在 start→end 的直接连接,如果存在则删除
+      setEdges((eds) => eds.filter((edge) => !(edge.source === 'start' && edge.target === 'end')));
     },
-    [setNodes]
+    [setNodes, setEdges]
   );
 
   const handleSave = () => {
@@ -121,6 +167,9 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
           nodeTypes={nodeTypes}
           fitView
           attributionPosition="bottom-left"
+          deleteKeyCode={['Delete', 'Backspace']}
+          multiSelectionKeyCode="Shift"
+          selectNodesOnDrag={false}
         >
           <Controls />
           <MiniMap
@@ -134,6 +183,14 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
           {/* 顶部工具栏 */}
           <Panel position="top-right">
             <Space>
+              <Button
+                icon={<DeleteOutlined />}
+                onClick={handleDelete}
+                size="small"
+                danger
+              >
+                删除选中
+              </Button>
               <Button icon={<UndoOutlined />} onClick={handleReset} size="small">
                 重置
               </Button>

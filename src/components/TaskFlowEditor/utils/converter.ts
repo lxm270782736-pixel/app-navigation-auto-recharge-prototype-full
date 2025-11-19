@@ -8,17 +8,33 @@ export function tasksToFlow(tasks: TaskConfig[]): { nodes: Node[]; edges: Edge[]
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  if (tasks.length === 0) {
-    return { nodes, edges };
-  }
-
-  // 创建起始节点
+  // 总是创建起始节点
   nodes.push({
     id: 'start',
     type: 'input',
     position: { x: 250, y: 50 },
     data: { label: '🚀 开始' },
   });
+
+  if (tasks.length === 0) {
+    // 即使没有任务,也创建结束节点
+    nodes.push({
+      id: 'end',
+      type: 'output',
+      position: { x: 250, y: 200 },
+      data: { label: '✅ 结束' },
+    });
+
+    edges.push({
+      id: 'edge-start-end',
+      source: 'start',
+      target: 'end',
+      animated: true,
+      style: { strokeDasharray: '5 5', stroke: '#d9d9d9' }, // 虚线样式
+    });
+
+    return { nodes, edges };
+  }
 
   let yOffset = 150;
   let previousId = 'start';
@@ -77,7 +93,17 @@ export function flowToTasks(nodes: Node[], edges: Edge[]): TaskConfig[] {
   // 找到起始节点
   const startNode = nodes.find((n) => n.type === 'input' || n.id === 'start');
   if (!startNode) {
-    throw new Error('未找到起始节点');
+    // 如果没有起始节点,尝试收集所有非起始/结束节点
+    console.warn('未找到起始节点,将收集所有任务节点');
+    nodes.forEach((node) => {
+      if (node.type !== 'input' && node.type !== 'output') {
+        const task = nodeToTask(node);
+        if (task) {
+          tasks.push(task);
+        }
+      }
+    });
+    return tasks;
   }
 
   // 从起始节点开始深度优先遍历
@@ -190,7 +216,7 @@ function getBranchTasks(
  * 将节点转换为任务配置
  */
 function nodeToTask(node: Node): TaskConfig | null {
-  const taskType = getTaskTypeFromNode(node.type);
+  const taskType = getTaskTypeFromNode(node.type || '');
   if (!taskType) return null;
 
   const params = { ...node.data };
@@ -198,7 +224,7 @@ function nodeToTask(node: Node): TaskConfig | null {
 
   return {
     type: taskType,
-    name: node.data.label,
+    name: node.data.label || '',
     params,
   };
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input } from 'antd';
-import { SoundOutlined } from '@ant-design/icons';
+import { Card, InputNumber, Input, Button } from 'antd';
+import { SoundOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 
 const { TextArea } = Input;
 
@@ -9,6 +9,7 @@ export const SoundTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [text, setText] = useState(data.text || '');
   const [volume, setVolume] = useState(data.volume || 70);
   const [label, setLabel] = useState(data.label || '播放声音');
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="custom-task-node">
@@ -35,37 +36,54 @@ export const SoundTaskNode: React.FC<NodeProps> = ({ data }) => {
               style={{ fontWeight: 'bold', flex: 1 }}
               bordered={false}
             />
-          </div>
-
-          <div>
-            <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>语音文本</div>
-            <TextArea
+            <Button
+              type="text"
               size="small"
-              rows={2}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                data.text = e.target.value;
-              }}
-              placeholder="要播放的语音文本"
+              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ padding: '0 4px' }}
             />
           </div>
 
-          <div>
-            <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>音量</div>
-            <InputNumber
-              size="small"
-              min={0}
-              max={100}
-              value={volume}
-              onChange={(value) => {
-                setVolume(value || 70);
-                data.volume = value || 70;
-              }}
-              addonAfter="%"
-              style={{ width: '100%' }}
-            />
-          </div>
+          {!collapsed && (
+            <>
+              <div>
+                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>语音文本</div>
+                <TextArea
+                  size="small"
+                  rows={2}
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    data.text = e.target.value;
+                  }}
+                  placeholder="要播放的语音文本"
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>音量</div>
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={100}
+                  value={volume}
+                  onChange={(value) => {
+                    setVolume(value || 70);
+                    data.volume = value || 70;
+                  }}
+                  addonAfter="%"
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </>
+          )}
+
+          {collapsed && (
+            <div style={{ fontSize: 11, color: '#666' }}>
+              {text.slice(0, 20)}{text.length > 20 ? '...' : ''} · {volume}%
+            </div>
+          )}
         </div>
       </Card>
 
