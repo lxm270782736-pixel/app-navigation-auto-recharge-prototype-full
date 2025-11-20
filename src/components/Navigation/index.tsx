@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -9,17 +9,17 @@ import { MapCanvas } from '@/components/common/MapCanvas';
 import { NavigationControl } from '@/components/common/NavigationControl';
 import { SimpleLocalizationControl } from '@/components/common/SimpleLocalizationControl';
 import { rosService } from '@/services/ros';
-import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose } from '@/types';
 
 export const Navigation: React.FC = () => {
-  const { mapId } = useParams<{ mapId: string }>();
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
 
-  const [mapData, setMapData] = useState<MapData | null>(null);
+  // 使用实时地图（通过 /map 话题订阅）
+  const [currentMap, setCurrentMap] = useState<MapData | null>(null);
+  const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
   const [isNavigating, setIsNavigating] = useState(false);
@@ -32,27 +32,26 @@ export const Navigation: React.FC = () => {
     current_task?: string;
   }>({});
 
+  // 订阅实时地图数据
   useEffect(() => {
-    const loadMap = async () => {
-      if (!mapId) {
-        message.error('地图ID无效');
-        navigate('/');
-        return;
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      // 断开连接时,如果有地图则标记为历史地图
+      if (currentMap) {
+        setIsMapRealtime(false);
       }
+      return;
+    }
 
-      // 加载地图数据
-      const map = await mapStorageService.getMap(mapId);
-      if (!map) {
-        message.error('地图不存在');
-        navigate('/');
-        return;
-      }
+    const unsubscribe = rosService.subscribeMap((mapData) => {
+      setCurrentMap(mapData);
+      setIsMapRealtime(true); // 接收到实时地图数据
+    });
 
-      setMapData(map);
+    return () => {
+      unsubscribe();
     };
-
-    loadMap();
-  }, [mapId, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionStatus]);
 
   // 订阅机器人位置
   useEffect(() => {
@@ -199,8 +198,21 @@ export const Navigation: React.FC = () => {
     message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
   };
 
-  if (!mapData) {
-    return <div>加载中...</div>;
+  if (!currentMap) {
+    return (
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '16px',
+        color: '#666'
+      }}>
+        {connectionStatus === ConnectionStatus.CONNECTED
+          ? '等待地图数据...'
+          : '请先连接 ROS...'}
+      </div>
+    );
   }
 
   return (
@@ -220,14 +232,21 @@ export const Navigation: React.FC = () => {
           返回
         </Button>
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          地图: {mapData.name}
+          导航 - {currentMap.name || '当前实时地图'}
+        </div>
+        <div style={{
+          marginLeft: 'auto',
+          fontSize: '14px',
+          color: isMapRealtime ? '#52c41a' : '#ff4d4f'
+        }}>
+          ● {isMapRealtime ? '实时更新' : '历史地图'}
         </div>
       </div>
 
       {/* 地图区域（全屏） */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <MapCanvas
-          mapData={mapData}
+          mapData={currentMap}
           robotPose={robotPose}
           goalPose={goalPose}
           onMapClick={handleMapClick}

@@ -317,6 +317,29 @@ class MockROSBridge:
                     print("⚠ 警告: 建图模式仍在运行，但遥控器已停止")
             self.print_system_status()
 
+        # ========== 地图管理服务 ==========
+        elif service == "/map_manager/set_current_map":
+            # 接收前端发送的历史地图数据
+            map_data = args.get("map")
+            map_id = args.get("map_id", "unknown")
+            map_name = args.get("map_name", "未命名地图")
+
+            if map_data:
+                # 更新当前地图数据
+                self.map_data = map_data
+                response["values"] = {
+                    "success": True,
+                    "message": f"地图 '{map_name}' 已设置为当前地图"
+                }
+                print(f"✓ 地图管理: 历史地图 '{map_name}' (ID: {map_id}) 已设置为当前地图")
+                print(f"   地图将通过 /map 话题实时发布")
+            else:
+                response["values"] = {
+                    "success": False,
+                    "message": "地图数据为空"
+                }
+                print("✗ 地图管理: 设置失败 - 地图数据为空")
+
         await websocket.send(json.dumps(response))
 
     async def publish_map(self, websocket):

@@ -25,7 +25,7 @@ function AppContent() {
         <Route path="/maps" element={<MapManager />} />
         <Route path="/map-editor/:mapId" element={<MapEditor />} />
         <Route path="/mapping" element={<Mapping />} />
-        <Route path="/navigation/:mapId" element={<Navigation />} />
+        <Route path="/navigation" element={<Navigation />} />
       </Routes>
     </div>
   );

@@ -473,6 +473,50 @@ class ROSService {
     return this.convertROSMapToMapData(response.map);
   }
 
+  // 设置当前地图（将历史地图设置为当前实时地图）
+  async setCurrentMap(mapData: MapData): Promise<void> {
+    // 将地图数据转换为 ROS 格式
+    const rosMap = {
+      header: {
+        frame_id: 'map',
+      },
+      info: {
+        width: mapData.width,
+        height: mapData.height,
+        resolution: mapData.resolution,
+        origin: {
+          position: {
+            x: mapData.origin.x,
+            y: mapData.origin.y,
+            z: 0,
+          },
+          orientation: {
+            x: 0,
+            y: 0,
+            z: mapData.origin.orientation,
+            w: 1,
+          },
+        },
+      },
+      data: mapData.data,
+    };
+
+    // 调用 ROS 服务设置地图
+    const response = await this.callService<any, any>(
+      '/map_manager/set_current_map',
+      'astribot_msgs/SetCurrentMap',
+      {
+        map: rosMap,
+        map_id: mapData.id,
+        map_name: mapData.name,
+      }
+    );
+
+    if (!response.success) {
+      throw new Error(response.message || '设置地图失败');
+    }
+  }
+
   // 获取地图列表
   async getMapList(): Promise<string[]> {
     const response = await this.callService<{}, { maps: string[] }>(

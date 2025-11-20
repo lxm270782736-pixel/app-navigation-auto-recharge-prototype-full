@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Statistic, Badge, Progress, Space, Button, Modal, message, List } from 'antd';
+import { Card, Row, Col, Statistic, Badge, Progress, Space, Button, Modal, message } from 'antd';
 import {
   RobotOutlined,
   ThunderboltOutlined,
@@ -34,10 +34,6 @@ export const Dashboard: React.FC = () => {
   const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
   const [isNavigating, setIsNavigating] = useState(false);
-
-  // 导航地图选择
-  const [mapSelectModalVisible, setMapSelectModalVisible] = useState(false);
-  const [availableMaps, setAvailableMaps] = useState<MapData[]>([]);
 
   // 订阅机器人位姿
   useEffect(() => {
@@ -221,25 +217,10 @@ export const Dashboard: React.FC = () => {
   };
 
   // 处理导航功能点击
-  const handleNavigationClick = async () => {
-    try {
-      const maps = await mapStorageService.getAllMaps();
-      if (maps.length === 0) {
-        message.warning('暂无保存的地图，请先创建地图');
-        return;
-      }
-      setAvailableMaps(maps);
-      setMapSelectModalVisible(true);
-    } catch (error) {
-      console.error('加载地图列表失败:', error);
-      message.error('加载地图列表失败');
-    }
-  };
-
-  // 处理地图选择
-  const handleMapSelect = (mapId: string) => {
-    setMapSelectModalVisible(false);
-    navigate(`/navigation/${mapId}`);
+  const handleNavigationClick = () => {
+    // 直接跳转到导航页面，使用当前实时地图
+    console.log('[导航] 进入导航页面');
+    navigate('/navigation');
   };
 
   // 保存地图
@@ -575,51 +556,6 @@ export const Dashboard: React.FC = () => {
           </Col>
         </Row>
       </Card>
-
-      {/* 地图选择模态框 */}
-      <Modal
-        title="选择导航地图"
-        open={mapSelectModalVisible}
-        onCancel={() => setMapSelectModalVisible(false)}
-        footer={null}
-        width={800}
-      >
-        <List
-          grid={{ gutter: 16, xs: 1, sm: 2, md: 2, lg: 3, xl: 3 }}
-          dataSource={availableMaps}
-          renderItem={(map) => (
-            <List.Item>
-              <Card
-                hoverable
-                onClick={() => handleMapSelect(map.id)}
-                cover={
-                  <img
-                    alt={map.name}
-                    src={map.thumbnail}
-                    style={{
-                      height: '150px',
-                      objectFit: 'cover',
-                      background: '#f0f0f0',
-                    }}
-                  />
-                }
-              >
-                <Card.Meta
-                  title={map.name}
-                  description={
-                    <div style={{ fontSize: '12px' }}>
-                      <div>{new Date(map.createdAt).toLocaleString('zh-CN')}</div>
-                      <div style={{ marginTop: '4px', color: '#999' }}>
-                        {map.width} × {map.height} px
-                      </div>
-                    </div>
-                  }
-                />
-              </Card>
-            </List.Item>
-          )}
-        />
-      </Modal>
     </div>
   );
 };

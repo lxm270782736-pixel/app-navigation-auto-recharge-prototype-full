@@ -70,8 +70,8 @@ fi
 echo ""
 
 # 检查前端服务器
-if lsof -Pi :3000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
-    echo "✓ 前端服务器已在端口3000运行"
+if lsof -Pi :3500 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    echo "✓ 前端服务器已在端口3500运行"
     VITE_PID=""
 else
     echo "启动前端服务器..."
@@ -79,7 +79,7 @@ else
     VITE_PID=$!
     sleep 3
 
-    if lsof -Pi :3000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    if lsof -Pi :3500 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
         echo "✓ 前端服务器已启动 (PID: $VITE_PID)"
     else
         echo "✗ 前端服务器启动失败"
@@ -95,7 +95,7 @@ echo "  ✅ 所有服务已启动！"
 echo "=========================================="
 echo ""
 echo "  🌐 访问地址:"
-echo "     http://localhost:3000"
+echo "     http://localhost:3500"
 echo ""
 echo "  🤖 ROS Bridge (真机):"
 echo "     ws://localhost:9090"
