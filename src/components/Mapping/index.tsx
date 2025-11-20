@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, message, Modal, Input, Spin } from 'antd';
-import { ArrowLeftOutlined, StopOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { Card, Button, message, Modal, Input, Spin, Steps, Space } from 'antd';
+import {
+  ArrowLeftOutlined,
+  StopOutlined,
+  PlayCircleOutlined,
+  LoadingOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+} from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
@@ -16,6 +23,11 @@ export const Mapping: React.FC = () => {
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [mapName, setMapName] = useState('');
   const [currentMapData, setCurrentMapData] = useState<Partial<MapData> | null>(null);
+
+  // 建图启动流程状态
+  const [mappingModalVisible, setMappingModalVisible] = useState(false);
+  const [mappingStep, setMappingStep] = useState(0);
+  const [mappingStepStatus, setMappingStepStatus] = useState<('wait' | 'process' | 'finish' | 'error')[]>(['wait', 'wait']);
 
   // 组件卸载时停止建图
   useEffect(() => {
@@ -55,21 +67,81 @@ export const Mapping: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  const startMapping = async () => {
+  const startMapping = () => {
+    // 打开建图启动交互框
+    setMappingModalVisible(true);
+    setMappingStep(0);
+    setMappingStepStatus(['wait', 'wait']);
+  };
+
+  const executeMappingStartup = async () => {
     try {
-      await rosService.startMapping();
+      // 步骤 1: 启动遥控器
+      setMappingStep(1);
+      setMappingStepStatus(['process', 'wait']);
+
+      const joystickResult = await rosService.startJoystick();
+      if (!joystickResult.success) {
+        setMappingStepStatus(['error', 'wait']);
+        message.error(joystickResult.message || '启动遥控器失败');
+        return;
+      }
+
+      setMappingStepStatus(['finish', 'wait']);
+      message.success('遥控器已启动');
+
+      // 延迟一下，让用户看到第一步完成
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // 步骤 2: 启动建图节点
+      setMappingStep(2);
+      setMappingStepStatus(['finish', 'process']);
+
+      const mappingResult = await rosService.startMapping();
+      if (!mappingResult.success) {
+        setMappingStepStatus(['finish', 'error']);
+        message.error(mappingResult.message || '启动建图模式失败');
+        return;
+      }
+
+      setMappingStepStatus(['finish', 'finish']);
       setIsMapping(true);
-      message.success('建图已启动，请使用遥控器控制机器人移动');
+      message.success('建图模式已启动');
+
+      // 延迟关闭 Modal
+      setTimeout(() => {
+        setMappingModalVisible(false);
+      }, 1500);
     } catch (error) {
       message.error('启动建图失败');
-      console.error('Failed to start mapping:', error);
+      console.error(error);
+      setMappingStepStatus(prev => {
+        const newStatus = [...prev];
+        if (mappingStep === 1) newStatus[0] = 'error';
+        if (mappingStep === 2) newStatus[1] = 'error';
+        return newStatus as ('wait' | 'process' | 'finish' | 'error')[];
+      });
     }
   };
 
   const stopMapping = async () => {
     try {
-      await rosService.stopMapping();
+      // 步骤 1: 停止建图节点
+      const stopResult = await rosService.stopLocalization();
+      if (!stopResult.success) {
+        message.error(stopResult.message || '停止建图失败');
+        return;
+      }
+
+      // 步骤 2: 停止遥控器
+      const joystickResult = await rosService.stopJoystick();
+      if (!joystickResult.success) {
+        // 遥控器停止失败不影响整体流程，只是警告
+        message.warning(joystickResult.message || '停止遥控器失败');
+      }
+
       setIsMapping(false);
+      message.success('建图已停止，遥控器已关闭');
 
       // 生成默认地图名称
       const defaultName = await mapStorageService.generateDefaultMapName();
@@ -285,6 +357,115 @@ export const Mapping: React.FC = () => {
         )}
       </Card>
 
+      {/* 建图启动流程Modal */}
+      <Modal
+        title="启动建图模式"
+        open={mappingModalVisible}
+        onCancel={() => {
+          if (mappingStep === 0 || mappingStepStatus[1] === 'finish' || mappingStepStatus.includes('error')) {
+            setMappingModalVisible(false);
+          }
+        }}
+        footer={
+          mappingStep === 0 ? (
+            <Space>
+              <Button onClick={() => setMappingModalVisible(false)}>取消</Button>
+              <Button type="primary" onClick={executeMappingStartup}>
+                开始执行
+              </Button>
+            </Space>
+          ) : (
+            mappingStepStatus[1] === 'finish' ? (
+              <Button type="primary" onClick={() => setMappingModalVisible(false)}>
+                关闭
+              </Button>
+            ) : mappingStepStatus.includes('error') ? (
+              <Space>
+                <Button onClick={() => setMappingModalVisible(false)}>关闭</Button>
+                <Button type="primary" onClick={() => {
+                  setMappingStep(0);
+                  setMappingStepStatus(['wait', 'wait']);
+                  executeMappingStartup();
+                }}>
+                  重试
+                </Button>
+              </Space>
+            ) : null
+          )
+        }
+        width={500}
+        closable={mappingStep === 0 || mappingStepStatus[1] === 'finish' || mappingStepStatus.includes('error')}
+        maskClosable={false}
+      >
+        <div style={{ padding: '24px 0' }}>
+          {mappingStep === 0 ? (
+            <div>
+              <p style={{ marginBottom: 16, color: '#666', fontSize: 14 }}>
+                启动建图模式需要按以下步骤执行：
+              </p>
+              <Steps
+                direction="vertical"
+                size="small"
+                current={-1}
+                items={[
+                  {
+                    title: '启动遥控器',
+                    description: '启动机器人遥控系统，使机器人可以通过手柄控制移动',
+                  },
+                  {
+                    title: '启动建图节点',
+                    description: '启动SLAM建图算法，开始构建环境地图',
+                  },
+                ]}
+              />
+            </div>
+          ) : (
+            <div>
+              <Steps
+                direction="vertical"
+                size="small"
+                current={mappingStep - 1}
+                items={[
+                  {
+                    title: '启动遥控器',
+                    status: mappingStepStatus[0],
+                    description: '启动机器人遥控系统，使机器人可以通过手柄控制移动',
+                    icon: mappingStepStatus[0] === 'process' ? <LoadingOutlined /> :
+                      mappingStepStatus[0] === 'finish' ? <CheckCircleOutlined /> :
+                      mappingStepStatus[0] === 'error' ? <CloseCircleOutlined /> : undefined,
+                  },
+                  {
+                    title: '启动建图节点',
+                    status: mappingStepStatus[1],
+                    description: '启动SLAM建图算法，开始构建环境地图',
+                    icon: mappingStepStatus[1] === 'process' ? <LoadingOutlined /> :
+                      mappingStepStatus[1] === 'finish' ? <CheckCircleOutlined /> :
+                      mappingStepStatus[1] === 'error' ? <CloseCircleOutlined /> : undefined,
+                  },
+                ]}
+              />
+              {mappingStepStatus[1] === 'finish' && (
+                <div style={{
+                  marginTop: 24,
+                  padding: 16,
+                  background: '#f0f9ff',
+                  borderRadius: 4,
+                  border: '1px solid #91d5ff',
+                }}>
+                  <div style={{ color: '#0958d9', fontWeight: 500, marginBottom: 8 }}>
+                    ✅ 建图模式已成功启动
+                  </div>
+                  <div style={{ color: '#666', fontSize: 13 }}>
+                    请使用遥控器控制机器人在环境中移动，系统将自动构建地图
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* 保存地图Modal */}
       <Modal
         title="保存地图"
         open={saveModalVisible}

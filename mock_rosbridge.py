@@ -29,6 +29,11 @@ class MockROSBridge:
         self.navigation_start_pose = None
         self.navigation_start_time = 0.0
         self.navigation_tasks = []
+        # 定位服务状态
+        self.localization_mode = "idle"  # idle, mapping, localization, localization_auto, obstacle_avoidance
+        self.localization_status_message = "未启动"
+        # 遥控器状态
+        self.joystick_active = False
 
     def generate_sample_map(self):
         """生成示例地图数据"""
@@ -64,6 +69,17 @@ class MockROSBridge:
             },
             "data": data
         }
+
+    def print_system_status(self):
+        """打印当前系统状态"""
+        print("\n" + "="*50)
+        print("📊 系统状态")
+        print("="*50)
+        print(f"定位模式: {self.localization_mode}")
+        print(f"建图状态: {'运行中' if self.mapping_active else '已停止'}")
+        print(f"遥控器: {'运行中' if self.joystick_active else '已停止'}")
+        print(f"状态消息: {self.localization_status_message}")
+        print("="*50 + "\n")
 
     async def handle_client(self, websocket, path):
         """处理客户端连接"""
@@ -127,6 +143,8 @@ class MockROSBridge:
             asyncio.create_task(self.publish_robot_pose(websocket))
         elif topic == "/amcl_pose":
             asyncio.create_task(self.publish_amcl_pose(websocket))
+        elif topic == "/localization/status":
+            asyncio.create_task(self.publish_localization_status(websocket))
 
     async def handle_unsubscribe(self, websocket, data):
         """处理取消订阅"""
@@ -168,6 +186,7 @@ class MockROSBridge:
 
         response = {"op": "service_response", "id": call_id, "values": {}}
 
+        # 旧的建图服务（兼容性保留）
         if service == "/start_mapping":
             self.mapping_active = True
             response["values"] = {"success": True, "message": "建图已启动"}
@@ -182,6 +201,96 @@ class MockROSBridge:
             map_name = args.get("map_name", "default_map")
             response["values"] = {"success": True, "message": f"地图 {map_name} 已保存"}
             print(f"✓ 地图已保存: {map_name}")
+
+        # ========== 新的定位服务 ==========
+        elif service == "/localization/start_mapping":
+            if not self.joystick_active:
+                print("⚠ 警告: 建图前应先启动遥控器")
+            print("🗺️  正在启动建图节点...")
+            print("   ⏳ 初始化SLAM算法 (5秒)...")
+            await asyncio.sleep(5)  # 模拟建图节点启动过程
+            self.localization_mode = "mapping"
+            self.localization_status_message = "建图模式运行中 | 遥控器: " + ("已启动" if self.joystick_active else "未启动")
+            self.mapping_active = True
+            response["values"] = {"success": True, "message": "建图模式已启动"}
+            print(f"✓ 定位服务: 建图模式已启动 (遥控器状态: {'已启动' if self.joystick_active else '未启动'})")
+            self.print_system_status()
+
+        elif service == "/localization/start_localization":
+            self.localization_mode = "localization"
+            self.localization_status_message = "定位模式已启动（手动）"
+            response["values"] = {"success": True, "message": "定位模式已启动（手动）"}
+            print("✓ 定位服务: 定位模式已启动（手动）")
+
+        elif service == "/localization/start_localization_auto":
+            self.localization_mode = "localization_auto"
+            self.localization_status_message = "定位模式已启动（自动）"
+            response["values"] = {"success": True, "message": "定位模式已启动（自动）"}
+            print("✓ 定位服务: 定位模式已启动（自动）")
+
+        elif service == "/localization/start_obstacle_avoidance":
+            self.localization_mode = "obstacle_avoidance"
+            self.localization_status_message = "纯避障模式已启动"
+            response["values"] = {"success": True, "message": "纯避障模式已启动"}
+            print("✓ 定位服务: 纯避障模式已启动")
+
+        elif service == "/localization/stop":
+            was_mapping = self.mapping_active
+            if was_mapping:
+                print("🛑 正在停止建图节点...")
+                print("   ⏳ 保存地图数据 (2秒)...")
+                await asyncio.sleep(2)  # 模拟停止过程
+            self.localization_mode = "idle"
+            self.mapping_active = False
+            self.localization_status_message = "定位服务已停止 | 遥控器: " + ("运行中" if self.joystick_active else "已停止")
+            response["values"] = {"success": True, "message": "定位服务已停止"}
+            print(f"✓ 定位服务: 已停止 (遥控器状态: {'运行中' if self.joystick_active else '已停止'})")
+            if was_mapping and self.joystick_active:
+                print("💡 提示: 建图已停止，但遥控器仍在运行")
+            self.print_system_status()
+
+        elif service == "/localization/shutdown":
+            self.localization_mode = "idle"
+            self.localization_status_message = "定位服务已关闭"
+            self.mapping_active = False
+            response["values"] = {"success": True, "message": "定位服务已关闭"}
+            print("✓ 定位服务: 已关闭")
+
+        # ========== 遥控器服务 ==========
+        elif service == "/joystick/start":
+            if self.joystick_active:
+                response["values"] = {"success": True, "message": "遥控器已经在运行"}
+                print("⚠ 遥控器: 已经在运行")
+            else:
+                print("🚀 正在启动遥控器...")
+                print("   ⏳ 模拟启动过程 (5秒)...")
+                await asyncio.sleep(5)  # 模拟启动过程
+                self.joystick_active = True
+                response["values"] = {"success": True, "message": "遥控器已启动"}
+                print("✓ 遥控器: 已启动")
+                # 更新定位状态消息
+                if self.localization_mode == "mapping":
+                    self.localization_status_message = "建图模式运行中 | 遥控器: 已启动"
+            self.print_system_status()
+
+        elif service == "/joystick/stop":
+            if not self.joystick_active:
+                response["values"] = {"success": True, "message": "遥控器已经停止"}
+                print("⚠ 遥控器: 已经停止")
+            else:
+                print("🛑 正在停止遥控器...")
+                print("   ⏳ 断开连接 (2秒)...")
+                await asyncio.sleep(2)  # 模拟停止过程
+                self.joystick_active = False
+                response["values"] = {"success": True, "message": "遥控器已停止"}
+                print("✓ 遥控器: 已停止")
+                # 更新定位状态消息
+                if self.localization_mode == "mapping":
+                    self.localization_status_message = "建图模式运行中 | 遥控器: 已停止"
+                    print("⚠ 警告: 建图模式仍在运行，但遥控器已停止")
+                elif self.localization_mode == "idle":
+                    self.localization_status_message = "定位服务已停止 | 遥控器: 已停止"
+            self.print_system_status()
 
         await websocket.send(json.dumps(response))
 
@@ -288,6 +397,22 @@ class MockROSBridge:
             except:
                 break
             await asyncio.sleep(0.1)
+
+    async def publish_localization_status(self, websocket):
+        """定期发布定位服务状态"""
+        while websocket in self.clients and "/localization/status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/localization/status",
+                "msg": {
+                    "data": self.localization_status_message
+                }
+            }
+            try:
+                await websocket.send(json.dumps(message))
+            except:
+                break
+            await asyncio.sleep(1.0)  # 每秒更新一次状态
 
     async def handle_action_goal(self, websocket, data):
         """处理导航 Action Goal"""
@@ -814,12 +939,27 @@ async def main():
     print("  ✓ 机器人里程计发布 (/odom)")
     print("  ✓ AMCL位姿估计 (/amcl_pose)")
     print("  ✓ 初始位姿设置 (/initialpose)")
-    print("  ✓ 建图服务 (/start_mapping, /stop_mapping)")
+    print()
+    print("定位服务 (Localization Service):")
+    print("  ✓ 建图模式 (/localization/start_mapping)")
+    print("  ✓ 定位模式-手动 (/localization/start_localization)")
+    print("  ✓ 定位模式-自动 (/localization/start_localization_auto)")
+    print("  ✓ 纯避障模式 (/localization/start_obstacle_avoidance)")
+    print("  ✓ 停止服务 (/localization/stop)")
+    print("  ✓ 关闭服务 (/localization/shutdown)")
+    print("  ✓ 状态发布 (/localization/status)")
+    print()
+    print("建图服务 (旧接口, 兼容性保留):")
+    print("  ✓ 启动建图 (/start_mapping)")
+    print("  ✓ 停止建图 (/stop_mapping)")
     print("  ✓ 地图保存 (/save_map)")
+    print()
+    print("导航服务:")
     print("  ✓ 导航 Action (/move_chassis_to_server)")
     print("    - 模拟导航过程（状态、反馈、结果）")
     print("    - 实时位置插值")
     print("    - 支持取消导航")
+    print("    - 支持附加任务（15+ 任务类型）")
     print()
     print("HTTP API 端点:")
     print("  GET    /api/maps          - 获取所有地图")

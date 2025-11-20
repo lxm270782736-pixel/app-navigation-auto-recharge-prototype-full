@@ -61,6 +61,12 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
 - Manages connection state: DISCONNECTED/CONNECTING/CONNECTED/ERROR
 - Auto-connects on mount if `autoConnect={true}`
 
+**Localization Mode Control (src/components/common/LocalizationManager.tsx)**
+- UI component for switching robot operating modes: idle, mapping, localization, localization_auto, obstacle_avoidance
+- Calls ROS services: `startMapping()`, `startLocalization()`, `startObstacleAvoidance()`, `stopAll()`
+- Subscribes to `/localization_status` topic for mode feedback
+- Used in Dashboard for centralized mode management
+
 ### Navigation System
 
 **Goal Structure**
@@ -82,12 +88,16 @@ NavigationGoal {
 - Receives: status updates (PENDING→ACTIVE→SUCCEEDED/ABORTED/PREEMPTED), feedback (distance, progress, ETA), result (success + message)
 - See NAVIGATION_EVENTS.md for detailed event handling
 
-**Navigation Result Analysis**
-Success requires TWO conditions:
-1. `actionlib` status === 3 (SUCCEEDED)
-2. `result.result.success !== false` (附加任务成功)
+**Navigation Result Analysis (CRITICAL)**
+Navigation success requires checking TWO separate conditions:
+1. `actionlib` status === 3 (SUCCEEDED) - Robot physically reached goal position
+2. `result.result.success !== false` - All attached tasks completed successfully
 
-This dual-check handles cases where robot reaches goal (actionlib succeeds) but attached task fails.
+This dual-check pattern is essential because:
+- Robot can reach goal position (condition 1 passes) but attached tasks may fail (condition 2 fails)
+- Both must succeed for overall navigation success
+- Example: Robot reaches waypoint but camera task fails → navigation should be marked as failed
+- See NAVIGATION_EVENTS.md for complete event handling details
 
 ### Extensible Task System
 
@@ -139,24 +149,30 @@ See TASK_SYSTEM.md for architectural details and TASK_USAGE_GUIDE.md for example
 
 ## Important Implementation Details
 
-### Coordinate System
+### Coordinate System Transforms
 - ROS uses world coordinates (meters) with configurable origin
 - Canvas uses pixel coordinates (0,0 at top-left)
-- Transform: `pixel = (world - origin) / resolution`
-- Map origin can be negative (e.g., origin at center means negative coords in top-left)
+- Transform formula: `pixel = (world - origin) / resolution`
+- Map origin can be negative (e.g., origin at center means negative coords in top-left quadrant)
+- IMPORTANT: Always use MapCanvas's coordinate transform methods, don't implement transforms manually
 
-### Trajectory Sampling
-- Only add point if distance moved > 0.1m
-- Keep last 500 points max
-- Prevents memory bloat during long navigation
+### Trajectory Sampling Strategy
+- Only add point if distance moved > 0.1m (prevents point clustering)
+- Keep last 500 points max (FIFO queue)
+- Prevents memory bloat during long navigation sessions
+- Sampling logic in Navigation/index.tsx
 
-### Connection Management
-- Auto-reconnect after 3 seconds on close
-- Clear reconnect timer on manual disconnect
+### ROS Connection Management
+- Auto-reconnect after 3 seconds on close (prevents reconnect storms)
+- Clear reconnect timer on manual disconnect (avoids zombie timers)
 - Emit 'connection' event with {connected: boolean}
+- IMPORTANT: Always unsubscribe from topics in useEffect cleanup to prevent memory leaks
 
-### Map Compression
-Maps are stored with GZIP compression in saved_maps/ directory to reduce file size.
+### Map Storage
+- Server-side: saved_maps/ directory with GZIP compression
+- Client fallback: localStorage (max 5-10MB typically)
+- Automatic fallback chain: HTTP API → localStorage
+- Thumbnail generation: max 200x200px for performance
 
 ## Development Workflow
 
@@ -190,58 +206,34 @@ The `mock_rosbridge.py` implements:
 - Always succeeds (no collision detection)
 - Minimum 3-second duration regardless of distance
 
-## Important Files
+## Key Entry Points
 
-### Core Services
-- `src/services/ros.ts` - Core ROS communication service
-- `src/services/storage.ts` - Map storage service (HTTP API + localStorage fallback)
-- `src/contexts/ROSContext.tsx` - React context provider
+**Core Services**
+- `src/services/ros.ts` - ROS communication singleton with event emitter pattern
+- `src/services/storage.ts` - Map storage with HTTP + localStorage fallback
+- `src/contexts/ROSContext.tsx` - Connection state management provider
 
-### Task System
-- `src/types/task.ts` - Extensible task system types (400+ lines)
-- `src/components/common/TaskConfigPanel.tsx` - List-based task configuration
-- `src/components/common/TaskConfigurationModal.tsx` - Modal with dual-mode support
-- `src/components/TaskFlowEditor/` - Visual flow editor components:
-  - `index.tsx` - Main editor component
-  - `TaskPalette.tsx` - Drag-and-drop task palette
-  - `nodes/` - Custom task node components (10+ types)
-  - `utils/converter.ts` - Flow ↔ Tasks conversion logic
+**Task System Core**
+- `src/types/task.ts` - 400+ lines defining 15+ extensible task types
+- `src/components/TaskFlowEditor/utils/converter.ts` - Converts between visual flow and task configs
 
-### Map System
-- `src/components/common/MapCanvas.tsx` - Map rendering engine
-- `src/components/MapEditor/` - Interactive map editor
-- `src/components/MapManager/` - Map list and management
+**Map Rendering**
+- `src/components/common/MapCanvas.tsx` - Canvas-based map renderer with coordinate transforms
 
-### Navigation
-- `src/components/common/NavigationControl.tsx` - Navigation UI with task configuration
-- `src/components/Navigation/` - Navigation page
-
-### Mock Server
-- `mock_rosbridge.py` - Development mock server (WebSocket + HTTP)
+**Mock Development**
+- `mock_rosbridge.py` - Simulates ROS Bridge (9090) + HTTP API (8080) for development
 
 ## Documentation References
 
-### Core Documentation
-- **CLAUDE.md** - This file, project overview and guidelines
-- **README.md** - Project setup and quick start
+**Essential Reading**
+- **NAVIGATION_EVENTS.md** - Critical: Navigation result/feedback/status event handling details
+- **TASK_SYSTEM.md** - Extensible task architecture design and adding new task types
+- **VISUAL_TASK_FLOW_EDITOR.md** - Visual flow editor (React Flow-based) usage guide
+- **ROS_INTEGRATION.md** - Real ROS backend integration and topic/service interfaces
+- **MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture and ROS Service migration plan
 
-### Task System
-- **TASK_SYSTEM.md** - Extensible task architecture design
-- **VISUAL_TASK_FLOW_EDITOR.md** - Visual flow editor usage guide
-- **VISUAL_TASK_EDITOR_RESEARCH.md** - Technology selection research
-- **TASK_USAGE_GUIDE.md** - Task system usage examples
-- **TASK_QUICKSTART.md** - 5-minute quick start
-
-### Map System
-- **MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture analysis and ROS Service migration plan
-
-### Navigation System
-- **NAVIGATION_EVENTS.md** - Navigation result/feedback/status handling
-- **MOCK_NAVIGATION.md** - Mock server navigation implementation
-- **ROS_INTEGRATION.md** - Real ROS backend integration
-
-### Development
-- **STARTUP_SCRIPTS.md** - Detailed script explanations
+**Additional Documentation**
+- STARTUP_SCRIPTS.md, MOCK_NAVIGATION.md, TASK_USAGE_GUIDE.md, TASK_QUICKSTART.md, VISUAL_TASK_EDITOR_RESEARCH.md
 
 ## Code Style Notes
 

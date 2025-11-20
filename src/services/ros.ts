@@ -292,14 +292,167 @@ class ROSService {
     actionClient.cancel();
   }
 
-  // 开始建图
-  async startMapping(): Promise<void> {
-    return this.callService('/start_mapping', 'std_srvs/Trigger', {});
+  // ========== 定位服务 (Localization Service) ==========
+
+  // 启动遥控器
+  async startJoystick(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/joystick/start',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Joystick started',
+      };
+    } catch (error) {
+      console.error('Failed to start joystick:', error);
+      throw error;
+    }
   }
 
-  // 结束建图
+  // 停止遥控器
+  async stopJoystick(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/joystick/stop',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Joystick stopped',
+      };
+    } catch (error) {
+      console.error('Failed to stop joystick:', error);
+      throw error;
+    }
+  }
+
+  // 启动建图模式
+  async startMapping(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/start_mapping',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Mapping mode started',
+      };
+    } catch (error) {
+      console.error('Failed to start mapping:', error);
+      throw error;
+    }
+  }
+
+  // 启动定位模式（手动初始化）
+  async startLocalization(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/start_localization',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Localization mode started (manual)',
+      };
+    } catch (error) {
+      console.error('Failed to start localization:', error);
+      throw error;
+    }
+  }
+
+  // 启动定位模式（自动重定位）
+  async startLocalizationAuto(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/start_localization_auto',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Localization mode started (auto)',
+      };
+    } catch (error) {
+      console.error('Failed to start auto localization:', error);
+      throw error;
+    }
+  }
+
+  // 启动纯避障输出模式
+  async startObstacleAvoidance(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/start_obstacle_avoidance',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Obstacle avoidance mode started',
+      };
+    } catch (error) {
+      console.error('Failed to start obstacle avoidance:', error);
+      throw error;
+    }
+  }
+
+  // 停止当前模式
+  async stopLocalization(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/stop',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Localization stopped',
+      };
+    } catch (error) {
+      console.error('Failed to stop localization:', error);
+      throw error;
+    }
+  }
+
+  // 关闭定位服务
+  async shutdownLocalization(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.callService<{}, any>(
+        '/localization/shutdown',
+        'std_srvs/Trigger',
+        {}
+      );
+      return {
+        success: response.success || false,
+        message: response.message || 'Localization service shutdown',
+      };
+    } catch (error) {
+      console.error('Failed to shutdown localization:', error);
+      throw error;
+    }
+  }
+
+  // 订阅定位状态
+  subscribeLocalizationStatus(callback: (status: any) => void): () => void {
+    return this.subscribeTopic<any>(
+      '/localization/status',
+      'std_msgs/String',
+      callback
+    );
+  }
+
+  // ========== 旧的建图服务 (兼容性保留) ==========
+
+  // 结束建图 (旧接口,保持兼容)
   async stopMapping(): Promise<void> {
-    return this.callService('/stop_mapping', 'std_srvs/Trigger', {});
+    // 调用新的停止服务
+    await this.stopLocalization();
   }
 
   // 保存地图

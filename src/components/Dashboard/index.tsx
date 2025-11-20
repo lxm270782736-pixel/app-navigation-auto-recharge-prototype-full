@@ -10,7 +10,6 @@ import {
   DashboardOutlined,
   ToolOutlined,
   ApiOutlined,
-  AimOutlined,
   SaveOutlined,
   SendOutlined,
 } from '@ant-design/icons';
@@ -19,7 +18,7 @@ import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose, MapData } from '@/types';
 import { MapCanvas } from '@/components/common/MapCanvas';
-import { NavigationControl, OperationMode } from '@/components/common/NavigationControl';
+import { NavigationControl } from '@/components/common/NavigationControl';
 import { mapStorageService } from '@/services/storage';
 
 export const Dashboard: React.FC = () => {
@@ -35,9 +34,6 @@ export const Dashboard: React.FC = () => {
   const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
   const [isNavigating, setIsNavigating] = useState(false);
-  const [operationMode, setOperationMode] = useState<OperationMode>(
-    OperationMode.LOCALIZE
-  );
 
   // 导航地图选择
   const [mapSelectModalVisible, setMapSelectModalVisible] = useState(false);
@@ -218,25 +214,10 @@ export const Dashboard: React.FC = () => {
   const handleMapClick = (x: number, y: number, theta?: number) => {
     if (!currentMap) return;
 
-    if (operationMode === OperationMode.LOCALIZE) {
-      // 设置初始位姿
-      Modal.confirm({
-        title: '设置初始位姿',
-        content: '确认将机器人定位到此位置吗？',
-        onOk: () => {
-          const pose: Pose = { x, y, theta: theta || 0 };
-          rosService.setInitialPose(pose);
-          setRobotPose(pose);
-          message.success('初始位姿已设置');
-          setOperationMode(OperationMode.SET_GOAL);
-        },
-      });
-    } else if (operationMode === OperationMode.SET_GOAL) {
-      // 设置目标点
-      const pose: Pose = { x, y, theta: theta || 0 };
-      setGoalPose(pose);
-      message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
-    }
+    // 设置目标点
+    const pose: Pose = { x, y, theta: theta || 0 };
+    setGoalPose(pose);
+    message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
   };
 
   // 处理导航功能点击
@@ -477,8 +458,6 @@ export const Dashboard: React.FC = () => {
                 robotPose={robotPose}
                 goalPose={goalPose}
                 isNavigating={isNavigating}
-                operationMode={operationMode}
-                onOperationModeChange={setOperationMode}
                 onNavigationStart={() => setIsNavigating(true)}
                 onNavigationStop={() => setIsNavigating(false)}
               />
@@ -500,15 +479,9 @@ export const Dashboard: React.FC = () => {
                 fontWeight: '500',
               }}
             >
-              {operationMode === OperationMode.LOCALIZE ? (
-                <div>
-                  <AimOutlined /> 点击地图设置机器人的初始位置
-                </div>
-              ) : (
-                <div>
-                  <EnvironmentOutlined /> 点击地图选择导航目标点
-                </div>
-              )}
+              <div>
+                <EnvironmentOutlined /> 点击地图选择导航目标点
+              </div>
             </div>
           </div>
           <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '13px' }}>
