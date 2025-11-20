@@ -210,23 +210,55 @@ class MockROSBridge:
             print("   ⏳ 初始化SLAM算法 (5秒)...")
             await asyncio.sleep(5)  # 模拟建图节点启动过程
             self.localization_mode = "mapping"
-            self.localization_status_message = "建图模式运行中 | 遥控器: " + ("已启动" if self.joystick_active else "未启动")
+            self.localization_status_message = "建图模式已启动"
             self.mapping_active = True
             response["values"] = {"success": True, "message": "建图模式已启动"}
             print(f"✓ 定位服务: 建图模式已启动 (遥控器状态: {'已启动' if self.joystick_active else '未启动'})")
             self.print_system_status()
 
         elif service == "/localization/start_localization":
+            print("📍 正在启动定位模式（手动）...")
+            print("   ⏳ 等待初始位置设置...")
             self.localization_mode = "localization"
-            self.localization_status_message = "定位模式已启动（手动）"
+            self.localization_status_message = "定位中（手动）..."
+            # 先返回启动消息
             response["values"] = {"success": True, "message": "定位模式已启动（手动）"}
-            print("✓ 定位服务: 定位模式已启动（手动）")
+            await websocket.send(json.dumps(response))
+            # 模拟定位过程
+            print("   ⏳ 粒子滤波定位中 (10秒)...")
+            await asyncio.sleep(10)
+            # 模拟成功/失败 (20%失败率)
+            import random
+            if random.random() < 0.5:
+                self.localization_status_message = "定位失败（手动）: 粒子收敛失败"
+                print("✗ 定位服务: 定位失败（手动）- 粒子收敛失败")
+            else:
+                self.localization_status_message = "定位成功（手动）"
+                print("✓ 定位服务: 定位完成（手动）")
+            self.print_system_status()
+            return  # 已经发送过response，直接返回
 
         elif service == "/localization/start_localization_auto":
+            print("📍 正在启动定位模式（自动）...")
+            print("   ⏳ 自动搜索机器人位置...")
             self.localization_mode = "localization_auto"
-            self.localization_status_message = "定位模式已启动（自动）"
+            self.localization_status_message = "定位中（自动）..."
+            # 先返回启动消息
             response["values"] = {"success": True, "message": "定位模式已启动（自动）"}
-            print("✓ 定位服务: 定位模式已启动（自动）")
+            await websocket.send(json.dumps(response))
+            # 模拟定位过程
+            print("   ⏳ 全局定位计算中 (10秒)...")
+            await asyncio.sleep(10)
+            # 模拟成功/失败 (20%失败率)
+            import random
+            if random.random() < 0.5:
+                self.localization_status_message = "定位失败（自动）: 无法找到匹配位置"
+                print("✗ 定位服务: 定位失败（自动）- 无法找到匹配位置")
+            else:
+                self.localization_status_message = "定位成功（自动）"
+                print("✓ 定位服务: 定位完成（自动）")
+            self.print_system_status()
+            return  # 已经发送过response，直接返回
 
         elif service == "/localization/start_obstacle_avoidance":
             self.localization_mode = "obstacle_avoidance"
@@ -242,7 +274,7 @@ class MockROSBridge:
                 await asyncio.sleep(2)  # 模拟停止过程
             self.localization_mode = "idle"
             self.mapping_active = False
-            self.localization_status_message = "定位服务已停止 | 遥控器: " + ("运行中" if self.joystick_active else "已停止")
+            self.localization_status_message = "定位服务已停止"
             response["values"] = {"success": True, "message": "定位服务已停止"}
             print(f"✓ 定位服务: 已停止 (遥控器状态: {'运行中' if self.joystick_active else '已停止'})")
             if was_mapping and self.joystick_active:
@@ -268,9 +300,6 @@ class MockROSBridge:
                 self.joystick_active = True
                 response["values"] = {"success": True, "message": "遥控器已启动"}
                 print("✓ 遥控器: 已启动")
-                # 更新定位状态消息
-                if self.localization_mode == "mapping":
-                    self.localization_status_message = "建图模式运行中 | 遥控器: 已启动"
             self.print_system_status()
 
         elif service == "/joystick/stop":
@@ -284,12 +313,8 @@ class MockROSBridge:
                 self.joystick_active = False
                 response["values"] = {"success": True, "message": "遥控器已停止"}
                 print("✓ 遥控器: 已停止")
-                # 更新定位状态消息
                 if self.localization_mode == "mapping":
-                    self.localization_status_message = "建图模式运行中 | 遥控器: 已停止"
                     print("⚠ 警告: 建图模式仍在运行，但遥控器已停止")
-                elif self.localization_mode == "idle":
-                    self.localization_status_message = "定位服务已停止 | 遥控器: 已停止"
             self.print_system_status()
 
         await websocket.send(json.dumps(response))

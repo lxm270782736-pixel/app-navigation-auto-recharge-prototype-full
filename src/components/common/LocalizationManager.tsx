@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Space, message, Descriptions, Tag, Modal, Steps } from 'antd';
 import {
   PlayCircleOutlined,
@@ -23,10 +23,15 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
   const [currentMode, setCurrentMode] = useState<LocalizationMode>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('未启动');
   const [loading, setLoading] = useState<string | null>(null);
-  const [localizationModalVisible, setLocalizationModalVisible] = useState(false);
   const [mappingModalVisible, setMappingModalVisible] = useState(false);
   const [mappingStep, setMappingStep] = useState(0); // 0: 待启动, 1: 启动遥控器中, 2: 遥控器已启动, 3: 启动建图节点中, 4: 完成
   const [mappingStepStatus, setMappingStepStatus] = useState<('wait' | 'process' | 'finish' | 'error')[]>(['wait', 'wait']);
+  const [isLocalizing, setIsLocalizing] = useState(false);
+  const [failureModalVisible, setFailureModalVisible] = useState(false);
+  const [failureMessage, setFailureMessage] = useState('');
+  const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('manual');
+  const hasShownSuccessRef = useRef(false);
+  const hasShownFailureRef = useRef(false);
 
   // 订阅定位状态
   useEffect(() => {
@@ -34,6 +39,32 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
       console.log('Localization status:', status);
       if (status && status.data) {
         setStatusMessage(status.data);
+        // 检查定位是否完成
+        if (status.data.includes('定位成功')) {
+          setLoading(null);
+          setIsLocalizing(false);
+          // 显示成功提示（只显示一次）
+          if (!hasShownSuccessRef.current) {
+            message.success({
+              content: '定位成功！机器人位置已确定',
+              duration: 3,
+            });
+            hasShownSuccessRef.current = true;
+          }
+        } else if (status.data.includes('定位失败')) {
+          setLoading(null);
+          setIsLocalizing(false);
+          // 提取失败原因并显示失败弹窗（只显示一次）
+          if (!hasShownFailureRef.current) {
+            const errorMatch = status.data.match(/定位失败[^:]*:\s*(.+)/);
+            const errorReason = errorMatch ? errorMatch[1] : '定位失败，请重试';
+            setFailureMessage(errorReason);
+            setFailureModalVisible(true);
+            hasShownFailureRef.current = true;
+          }
+        } else if (status.data.includes('定位中')) {
+          setIsLocalizing(true);
+        }
       }
     });
 
@@ -84,11 +115,6 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
       setStatusMessage(mappingResult.message);
       message.success('建图模式已启动');
       onModeChange?.('mapping');
-
-      // 延迟关闭 Modal
-      setTimeout(() => {
-        setMappingModalVisible(false);
-      }, 1500);
     } catch (error) {
       message.error('启动建图失败');
       console.error(error);
@@ -101,50 +127,66 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
     }
   };
 
-  const handleStartLocalization = () => {
-    setLocalizationModalVisible(true);
-  };
-
   const handleLocalizationManual = async () => {
-    setLocalizationModalVisible(false);
     setLoading('localization');
+    setIsLocalizing(true);
+    setLastLocalizationType('manual');
+    hasShownSuccessRef.current = false; // 重置成功提示标志
+    hasShownFailureRef.current = false; // 重置失败提示标志
     try {
       const result = await rosService.startLocalization();
       if (result.success) {
         setCurrentMode('localization');
-        setStatusMessage(result.message);
         message.success('定位模式已启动（手动）');
-        message.info('请在地图上点击设置初始位置');
+        message.info('正在定位中，请等待...');
         onModeChange?.('localization');
+        // 不在这里清除loading，等待定位完成的状态消息
       } else {
         message.error(result.message || '启动定位模式失败');
+        setLoading(null);
+        setIsLocalizing(false);
       }
     } catch (error) {
       message.error('启动定位模式失败');
       console.error(error);
-    } finally {
       setLoading(null);
+      setIsLocalizing(false);
     }
   };
 
   const handleLocalizationAuto = async () => {
-    setLocalizationModalVisible(false);
     setLoading('localization_auto');
+    setIsLocalizing(true);
+    setLastLocalizationType('auto');
+    hasShownSuccessRef.current = false; // 重置成功提示标志
+    hasShownFailureRef.current = false; // 重置失败提示标志
     try {
       const result = await rosService.startLocalizationAuto();
       if (result.success) {
         setCurrentMode('localization_auto');
-        setStatusMessage(result.message);
         message.success('定位模式已启动（自动）');
+        message.info('正在自动定位中，请等待...');
         onModeChange?.('localization_auto');
+        // 不在这里清除loading，等待定位完成的状态消息
       } else {
         message.error(result.message || '启动自动定位模式失败');
+        setLoading(null);
+        setIsLocalizing(false);
       }
     } catch (error) {
       message.error('启动自动定位模式失败');
       console.error(error);
-    } finally {
       setLoading(null);
+      setIsLocalizing(false);
+    }
+  };
+
+  const handleRetryLocalization = () => {
+    setFailureModalVisible(false);
+    if (lastLocalizationType === 'manual') {
+      handleLocalizationManual();
+    } else {
+      handleLocalizationAuto();
     }
   };
 
@@ -257,17 +299,6 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
           </Button>
 
           <Button
-            type="primary"
-            icon={<AimOutlined />}
-            onClick={handleStartLocalization}
-            loading={loading === 'localization' || loading === 'localization_auto'}
-            disabled={currentMode !== 'idle'}
-            size="small"
-          >
-            定位模式
-          </Button>
-
-          <Button
             icon={<WarningOutlined />}
             onClick={handleStartObstacleAvoidance}
             loading={loading === 'obstacle_avoidance'}
@@ -277,6 +308,32 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
             纯避障
           </Button>
         </Space>
+
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <Button
+            type="primary"
+            icon={<AimOutlined />}
+            onClick={handleLocalizationManual}
+            loading={loading === 'localization'}
+            disabled={currentMode !== 'idle' || isLocalizing}
+            size="small"
+            style={{ flex: 1 }}
+          >
+            {loading === 'localization' ? '手动定位中...' : '手动重定位'}
+          </Button>
+
+          <Button
+            type="primary"
+            icon={<SyncOutlined />}
+            onClick={handleLocalizationAuto}
+            loading={loading === 'localization_auto'}
+            disabled={currentMode !== 'idle' || isLocalizing}
+            size="small"
+            style={{ flex: 1 }}
+          >
+            {loading === 'localization_auto' ? '自动定位中...' : '自动重定位'}
+          </Button>
+        </div>
 
         <Space style={{ width: '100%' }}>
           <Button
@@ -312,6 +369,7 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
       <Modal
         title="启动建图模式"
         open={mappingModalVisible}
+        centered
         onCancel={() => {
           if (mappingStep === 0 || mappingStepStatus[1] === 'finish' || mappingStepStatus.includes('error')) {
             setMappingModalVisible(false);
@@ -416,46 +474,43 @@ export const LocalizationManager: React.FC<LocalizationManagerProps> = ({ onMode
         </div>
       </Modal>
 
-      {/* 定位模式选择Modal */}
+      {/* 定位失败Modal */}
       <Modal
-        title="启动定位模式"
-        open={localizationModalVisible}
-        onCancel={() => setLocalizationModalVisible(false)}
-        footer={null}
+        title="定位失败"
+        open={failureModalVisible}
+        centered
+        onCancel={() => setFailureModalVisible(false)}
+        footer={
+          <Space>
+            <Button onClick={() => setFailureModalVisible(false)}>取消</Button>
+            <Button type="primary" onClick={handleRetryLocalization}>
+              重试
+            </Button>
+          </Space>
+        }
         width={400}
       >
         <div style={{ padding: '16px 0' }}>
-          <p style={{ marginBottom: 16, color: '#666' }}>请选择定位初始化方式：</p>
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Button
-              type="primary"
-              block
-              size="large"
-              icon={<AimOutlined />}
-              onClick={handleLocalizationManual}
-              loading={loading === 'localization'}
-            >
-              手动初始化
-            </Button>
-            <div style={{ fontSize: 12, color: '#999', paddingLeft: 8 }}>
-              需要在地图上手动点击设置机器人的初始位置
+          <div style={{ marginBottom: 16, textAlign: 'center' }}>
+            <CloseCircleOutlined style={{ fontSize: 48, color: '#ff4d4f' }} />
+          </div>
+          <div style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: 500 }}>
+            定位失败
+          </div>
+          <div style={{ marginBottom: 16, padding: 12, background: '#fff2f0', borderRadius: 4, border: '1px solid #ffccc7' }}>
+            <div style={{ color: '#cf1322', fontSize: 14 }}>
+              <strong>失败原因：</strong>{failureMessage}
             </div>
-
-            <Button
-              type="primary"
-              block
-              size="large"
-              icon={<SyncOutlined />}
-              onClick={handleLocalizationAuto}
-              loading={loading === 'localization_auto'}
-              style={{ marginTop: 8 }}
-            >
-              自动初始化
-            </Button>
-            <div style={{ fontSize: 12, color: '#999', paddingLeft: 8 }}>
-              系统自动进行重定位，无需手动设置
-            </div>
-          </Space>
+          </div>
+          <div style={{ fontSize: 13, color: '#666' }}>
+            <div style={{ marginBottom: 8 }}>💡 建议操作：</div>
+            <ul style={{ paddingLeft: 20, margin: 0 }}>
+              <li>检查机器人是否在地图覆盖范围内</li>
+              <li>确保激光雷达工作正常</li>
+              <li>尝试切换定位方式（手动/自动）</li>
+              <li>点击"重试"按钮再次尝试定位</li>
+            </ul>
+          </div>
         </div>
       </Modal>
     </Card>

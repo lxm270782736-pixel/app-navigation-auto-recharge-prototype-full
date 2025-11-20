@@ -107,11 +107,6 @@ export const Mapping: React.FC = () => {
       setMappingStepStatus(['finish', 'finish']);
       setIsMapping(true);
       message.success('建图模式已启动');
-
-      // 延迟关闭 Modal
-      setTimeout(() => {
-        setMappingModalVisible(false);
-      }, 1500);
     } catch (error) {
       message.error('启动建图失败');
       console.error(error);
@@ -361,6 +356,7 @@ export const Mapping: React.FC = () => {
       <Modal
         title="启动建图模式"
         open={mappingModalVisible}
+        centered
         onCancel={() => {
           if (mappingStep === 0 || mappingStepStatus[1] === 'finish' || mappingStepStatus.includes('error')) {
             setMappingModalVisible(false);
@@ -469,6 +465,7 @@ export const Mapping: React.FC = () => {
       <Modal
         title="保存地图"
         open={saveModalVisible}
+        centered
         onOk={saveMap}
         onCancel={() => setSaveModalVisible(false)}
         okText="保存"
