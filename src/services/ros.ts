@@ -455,28 +455,81 @@ class ROSService {
     await this.stopLocalization();
   }
 
-  // 保存地图
-  async saveMap(mapName: string): Promise<void> {
-    return this.callService('/save_map', 'nav_msgs/SaveMap', {
-      map_name: mapName,
-    });
-  }
-
-  // 加载地图
-  async loadMap(mapName: string): Promise<MapData> {
-    const response = await this.callService<{ map_name: string }, any>(
-      '/load_map',
-      'nav_msgs/LoadMap',
-      { map_name: mapName }
-    );
-
-    return this.convertROSMapToMapData(response.map);
-  }
-
   // 设置当前地图（将历史地图设置为当前实时地图）
   async setCurrentMap(mapData: MapData): Promise<void> {
-    // 将地图数据转换为 ROS 格式
-    const rosMap = {
+    // 调用 ROS 定位服务应用地图
+    const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
+      '/localization/apply_map',
+      'std_srvs/Trigger',
+      {
+        map_name: mapData.name,
+      }
+    );
+
+    if (!response.success) {
+      throw new Error(response.message || '应用地图失败');
+    }
+  }
+
+  // 获取地图列表
+  async getMapList(): Promise<string[]> {
+    const response = await this.callService<{}, { maps: string[] }>(
+      '/get_map_list',
+      'astribot_msgs/GetMapList',
+      {}
+    );
+
+    return response.maps;
+  }
+
+  // 获取所有地图的元数据（用于地图管理界面）
+  async getAllMapMetadata(): Promise<MapData[]> {
+    try {
+      const response = await this.callService<{}, { success: boolean; maps: any[] }>(
+        '/localization/list_maps',
+        'std_srvs/Trigger',
+        {}
+      );
+
+      // 转换 ROS 格式到前端格式
+      return response.maps.map((rosMap: any) => ({
+        id: rosMap.id,
+        name: rosMap.name,
+        createdAt: new Date(rosMap.created_at * 1000).toISOString(), // ROS 时间戳转换
+        thumbnail: rosMap.thumbnail || '',
+        width: rosMap.width,
+        height: rosMap.height,
+        resolution: rosMap.resolution,
+        origin: {
+          x: rosMap.origin_x,
+          y: rosMap.origin_y,
+          orientation: rosMap.origin_orientation,
+        },
+        data: [], // 元数据不包含完整数据
+      }));
+    } catch (error) {
+      console.error('Failed to get map metadata from ROS:', error);
+      throw error;
+    }
+  }
+
+  // 删除地图（调用 ROS 服务）
+  async deleteMapFromROS(mapId: string): Promise<void> {
+    const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
+      '/localization/delete_map',
+      'std_srvs/Trigger',
+      { map_name: mapId }
+    );
+
+    if (!response.success) {
+      throw new Error(response.message || '删除地图失败');
+    }
+  }
+
+  // 保存地图到 ROS（保存原生数据，不保存缩略图）
+  async saveMapToROS(mapData: MapData): Promise<void> {
+    // 构建 ROS 地图格式
+    const rosMapData = {
       header: {
         frame_id: 'map',
       },
@@ -501,31 +554,50 @@ class ROSService {
       data: mapData.data,
     };
 
-    // 调用 ROS 服务设置地图
-    const response = await this.callService<any, any>(
-      '/map_manager/set_current_map',
-      'astribot_msgs/SetCurrentMap',
+    const response = await this.callService<any, { success: boolean; message: string }>(
+      '/localization/save_map',
+      'std_srvs/Trigger',
       {
-        map: rosMap,
-        map_id: mapData.id,
         map_name: mapData.name,
+        map_data: rosMapData,
+        created_at: new Date(mapData.createdAt).getTime() / 1000, // 传递创建时间（转为秒）
       }
     );
 
     if (!response.success) {
-      throw new Error(response.message || '设置地图失败');
+      throw new Error(response.message || '保存地图失败');
     }
   }
 
-  // 获取地图列表
-  async getMapList(): Promise<string[]> {
-    const response = await this.callService<{}, { maps: string[] }>(
-      '/get_map_list',
-      'astribot_msgs/GetMapList',
-      {}
+  // 从 ROS 加载地图（包含完整数据）
+  async loadMapFromROS(mapName: string): Promise<MapData> {
+    const response = await this.callService<{ map_name: string }, { success: boolean; message: string; map_data: any }>(
+      '/localization/load_map',
+      'std_srvs/Trigger',
+      { map_name: mapName }
     );
 
-    return response.maps;
+    if (!response.success || !response.map_data) {
+      throw new Error(response.message || '加载地图失败');
+    }
+
+    // 从 ROS 格式转换为前端格式
+    const rosMap = response.map_data;
+    return {
+      id: mapName,
+      name: mapName,
+      createdAt: new Date().toISOString(), // 创建时间需要从元数据获取
+      thumbnail: '',
+      width: rosMap.info.width,
+      height: rosMap.info.height,
+      resolution: rosMap.info.resolution,
+      origin: {
+        x: rosMap.info.origin.position.x,
+        y: rosMap.info.origin.position.y,
+        orientation: rosMap.info.origin.orientation.z,
+      },
+      data: rosMap.data,
+    };
   }
 
   // 设置初始位姿
@@ -565,7 +637,7 @@ class ROSService {
   private convertROSMapToMapData(rosMap: any): MapData {
     return {
       id: Date.now().toString(),
-      name: rosMap.info.map_load_time || 'Unknown',
+      name: rosMap.info.map_load_time || '实时地图',
       createdAt: new Date().toISOString(),
       thumbnail: '',
       width: rosMap.info.width,

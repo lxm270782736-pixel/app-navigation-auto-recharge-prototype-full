@@ -160,22 +160,12 @@ export const Mapping: React.FC = () => {
     }
 
     try {
-      // 调用ROS服务保存地图到后端
-      await rosService.saveMap(mapName);
-
-      // 生成缩略图
-      const thumbnail = mapStorageService.generateThumbnail(
-        currentMapData.data,
-        currentMapData.width!,
-        currentMapData.height!
-      );
-
-      // 保存到本地存储
+      // 创建地图数据（不生成缩略图）
       const mapData: MapData = {
-        id: Date.now().toString(),
+        id: mapName, // 使用 name 作为 id
         name: mapName,
         createdAt: new Date().toISOString(),
-        thumbnail,
+        thumbnail: '', // 不保存缩略图
         width: currentMapData.width!,
         height: currentMapData.height!,
         resolution: currentMapData.resolution!,
@@ -183,13 +173,14 @@ export const Mapping: React.FC = () => {
         data: currentMapData.data,
       };
 
-      await mapStorageService.saveMap(mapData);
+      // 保存到 ROS 服务（原生数据）
+      await rosService.saveMapToROS(mapData);
       message.success('地图保存成功');
 
       setSaveModalVisible(false);
       navigate('/maps');
     } catch (error) {
-      message.error('保存地图失败');
+      message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
       console.error('Failed to save map:', error);
     }
   };

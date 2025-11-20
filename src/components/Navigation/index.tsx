@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, message } from 'antd';
+import { Button, message, Modal } from 'antd';
 import {
   ArrowLeftOutlined,
   EnvironmentOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { NavigationControl } from '@/components/common/NavigationControl';
@@ -198,6 +199,63 @@ export const Navigation: React.FC = () => {
     message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
   };
 
+  // 保存地图
+  const handleSaveMap = () => {
+    if (!currentMap) {
+      message.error('当前没有地图数据');
+      return;
+    }
+
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
+
+    Modal.confirm({
+      title: '保存地图',
+      content: (
+        <div>
+          <p>确认保存当前实时地图吗？</p>
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            地图尺寸: {currentMap.width} × {currentMap.height} px<br />
+            分辨率: {currentMap.resolution.toFixed(3)} m/px
+          </p>
+        </div>
+      ),
+      onOk: async () => {
+        try {
+          // 生成地图名称
+          const timestamp = new Date().toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          }).replace(/\//g, '-');
+          const mapName = `实时地图_${timestamp}`;
+
+          // 创建地图数据（不生成缩略图）
+          const mapToSave: MapData = {
+            ...currentMap,
+            id: mapName,
+            name: mapName,
+            createdAt: new Date().toISOString(),
+            thumbnail: '',
+          };
+
+          // 保存地图到 ROS
+          await rosService.saveMapToROS(mapToSave);
+          message.success(`地图已保存为 "${mapName}"`);
+        } catch (error) {
+          console.error('保存地图失败:', error);
+          message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        }
+      },
+    });
+  };
+
   if (!currentMap) {
     return (
       <div style={{
@@ -234,12 +292,19 @@ export const Navigation: React.FC = () => {
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
           导航 - {currentMap.name || '当前实时地图'}
         </div>
-        <div style={{
-          marginLeft: 'auto',
-          fontSize: '14px',
-          color: isMapRealtime ? '#52c41a' : '#ff4d4f'
-        }}>
-          ● {isMapRealtime ? '实时更新' : '历史地图'}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <Button
+            icon={<SaveOutlined />}
+            onClick={handleSaveMap}
+          >
+            保存地图
+          </Button>
+          <span style={{
+            fontSize: '14px',
+            color: isMapRealtime ? '#52c41a' : '#ff4d4f'
+          }}>
+            ● {isMapRealtime ? '实时更新' : '历史地图'}
+          </span>
         </div>
       </div>
 

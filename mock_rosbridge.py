@@ -14,6 +14,10 @@ import os
 from pathlib import Path
 from aiohttp import web
 
+# 地图存储目录
+MAPS_STORAGE_DIR = Path(__file__).parent / "mock_saved_maps"
+MAPS_STORAGE_DIR.mkdir(exist_ok=True)
+
 class MockROSBridge:
     def __init__(self):
         self.clients = set()
@@ -34,6 +38,57 @@ class MockROSBridge:
         self.localization_status_message = "未启动"
         # 遥控器状态
         self.joystick_active = False
+        # 地图存储（模拟数据库）
+        self.saved_maps = {}  # {map_id: map_metadata}
+
+        # 从文件加载已保存的地图
+        self.load_maps_from_disk()
+
+    def load_maps_from_disk(self):
+        """从磁盘加载所有已保存的地图"""
+        try:
+            if not MAPS_STORAGE_DIR.exists():
+                return
+
+            map_files = list(MAPS_STORAGE_DIR.glob("*.json"))
+            for map_file in map_files:
+                try:
+                    with open(map_file, 'r', encoding='utf-8') as f:
+                        map_data = json.load(f)
+                        map_id = map_data.get("id", map_file.stem)
+                        self.saved_maps[map_id] = map_data
+                        print(f"✓ 已加载地图: {map_data.get('name', map_id)}")
+                except Exception as e:
+                    print(f"✗ 加载地图文件 {map_file} 失败: {e}")
+
+            print(f"📂 从磁盘加载了 {len(self.saved_maps)} 个地图")
+        except Exception as e:
+            print(f"✗ 加载地图目录失败: {e}")
+
+    def save_map_to_disk(self, map_id, map_data):
+        """保存地图到磁盘"""
+        try:
+            map_file = MAPS_STORAGE_DIR / f"{map_id}.json"
+            with open(map_file, 'w', encoding='utf-8') as f:
+                json.dump(map_data, f, ensure_ascii=False, indent=2)
+            print(f"💾 地图已保存到磁盘: {map_file}")
+            return True
+        except Exception as e:
+            print(f"✗ 保存地图到磁盘失败: {e}")
+            return False
+
+    def delete_map_from_disk(self, map_id):
+        """从磁盘删除地图"""
+        try:
+            map_file = MAPS_STORAGE_DIR / f"{map_id}.json"
+            if map_file.exists():
+                os.remove(map_file)
+                print(f"🗑️  地图已从磁盘删除: {map_file}")
+                return True
+            return False
+        except Exception as e:
+            print(f"✗ 从磁盘删除地图失败: {e}")
+            return False
 
     def generate_sample_map(self):
         """生成示例地图数据"""
@@ -317,28 +372,199 @@ class MockROSBridge:
                     print("⚠ 警告: 建图模式仍在运行，但遥控器已停止")
             self.print_system_status()
 
-        # ========== 地图管理服务 ==========
-        elif service == "/map_manager/set_current_map":
-            # 接收前端发送的历史地图数据
-            map_data = args.get("map")
-            map_id = args.get("map_id", "unknown")
-            map_name = args.get("map_name", "未命名地图")
+        # ========== 定位/地图管理服务 (新增) ==========
+        elif service == "/localization/list_maps":
+            # 列出所有已保存的地图元数据（不包含 data，不生成缩略图）
+            maps_list = []
+            for map_id, map_meta in self.saved_maps.items():
+                maps_list.append({
+                    "id": map_meta["id"],
+                    "name": map_meta["name"],
+                    "created_at": map_meta["created_at"],
+                    "thumbnail": "",  # 前端按需生成
+                    "width": map_meta["width"],
+                    "height": map_meta["height"],
+                    "resolution": map_meta["resolution"],
+                    "origin_x": map_meta["origin_x"],
+                    "origin_y": map_meta["origin_y"],
+                    "origin_orientation": map_meta["origin_orientation"],
+                })
 
-            if map_data:
-                # 更新当前地图数据
-                self.map_data = map_data
+            response["values"] = {
+                "success": True,
+                "message": f"找到 {len(maps_list)} 个地图",
+                "maps": maps_list
+            }
+            print(f"✓ 定位服务: 列出地图 - 共 {len(maps_list)} 个")
+
+        elif service == "/localization/load_map":
+            # 加载指定地图
+            map_name = args.get("map_name", "")
+
+            if map_name in self.saved_maps:
+                map_meta = self.saved_maps[map_name]
+
+                # 构建完整的地图数据
+                map_data = {
+                    "header": {
+                        "frame_id": "map",
+                        "stamp": {"secs": int(time.time()), "nsecs": 0}
+                    },
+                    "info": {
+                        "width": map_meta["width"],
+                        "height": map_meta["height"],
+                        "resolution": map_meta["resolution"],
+                        "origin": {
+                            "position": {
+                                "x": map_meta["origin_x"],
+                                "y": map_meta["origin_y"],
+                                "z": 0.0
+                            },
+                            "orientation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": map_meta["origin_orientation"],
+                                "w": 1.0
+                            }
+                        }
+                    },
+                    "data": map_meta.get("data", [])
+                }
+
                 response["values"] = {
                     "success": True,
-                    "message": f"地图 '{map_name}' 已设置为当前地图"
+                    "message": f"成功加载地图: {map_name}",
+                    "map_data": map_data
                 }
-                print(f"✓ 地图管理: 历史地图 '{map_name}' (ID: {map_id}) 已设置为当前地图")
+                print(f"✓ 定位服务: 加载地图 '{map_name}' - {map_meta['width']}x{map_meta['height']}")
+            else:
+                response["values"] = {
+                    "success": False,
+                    "message": f"地图 '{map_name}' 不存在",
+                    "map_data": {}
+                }
+                print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
+
+        elif service == "/localization/save_map":
+            # 保存地图（保存原生数据，不保存缩略图）
+            map_name = args.get("map_name", "")
+            map_data = args.get("map_data", {})
+            created_at = args.get("created_at", int(time.time()))
+
+            if not map_name:
+                response["values"] = {
+                    "success": False,
+                    "message": "地图名称不能为空"
+                }
+                print("✗ 定位服务: 保存地图失败 - 名称为空")
+            elif not map_data:
+                response["values"] = {
+                    "success": False,
+                    "message": "地图数据不能为空"
+                }
+                print("✗ 定位服务: 保存地图失败 - 数据为空")
+            else:
+                # 提取地图信息
+                info = map_data.get("info", {})
+                origin = info.get("origin", {}).get("position", {})
+                origin_orientation = info.get("origin", {}).get("orientation", {})
+
+                # 保存地图元数据和完整数据（不保存缩略图）
+                map_to_save = {
+                    "id": map_name,
+                    "name": map_name,
+                    "created_at": int(created_at),
+                    "thumbnail": "",  # 不保存缩略图，按需从原图生成
+                    "width": info.get("width", 0),
+                    "height": info.get("height", 0),
+                    "resolution": info.get("resolution", 0.05),
+                    "origin_x": origin.get("x", 0.0),
+                    "origin_y": origin.get("y", 0.0),
+                    "origin_orientation": origin_orientation.get("z", 0.0),
+                    "data": map_data.get("data", [])
+                }
+
+                # 保存到内存
+                self.saved_maps[map_name] = map_to_save
+
+                # 保存到磁盘
+                disk_success = self.save_map_to_disk(map_name, map_to_save)
+
+                response["values"] = {
+                    "success": True,
+                    "message": f"地图 '{map_name}' 保存成功"
+                }
+                print(f"✓ 定位服务: 保存地图 '{map_name}' - {info.get('width')}x{info.get('height')} (原生数据{', 已写入磁盘' if disk_success else ''})")
+
+        elif service == "/localization/delete_map":
+            # 删除地图
+            map_name = args.get("map_name", "")
+
+            if map_name in self.saved_maps:
+                # 从内存删除
+                del self.saved_maps[map_name]
+
+                # 从磁盘删除
+                disk_success = self.delete_map_from_disk(map_name)
+
+                response["values"] = {
+                    "success": True,
+                    "message": f"地图 '{map_name}' 已删除"
+                }
+                print(f"✓ 定位服务: 删除地图 '{map_name}'{' (已从磁盘删除)' if disk_success else ''}")
+            else:
+                response["values"] = {
+                    "success": False,
+                    "message": f"地图 '{map_name}' 不存在"
+                }
+                print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
+
+        elif service == "/localization/apply_map":
+            # 应用地图（设置为当前地图）
+            map_name = args.get("map_name", "")
+
+            if map_name in self.saved_maps:
+                map_meta = self.saved_maps[map_name]
+
+                # 将地图设置为当前地图
+                self.map_data = {
+                    "header": {
+                        "frame_id": "map",
+                        "stamp": {"secs": int(time.time()), "nsecs": 0}
+                    },
+                    "info": {
+                        "width": map_meta["width"],
+                        "height": map_meta["height"],
+                        "resolution": map_meta["resolution"],
+                        "origin": {
+                            "position": {
+                                "x": map_meta["origin_x"],
+                                "y": map_meta["origin_y"],
+                                "z": 0.0
+                            },
+                            "orientation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": map_meta["origin_orientation"],
+                                "w": 1.0
+                            }
+                        }
+                    },
+                    "data": map_meta.get("data", [])
+                }
+
+                response["values"] = {
+                    "success": True,
+                    "message": f"地图 '{map_name}' 已应用为当前地图"
+                }
+                print(f"✓ 定位服务: 应用地图 '{map_name}' 为当前地图")
                 print(f"   地图将通过 /map 话题实时发布")
             else:
                 response["values"] = {
                     "success": False,
-                    "message": "地图数据为空"
+                    "message": f"地图 '{map_name}' 不存在"
                 }
-                print("✗ 地图管理: 设置失败 - 地图数据为空")
+                print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
         await websocket.send(json.dumps(response))
 
@@ -974,11 +1200,14 @@ async def create_http_server():
 
 
 async def main():
-    bridge = MockROSBridge()
-
     print("=" * 60)
     print("模拟ROS Bridge WebSocket服务器 + HTTP API")
     print("=" * 60)
+
+    # 初始化 MockROSBridge（会自动从磁盘加载地图）
+    bridge = MockROSBridge()
+    print()
+
     print("WebSocket地址: ws://localhost:9090")
     print("HTTP API地址: http://localhost:8080")
     print()
@@ -996,6 +1225,13 @@ async def main():
     print("  ✓ 停止服务 (/localization/stop)")
     print("  ✓ 关闭服务 (/localization/shutdown)")
     print("  ✓ 状态发布 (/localization/status)")
+    print()
+    print("地图管理服务 (Localization Map Management):")
+    print("  ✓ 列出地图 (/localization/list_maps)")
+    print("  ✓ 加载地图 (/localization/load_map)")
+    print("  ✓ 保存地图 (/localization/save_map)")
+    print("  ✓ 删除地图 (/localization/delete_map)")
+    print("  ✓ 应用地图 (/localization/apply_map)")
     print()
     print("建图服务 (旧接口, 兼容性保留):")
     print("  ✓ 启动建图 (/start_mapping)")
@@ -1015,7 +1251,8 @@ async def main():
     print("  POST   /api/maps          - 保存地图")
     print("  DELETE /api/maps/{id}     - 删除地图")
     print()
-    print(f"地图存储位置: {MAPS_DIR.absolute()}")
+    print(f"Mock地图存储位置: {MAPS_STORAGE_DIR.absolute()}")
+    print(f"HTTP地图存储位置: {MAPS_DIR.absolute()}")
     print("=" * 60)
     print("按 Ctrl+C 停止服务器")
     print()

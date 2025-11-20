@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Statistic, Badge, Progress, Space, Button, Modal, message } from 'antd';
+import { Card, Row, Col, Statistic, Badge, Progress, Space } from 'antd';
 import {
   RobotOutlined,
   ThunderboltOutlined,
@@ -10,16 +10,12 @@ import {
   DashboardOutlined,
   ToolOutlined,
   ApiOutlined,
-  SaveOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { Pose, MapData } from '@/types';
-import { MapCanvas } from '@/components/common/MapCanvas';
-import { NavigationControl } from '@/components/common/NavigationControl';
-import { mapStorageService } from '@/services/storage';
+import type { Pose } from '@/types';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -28,12 +24,6 @@ export const Dashboard: React.FC = () => {
   // 暂时使用固定电池电量，等待真实 ROS 环境提供电池话题
   const [batteryLevel] = useState<number>(85);
   const [velocity, setVelocity] = useState({ linear: 0, angular: 0 });
-
-  // 实时地图和导航控制相关状态
-  const [currentMap, setCurrentMap] = useState<MapData | null>(null);
-  const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
-  const [goalPose, setGoalPose] = useState<Pose | undefined>();
-  const [isNavigating, setIsNavigating] = useState(false);
 
   // 订阅机器人位姿
   useEffect(() => {
@@ -108,85 +98,6 @@ export const Dashboard: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  // 订阅实时地图数据
-  useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      // 断开连接时,如果有地图则标记为历史地图
-      if (currentMap) {
-        setIsMapRealtime(false);
-      }
-      return;
-    }
-
-    const unsubscribe = rosService.subscribeMap((mapData) => {
-      setCurrentMap(mapData);
-      setIsMapRealtime(true); // 接收到实时地图数据
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionStatus]);
-
-  // 监听导航结果
-  useEffect(() => {
-    const handleNavigationResult = (data: any) => {
-      console.log('[Dashboard] 导航结果:', data);
-
-      if (data.success) {
-        // 导航成功
-        message.success({
-          content: '导航成功！机器人已到达目标位置',
-          duration: 3,
-        });
-        setIsNavigating(false);
-        // 保留目标点供参考，用户可以继续导航到相同位置
-      } else {
-        // 导航失败
-        let errorMsg = '导航失败';
-
-        if (data.actionPreempted) {
-          errorMsg = '导航已取消';
-        } else if (data.actionAborted) {
-          errorMsg = '导航中止';
-          if (data.errorMessage) {
-            errorMsg += `: ${data.errorMessage}`;
-          }
-        } else if (data.errorMessage) {
-          errorMsg = `导航失败: ${data.errorMessage}`;
-        }
-
-        message.error({
-          content: errorMsg,
-          duration: 5,
-        });
-        setIsNavigating(false);
-      }
-    };
-
-    // 监听导航反馈（进度信息）
-    const handleNavigationFeedback = (data: any) => {
-      console.log('[Dashboard] 导航反馈:', data);
-      // 可以在Dashboard显示导航进度
-    };
-
-    // 监听导航状态更新
-    const handleNavigationStatus = (data: any) => {
-      console.log('[Dashboard] 导航状态:', data.text);
-    };
-
-    rosService.on('navigation-result', handleNavigationResult);
-    rosService.on('navigation-feedback', handleNavigationFeedback);
-    rosService.on('navigation-status', handleNavigationStatus);
-
-    return () => {
-      rosService.off('navigation-result', handleNavigationResult);
-      rosService.off('navigation-feedback', handleNavigationFeedback);
-      rosService.off('navigation-status', handleNavigationStatus);
-    };
-  }, []);
-
   const getBatteryColor = (level: number) => {
     if (level > 60) return '#52c41a';
     if (level > 30) return '#faad14';
@@ -204,82 +115,6 @@ export const Dashboard: React.FC = () => {
       default:
         return { status: 'default', text: '离线' };
     }
-  };
-
-  // 导航控制函数
-  const handleMapClick = (x: number, y: number, theta?: number) => {
-    if (!currentMap) return;
-
-    // 设置目标点
-    const pose: Pose = { x, y, theta: theta || 0 };
-    setGoalPose(pose);
-    message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
-  };
-
-  // 处理导航功能点击
-  const handleNavigationClick = () => {
-    // 直接跳转到导航页面，使用当前实时地图
-    console.log('[导航] 进入导航页面');
-    navigate('/navigation');
-  };
-
-  // 保存地图
-  const handleSaveMap = () => {
-    if (!currentMap) {
-      message.error('当前没有地图数据');
-      return;
-    }
-
-    Modal.confirm({
-      title: '保存地图',
-      content: (
-        <div>
-          <p>确认保存当前实时地图吗？</p>
-          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-            地图尺寸: {currentMap.width} × {currentMap.height} px<br />
-            分辨率: {currentMap.resolution.toFixed(3)} m/px
-          </p>
-        </div>
-      ),
-      onOk: async () => {
-        try {
-          // 生成地图名称
-          const timestamp = new Date().toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-          }).replace(/\//g, '-');
-          const mapName = `实时地图_${timestamp}`;
-
-          // 生成缩略图
-          const thumbnail = mapStorageService.generateThumbnail(
-            currentMap.data,
-            currentMap.width,
-            currentMap.height
-          );
-
-          // 创建地图数据副本
-          const mapToSave: MapData = {
-            ...currentMap,
-            id: Date.now().toString(),
-            name: mapName,
-            createdAt: new Date().toISOString(),
-            thumbnail, // 添加缩略图
-          };
-
-          // 保存地图
-          await mapStorageService.saveMap(mapToSave);
-          message.success(`地图已保存为 "${mapName}"`);
-        } catch (error) {
-          console.error('保存地图失败:', error);
-          message.error('保存地图失败');
-        }
-      },
-    });
   };
 
   const statusInfo = getConnectionStatusInfo();
@@ -381,98 +216,6 @@ export const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 当前地图 - 带导航控制 */}
-      {currentMap && (
-        <Card
-          title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>当前地图</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <Button
-                  type="default"
-                  icon={<SaveOutlined />}
-                  onClick={handleSaveMap}
-                  size="small"
-                >
-                  保存地图
-                </Button>
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: 'normal',
-                  color: isMapRealtime ? '#52c41a' : '#ff4d4f'
-                }}>
-                  ● {isMapRealtime ? '实时更新' : '历史地图'}
-                </span>
-              </div>
-            </div>
-          }
-          style={{ marginBottom: '24px' }}
-          bodyStyle={{ padding: '16px' }}
-        >
-          <div style={{
-            height: '600px',
-            background: '#f0f0f0',
-            borderRadius: '4px',
-            overflow: 'hidden',
-            position: 'relative'
-          }}>
-            <MapCanvas
-              mapData={currentMap}
-              robotPose={robotPose || undefined}
-              goalPose={goalPose}
-              onMapClick={handleMapClick}
-            />
-
-            {/* 浮动控制面板 */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '16px',
-                right: '16px',
-                width: '320px',
-                maxHeight: 'calc(600px - 32px)',
-                overflowY: 'auto',
-                zIndex: 100,
-              }}
-            >
-              <NavigationControl
-                robotPose={robotPose}
-                goalPose={goalPose}
-                isNavigating={isNavigating}
-                onNavigationStart={() => setIsNavigating(true)}
-                onNavigationStop={() => setIsNavigating(false)}
-              />
-            </div>
-
-            {/* 操作提示 */}
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '16px',
-                right: '350px',
-                background: 'rgba(0, 0, 0, 0.75)',
-                color: 'white',
-                padding: '12px 16px',
-                borderRadius: '4px',
-                fontSize: '13px',
-                maxWidth: '300px',
-                zIndex: 100,
-                fontWeight: '500',
-              }}
-            >
-              <div>
-                <EnvironmentOutlined /> 点击地图选择导航目标点
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '13px' }}>
-            <span>尺寸: {currentMap.width} × {currentMap.height} px</span>
-            <span>分辨率: {currentMap.resolution.toFixed(3)} m/px</span>
-            <span style={{ color: '#999' }}>💡 支持滚轮缩放、中键拖动平移</span>
-          </div>
-        </Card>
-      )}
-
       {/* 功能卡片 */}
       <Row gutter={[16, 16]}>
         {/* 地图管理 */}
@@ -513,7 +256,7 @@ export const Dashboard: React.FC = () => {
         <Col xs={24} md={12} lg={8}>
           <Card
             hoverable
-            onClick={handleNavigationClick}
+            onClick={() => navigate('/navigation')}
             style={{ height: '180px', cursor: 'pointer' }}
           >
             <div style={{ textAlign: 'center', paddingTop: '20px' }}>

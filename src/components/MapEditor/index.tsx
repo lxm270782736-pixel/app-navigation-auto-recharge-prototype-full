@@ -14,6 +14,9 @@ import {
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { mapStorageService } from '@/services/storage';
+import { rosService } from '@/services/ros';
+import { useROS } from '@/contexts/ROSContext';
+import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
 import dayjs from 'dayjs';
 
@@ -34,6 +37,7 @@ interface HistoryState {
 export const MapEditor: React.FC = () => {
   const { mapId } = useParams<{ mapId: string }>();
   const navigate = useNavigate();
+  const { connectionStatus } = useROS();
 
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [mapName, setMapName] = useState('');
@@ -59,24 +63,36 @@ export const MapEditor: React.FC = () => {
         return;
       }
 
-      // 加载地图数据
-      const map = await mapStorageService.getMap(mapId);
-      if (!map) {
-        message.error('地图不存在');
+      if (connectionStatus !== ConnectionStatus.CONNECTED) {
+        message.warning('请先连接 ROS');
         navigate('/maps');
         return;
       }
 
-      setMapData(map);
-      setMapName(map.name);
+      try {
+        // 从 ROS 加载地图数据
+        const map = await rosService.loadMapFromROS(mapId);
+        if (!map) {
+          message.error('地图不存在');
+          navigate('/maps');
+          return;
+        }
 
-      // 初始化历史记录
-      setHistory([{ data: [...map.data], timestamp: Date.now() }]);
-      setHistoryIndex(0);
+        setMapData(map);
+        setMapName(map.name);
+
+        // 初始化历史记录
+        setHistory([{ data: [...map.data], timestamp: Date.now() }]);
+        setHistoryIndex(0);
+      } catch (error) {
+        console.error('加载地图失败:', error);
+        message.error('加载地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        navigate('/maps');
+      }
     };
 
     loadMap();
-  }, [mapId, navigate]);
+  }, [mapId, navigate, connectionStatus]);
 
   // 保存当前状态到历史记录
   const saveToHistory = useCallback((newData: number[]) => {
@@ -223,32 +239,46 @@ export const MapEditor: React.FC = () => {
       return;
     }
 
-    const updatedMap: MapData = {
-      ...mapData,
-      name: mapName,
-    };
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
 
-    // 重新生成缩略图
-    const thumbnail = mapStorageService.generateThumbnail(
-      mapData.data,
-      mapData.width,
-      mapData.height
-    );
-    updatedMap.thumbnail = thumbnail;
+    try {
+      const updatedMap: MapData = {
+        ...mapData,
+        name: mapName,
+        thumbnail: '', // 不保存缩略图
+      };
 
-    await mapStorageService.saveMap(updatedMap);
-    message.success('地图已保存');
-    setIsEditing(false);
-    setHasUnsavedChanges(false);
+      // 保存到 ROS 服务（原生数据）
+      await rosService.saveMapToROS(updatedMap);
+      message.success('地图已保存');
+      setIsEditing(false);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      console.error('保存地图失败:', error);
+      message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    }
   };
 
   const handleDelete = async () => {
     if (!mapData) return;
 
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
+
     if (window.confirm(`确定要删除地图 "${mapData.name}" 吗？此操作不可恢复。`)) {
-      await mapStorageService.deleteMap(mapData.id);
-      message.success('地图已删除');
-      navigate('/maps');
+      try {
+        await rosService.deleteMapFromROS(mapData.id);
+        message.success('地图已删除');
+        navigate('/maps');
+      } catch (error) {
+        console.error('删除地图失败:', error);
+        message.error('删除地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      }
     }
   };
 
