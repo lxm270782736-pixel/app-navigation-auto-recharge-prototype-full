@@ -374,6 +374,7 @@ class MockROSBridge:
 
         # ========== 定位/地图管理服务 (新增) ==========
         elif service == "/localization/list_maps":
+            # 服务类型: localization_msgs/ListMaps
             # 列出所有已保存的地图元数据（不包含 data，不生成缩略图）
             maps_list = []
             for map_id, map_meta in self.saved_maps.items():

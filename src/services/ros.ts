@@ -460,7 +460,7 @@ class ROSService {
     // 调用 ROS 定位服务应用地图
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/apply_map',
-      'std_srvs/Trigger',
+      'localization_msgs/SetMapName',
       {
         map_name: mapData.name,
       }
@@ -485,14 +485,19 @@ class ROSService {
   // 获取所有地图的元数据（用于地图管理界面）
   async getAllMapMetadata(): Promise<MapData[]> {
     try {
-      const response = await this.callService<{}, { success: boolean; maps: any[] }>(
+      const response = await this.callService<{}, { success: boolean; message: string; maps: any[] }>(
         '/localization/list_maps',
-        'std_srvs/Trigger',
+        'localization_msgs/ListMaps',
         {}
       );
 
+      // 检查服务调用是否成功
+      if (!response.success) {
+        throw new Error(response.message || '获取地图列表失败');
+      }
+
       // 转换 ROS 格式到前端格式
-      return response.maps.map((rosMap: any) => ({
+      return (response.maps || []).map((rosMap: any) => ({
         id: rosMap.id,
         name: rosMap.name,
         createdAt: new Date(rosMap.created_at * 1000).toISOString(), // ROS 时间戳转换
@@ -517,7 +522,7 @@ class ROSService {
   async deleteMapFromROS(mapId: string): Promise<void> {
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/delete_map',
-      'std_srvs/Trigger',
+      'localization_msgs/DeleteMap',
       { map_name: mapId }
     );
 
@@ -556,7 +561,7 @@ class ROSService {
 
     const response = await this.callService<any, { success: boolean; message: string }>(
       '/localization/save_map',
-      'std_srvs/Trigger',
+      'localization_msgs/SaveMap',
       {
         map_name: mapData.name,
         map_data: rosMapData,
@@ -573,7 +578,7 @@ class ROSService {
   async loadMapFromROS(mapName: string): Promise<MapData> {
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string; map_data: any }>(
       '/localization/load_map',
-      'std_srvs/Trigger',
+      'localization_msgs/LoadMap',
       { map_name: mapName }
     );
 
