@@ -138,22 +138,40 @@ export const Mapping: React.FC = () => {
 
   const stopMapping = async () => {
     try {
-      // 步骤 1: 停止建图节点
-      const stopResult = await rosService.stopLocalization();
-      if (!stopResult.success) {
-        message.error(stopResult.message || '停止建图失败');
-        return;
+      // 步骤 1: 停止建图节点（如果启动时跳过了，则停止时也跳过）
+      if (!skipMappingNode) {
+        const stopResult = await rosService.stopLocalization();
+        if (!stopResult.success) {
+          message.error(stopResult.message || '停止建图失败');
+          return;
+        }
+      } else {
+        console.log('[建图] 停止时跳过建图节点（启动时已跳过）');
       }
 
-      // 步骤 2: 停止遥控器
-      const joystickResult = await rosService.stopJoystick();
-      if (!joystickResult.success) {
-        // 遥控器停止失败不影响整体流程，只是警告
-        message.warning(joystickResult.message || '停止遥控器失败');
+      // 步骤 2: 停止遥控器（如果启动时跳过了，则停止时也跳过）
+      if (!skipJoystick) {
+        const joystickResult = await rosService.stopJoystick();
+        if (!joystickResult.success) {
+          // 遥控器停止失败不影响整体流程，只是警告
+          message.warning(joystickResult.message || '停止遥控器失败');
+        }
+      } else {
+        console.log('[建图] 停止时跳过遥控器（启动时已跳过）');
       }
 
       setIsMapping(false);
-      message.success('建图已停止，遥控器已关闭');
+
+      // 根据跳过情况显示不同的提示
+      if (skipJoystick && skipMappingNode) {
+        message.success('建图已停止（所有服务均由您手动管理）');
+      } else if (skipJoystick) {
+        message.success('建图已停止（遥控器请手动管理）');
+      } else if (skipMappingNode) {
+        message.success('建图已停止，遥控器已关闭（建图节点请手动管理）');
+      } else {
+        message.success('建图已停止，遥控器已关闭');
+      }
 
       // 生成默认地图名称
       const defaultName = await mapStorageService.generateDefaultMapName();
