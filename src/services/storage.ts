@@ -369,19 +369,44 @@ class MapStorageService {
     return canvas.toDataURL('image/jpeg', THUMBNAIL_QUALITY);
   }
 
+  // 规范化地图名称（移除特殊字符，只保留字母、数字、下划线、连字符）
+  sanitizeMapName(name: string): string {
+    if (!name || typeof name !== 'string') {
+      return 'untitled_map';
+    }
+
+    // 移除所有非字母、数字、下划线、连字符的字符
+    let sanitized = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // 移除开头和结尾的下划线和连字符
+    sanitized = sanitized.replace(/^[_-]+|[_-]+$/g, '');
+
+    // 如果清理后为空，使用默认名称
+    if (!sanitized) {
+      sanitized = 'untitled_map';
+    }
+
+    // 限制长度为最多64个字符
+    if (sanitized.length > 64) {
+      sanitized = sanitized.substring(0, 64);
+    }
+
+    return sanitized;
+  }
+
   // 生成默认地图名称
   async generateDefaultMapName(): Promise<string> {
     const maps = await this.getAllMaps();
-    const unnamedMaps = maps.filter((m: MapData) => m.name.startsWith('未命名地图'));
+    const unnamedMaps = maps.filter((m: MapData) => m.name.startsWith('untitled_map_'));
     const numbers = unnamedMaps
       .map((m: MapData) => {
-        const match = m.name.match(/未命名地图(\d+)/);
+        const match = m.name.match(/untitled_map_(\d+)/);
         return match ? parseInt(match[1], 10) : 0;
       })
       .filter((n: number) => !isNaN(n));
 
     const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
-    return `未命名地图${maxNumber + 1}`;
+    return `untitled_map_${maxNumber + 1}`;
   }
 }
 

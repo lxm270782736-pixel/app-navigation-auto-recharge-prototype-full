@@ -55,9 +55,34 @@ class MockROSBridge:
                 try:
                     with open(map_file, 'r', encoding='utf-8') as f:
                         map_data = json.load(f)
-                        map_id = map_data.get("id", map_file.stem)
+
+                        # 修复 id 字段（使用文件名作为后备）
+                        if "id" not in map_data or not map_data["id"]:
+                            map_data["id"] = map_file.stem
+
+                        map_id = map_data["id"]
+
+                        # 修复 name 字段（使用 id 作为后备）
+                        if "name" not in map_data or not map_data["name"]:
+                            map_data["name"] = map_id
+
+                        # 修复 created_at 字段（确保是时间戳数字）
+                        if "created_at" not in map_data or not isinstance(map_data["created_at"], (int, float)):
+                            # 如果没有 created_at 或格式不对，使用文件修改时间
+                            map_data["created_at"] = int(map_file.stat().st_mtime)
+
+                        # 确保必需字段有默认值
+                        map_data.setdefault("width", 0)
+                        map_data.setdefault("height", 0)
+                        map_data.setdefault("resolution", 0.05)
+                        map_data.setdefault("origin_x", 0.0)
+                        map_data.setdefault("origin_y", 0.0)
+                        map_data.setdefault("origin_orientation", 0.0)
+                        map_data.setdefault("thumbnail", "")
+                        map_data.setdefault("data", [])
+
                         self.saved_maps[map_id] = map_data
-                        print(f"✓ 已加载地图: {map_data.get('name', map_id)}")
+                        print(f"✓ 已加载地图: {map_data['name']}")
                 except Exception as e:
                     print(f"✗ 加载地图文件 {map_file} 失败: {e}")
 
@@ -276,44 +301,52 @@ class MockROSBridge:
             print("   ⏳ 等待初始位置设置...")
             self.localization_mode = "localization"
             self.localization_status_message = "定位中（手动）..."
-            # 先返回启动消息
-            response["values"] = {"success": True, "message": "定位模式已启动（手动）"}
-            await websocket.send(json.dumps(response))
             # 模拟定位过程
             print("   ⏳ 粒子滤波定位中 (10秒)...")
             await asyncio.sleep(10)
-            # 模拟成功/失败 (20%失败率)
+            # 模拟成功/失败 (50%失败率)
             import random
             if random.random() < 0.5:
                 self.localization_status_message = "定位失败（手动）: 粒子收敛失败"
+                response["values"] = {
+                    "success": False,
+                    "message": "定位失败: 粒子收敛失败"
+                }
                 print("✗ 定位服务: 定位失败（手动）- 粒子收敛失败")
             else:
                 self.localization_status_message = "定位成功（手动）"
+                response["values"] = {
+                    "success": True,
+                    "message": "定位成功"
+                }
                 print("✓ 定位服务: 定位完成（手动）")
             self.print_system_status()
-            return  # 已经发送过response，直接返回
 
         elif service == "/localization/start_localization_auto":
             print("📍 正在启动定位模式（自动）...")
             print("   ⏳ 自动搜索机器人位置...")
             self.localization_mode = "localization_auto"
             self.localization_status_message = "定位中（自动）..."
-            # 先返回启动消息
-            response["values"] = {"success": True, "message": "定位模式已启动（自动）"}
-            await websocket.send(json.dumps(response))
             # 模拟定位过程
             print("   ⏳ 全局定位计算中 (10秒)...")
             await asyncio.sleep(10)
-            # 模拟成功/失败 (20%失败率)
+            # 模拟成功/失败 (50%失败率)
             import random
             if random.random() < 0.5:
                 self.localization_status_message = "定位失败（自动）: 无法找到匹配位置"
+                response["values"] = {
+                    "success": False,
+                    "message": "定位失败: 无法找到匹配位置"
+                }
                 print("✗ 定位服务: 定位失败（自动）- 无法找到匹配位置")
             else:
                 self.localization_status_message = "定位成功（自动）"
+                response["values"] = {
+                    "success": True,
+                    "message": "定位成功"
+                }
                 print("✓ 定位服务: 定位完成（自动）")
             self.print_system_status()
-            return  # 已经发送过response，直接返回
 
         elif service == "/localization/start_obstacle_avoidance":
             self.localization_mode = "obstacle_avoidance"
@@ -375,30 +408,21 @@ class MockROSBridge:
         # ========== 定位/地图管理服务 (新增) ==========
         elif service == "/localization/list_maps":
             # 服务类型: localization_msgs/ListMaps
-            # 列出所有已保存的地图元数据（不包含 data，不生成缩略图）
-            maps_list = []
-            for map_id, map_meta in self.saved_maps.items():
-                maps_list.append({
-                    "id": map_meta["id"],
-                    "name": map_meta["name"],
-                    "created_at": map_meta["created_at"],
-                    "thumbnail": "",  # 前端按需生成
-                    "width": map_meta["width"],
-                    "height": map_meta["height"],
-                    "resolution": map_meta["resolution"],
-                    "origin_x": map_meta["origin_x"],
-                    "origin_y": map_meta["origin_y"],
-                    "origin_orientation": map_meta["origin_orientation"],
-                })
+            # 返回：string[] maps（只包含地图名称列表，不包含详细元数据）
+            # 注意：与实际 ROS 服务保持一致，只返回字符串数组
+            maps_list = list(self.saved_maps.keys())  # 只返回地图名称（字符串数组）
 
             response["values"] = {
                 "success": True,
                 "message": f"找到 {len(maps_list)} 个地图",
-                "maps": maps_list
+                "maps": maps_list  # string[] 类型
             }
             print(f"✓ 定位服务: 列出地图 - 共 {len(maps_list)} 个")
+            for map_name in maps_list:
+                print(f"  - {map_name}")
 
         elif service == "/localization/load_map":
+            # 服务类型: localization_msgs/LoadMap
             # 加载指定地图
             map_name = args.get("map_name", "")
 
@@ -447,6 +471,7 @@ class MockROSBridge:
                 print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
         elif service == "/localization/save_map":
+            # 服务类型: localization_msgs/SaveMap
             # 保存地图（保存原生数据，不保存缩略图）
             map_name = args.get("map_name", "")
             map_data = args.get("map_data", {})
@@ -498,6 +523,7 @@ class MockROSBridge:
                 print(f"✓ 定位服务: 保存地图 '{map_name}' - {info.get('width')}x{info.get('height')} (原生数据{', 已写入磁盘' if disk_success else ''})")
 
         elif service == "/localization/delete_map":
+            # 服务类型: localization_msgs/DeleteMap
             # 删除地图
             map_name = args.get("map_name", "")
 
@@ -521,6 +547,7 @@ class MockROSBridge:
                 print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
         elif service == "/localization/apply_map":
+            # 服务类型: localization_msgs/SetMapName
             # 应用地图（设置为当前地图）
             map_name = args.get("map_name", "")
 
@@ -674,6 +701,7 @@ class MockROSBridge:
             await asyncio.sleep(0.1)
 
     async def publish_localization_status(self, websocket):
+        return 
         """定期发布定位服务状态"""
         while websocket in self.clients and "/localization/status" in self.subscriptions:
             message = {

@@ -54,14 +54,21 @@ export const MapManager: React.FC = () => {
   };
 
   const loadThumbnails = async (mapList: MapData[]) => {
-    // 并行加载所有地图的缩略图
-    const thumbnailPromises = mapList.map(async (map) => {
-      if (map.thumbnail) return; // 已有缩略图，跳过
+    // 过滤掉无效的地图（id 或 name 为空/undefined）
+    const validMaps = mapList.filter(map => {
+      if (!map.id || !map.name || map.id === 'unknown_map') {
+        console.warn('[地图管理] 跳过无效地图:', map);
+        return false;
+      }
+      return true;
+    });
 
+    // 并行加载所有地图的缩略图和元数据
+    const thumbnailPromises = validMaps.map(async (map) => {
       setThumbnailsLoading((prev) => new Set(prev).add(map.id));
 
       try {
-        // 从 ROS 加载完整地图数据
+        // 从 ROS 加载完整地图数据（获取真实的元数据）
         const fullMapData = await rosService.loadMapFromROS(map.id);
 
         // 生成缩略图
@@ -71,16 +78,27 @@ export const MapManager: React.FC = () => {
           fullMapData.height
         );
 
-        // 更新地图的缩略图
+        // 更新地图的缩略图、元数据和完整数据
         setMaps((prevMaps) =>
           prevMaps.map((m) =>
-            m.id === map.id ? { ...m, thumbnail } : m
+            m.id === map.id ? {
+              ...m,
+              thumbnail,
+              // 更新真实的元数据
+              width: fullMapData.width,
+              height: fullMapData.height,
+              resolution: fullMapData.resolution,
+              origin: fullMapData.origin,
+              createdAt: fullMapData.createdAt,
+              // 最重要：更新完整的地图数据
+              data: fullMapData.data,
+            } : m
           )
         );
 
-        console.log('[地图管理] 已生成缩略图:', map.name);
+        console.log('[地图管理] 已加载地图完整数据:', map.name, `${fullMapData.width}×${fullMapData.height}`, `数据量: ${fullMapData.data.length} 像素`);
       } catch (error) {
-        console.error(`加载地图 ${map.name} 缩略图失败:`, error);
+        console.error(`加载地图 ${map.name || map.id} 失败:`, error);
       } finally {
         setThumbnailsLoading((prev) => {
           const newSet = new Set(prev);
@@ -90,9 +108,9 @@ export const MapManager: React.FC = () => {
       }
     });
 
-    // 等待所有缩略图加载完成
+    // 等待所有地图数据加载完成
     await Promise.all(thumbnailPromises);
-    console.log('[地图管理] 所有缩略图已加载完成');
+    console.log('[地图管理] 所有地图数据已加载完成');
   };
 
   const handleCreateMap = () => {
@@ -100,7 +118,8 @@ export const MapManager: React.FC = () => {
   };
 
   const handleEditMap = (map: MapData) => {
-    navigate(`/map-editor/${map.id}`);
+    // 传递完整的地图数据，避免在编辑器中重复加载
+    navigate(`/map-editor/${map.id}`, { state: { mapData: map } });
   };
 
   const handleApplyMap = async (map: MapData) => {

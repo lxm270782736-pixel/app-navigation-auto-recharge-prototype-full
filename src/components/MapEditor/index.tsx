@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Button, message, Input, Space, Radio, Slider } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -13,8 +13,8 @@ import {
   RedoOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
-import { mapStorageService } from '@/services/storage';
 import { rosService } from '@/services/ros';
+import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
@@ -37,6 +37,7 @@ interface HistoryState {
 export const MapEditor: React.FC = () => {
   const { mapId } = useParams<{ mapId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { connectionStatus } = useROS();
 
   const [mapData, setMapData] = useState<MapData | null>(null);
@@ -63,6 +64,20 @@ export const MapEditor: React.FC = () => {
         return;
       }
 
+      // 优先使用从地图管理界面传递过来的数据（避免重复加载）
+      const passedMapData = (location.state as any)?.mapData as MapData | undefined;
+      if (passedMapData && passedMapData.id === mapId) {
+        console.log('[地图编辑器] 使用传递的地图数据，无需重新加载');
+        setMapData(passedMapData);
+        setMapName(passedMapData.name);
+
+        // 初始化历史记录
+        setHistory([{ data: [...passedMapData.data], timestamp: Date.now() }]);
+        setHistoryIndex(0);
+        return;
+      }
+
+      // 如果没有传递数据，或者数据不匹配，则从 ROS 加载
       if (connectionStatus !== ConnectionStatus.CONNECTED) {
         message.warning('请先连接 ROS');
         navigate('/maps');
@@ -70,6 +85,7 @@ export const MapEditor: React.FC = () => {
       }
 
       try {
+        console.log('[地图编辑器] 从 ROS 加载地图数据');
         // 从 ROS 加载地图数据
         const map = await rosService.loadMapFromROS(mapId);
         if (!map) {
@@ -92,7 +108,7 @@ export const MapEditor: React.FC = () => {
     };
 
     loadMap();
-  }, [mapId, navigate, connectionStatus]);
+  }, [mapId, navigate, location.state, connectionStatus]);
 
   // 保存当前状态到历史记录
   const saveToHistory = useCallback((newData: number[]) => {
@@ -244,10 +260,17 @@ export const MapEditor: React.FC = () => {
       return;
     }
 
+    // 规范化地图名称（移除特殊字符）
+    const sanitizedName = mapStorageService.sanitizeMapName(mapName);
+    if (sanitizedName !== mapName) {
+      message.warning(`地图名称已规范化为: ${sanitizedName}`);
+    }
+
     try {
       const updatedMap: MapData = {
         ...mapData,
-        name: mapName,
+        id: sanitizedName, // 更新 id
+        name: sanitizedName, // 使用规范化后的名称
         thumbnail: '', // 不保存缩略图
       };
 

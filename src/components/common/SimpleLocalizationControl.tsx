@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Card, Button, Space, message, Modal, Tag, Descriptions } from 'antd';
 import {
   AimOutlined,
   SyncOutlined,
   CloseCircleOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 
@@ -17,104 +18,72 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [currentMode, setCurrentMode] = useState<LocalizationMode>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('未启动');
   const [loading, setLoading] = useState<string | null>(null);
-  const [isLocalizing, setIsLocalizing] = useState(false);
   const [failureModalVisible, setFailureModalVisible] = useState(false);
   const [failureMessage, setFailureMessage] = useState('');
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('manual');
-  const hasShownSuccessRef = useRef(false);
-  const hasShownFailureRef = useRef(false);
-
-  // 订阅定位状态
-  useEffect(() => {
-    const unsubscribe = rosService.subscribeLocalizationStatus((status) => {
-      console.log('Localization status:', status);
-      if (status && status.data) {
-        setStatusMessage(status.data);
-        // 检查定位是否完成
-        if (status.data.includes('定位成功')) {
-          setLoading(null);
-          setIsLocalizing(false);
-          // 显示成功提示（只显示一次）
-          if (!hasShownSuccessRef.current) {
-            message.success({
-              content: '定位成功！机器人位置已确定',
-              duration: 3,
-            });
-            hasShownSuccessRef.current = true;
-          }
-        } else if (status.data.includes('定位失败')) {
-          setLoading(null);
-          setIsLocalizing(false);
-          // 提取失败原因并显示失败弹窗（只显示一次）
-          if (!hasShownFailureRef.current) {
-            const errorMatch = status.data.match(/定位失败[^:]*:\s*(.+)/);
-            const errorReason = errorMatch ? errorMatch[1] : '定位失败，请重试';
-            setFailureMessage(errorReason);
-            setFailureModalVisible(true);
-            hasShownFailureRef.current = true;
-          }
-        } else if (status.data.includes('定位中')) {
-          setIsLocalizing(true);
-        }
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
 
   const handleLocalizationManual = async () => {
     setLoading('localization');
-    setIsLocalizing(true);
     setLastLocalizationType('manual');
-    hasShownSuccessRef.current = false; // 重置成功提示标志
-    hasShownFailureRef.current = false; // 重置失败提示标志
+    setStatusMessage('定位中（手动）...');
+    message.info('正在定位中，请等待约10秒...');
+
     try {
       const result = await rosService.startLocalization();
+
       if (result.success) {
+        // 定位成功
         setCurrentMode('localization');
-        message.success('定位模式已启动（手动）');
-        message.info('正在定位中，请等待...');
+        setStatusMessage('定位成功（手动）');
+        setSuccessModalVisible(true);
         onModeChange?.('localization');
-        // 不在这里清除loading，等待定位完成的状态消息
       } else {
-        message.error(result.message || '启动定位模式失败');
-        setLoading(null);
-        setIsLocalizing(false);
+        // 定位失败
+        setCurrentMode('idle');
+        setStatusMessage('定位失败（手动）');
+        setFailureMessage(result.message || '定位失败，请重试');
+        setFailureModalVisible(true);
       }
     } catch (error) {
       message.error('启动定位模式失败');
       console.error(error);
+      setCurrentMode('idle');
+      setStatusMessage('定位失败');
+    } finally {
       setLoading(null);
-      setIsLocalizing(false);
     }
   };
 
   const handleLocalizationAuto = async () => {
     setLoading('localization_auto');
-    setIsLocalizing(true);
     setLastLocalizationType('auto');
-    hasShownSuccessRef.current = false; // 重置成功提示标志
-    hasShownFailureRef.current = false; // 重置失败提示标志
+    setStatusMessage('定位中（自动）...');
+    message.info('正在自动定位中，请等待约10秒...');
+
     try {
       const result = await rosService.startLocalizationAuto();
+
       if (result.success) {
+        // 定位成功
         setCurrentMode('localization_auto');
-        message.success('定位模式已启动（自动）');
-        message.info('正在自动定位中，请等待...');
+        setStatusMessage('定位成功（自动）');
+        setSuccessModalVisible(true);
         onModeChange?.('localization_auto');
-        // 不在这里清除loading，等待定位完成的状态消息
       } else {
-        message.error(result.message || '启动自动定位模式失败');
-        setLoading(null);
-        setIsLocalizing(false);
+        // 定位失败
+        setCurrentMode('idle');
+        setStatusMessage('定位失败（自动）');
+        setFailureMessage(result.message || '定位失败，请重试');
+        setFailureModalVisible(true);
       }
     } catch (error) {
       message.error('启动自动定位模式失败');
       console.error(error);
+      setCurrentMode('idle');
+      setStatusMessage('定位失败');
+    } finally {
       setLoading(null);
-      setIsLocalizing(false);
     }
   };
 
@@ -157,7 +126,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
             icon={<AimOutlined />}
             onClick={handleLocalizationManual}
             loading={loading === 'localization'}
-            disabled={isLocalizing}
+            disabled={loading !== null}
             size="small"
             style={{ flex: 1 }}
           >
@@ -169,7 +138,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
             icon={<SyncOutlined />}
             onClick={handleLocalizationAuto}
             loading={loading === 'localization_auto'}
-            disabled={isLocalizing}
+            disabled={loading !== null}
             size="small"
             style={{ flex: 1 }}
           >
@@ -178,9 +147,54 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
         </div>
 
         <div style={{ fontSize: 12, color: '#666', paddingLeft: 8 }}>
-          💡 {isLocalizing ? '定位过程约需10秒，请等待完成' : '手动需在地图点击初始位置，自动则系统自动搜索'}
+          💡 {loading !== null ? '定位过程约需10秒，请等待完成' : '手动需在地图点击初始位置，自动则系统自动搜索'}
         </div>
       </Space>
+
+      {/* 定位成功Modal */}
+      <Modal
+        title="定位成功"
+        open={successModalVisible}
+        centered
+        onCancel={() => setSuccessModalVisible(false)}
+        footer={
+          <Button type="primary" onClick={() => setSuccessModalVisible(false)}>
+            确定
+          </Button>
+        }
+        width={420}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{ marginBottom: 16, textAlign: 'center' }}>
+            <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a' }} />
+          </div>
+          <div style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: 500 }}>
+            定位成功完成！
+          </div>
+          <div style={{
+            marginBottom: 16,
+            padding: 16,
+            background: '#f6ffed',
+            borderRadius: 4,
+            border: '1px solid #b7eb8f',
+          }}>
+            <div style={{ color: '#389e0d', fontSize: 14, marginBottom: 8 }}>
+              <strong>✅ 机器人位置已成功确定</strong>
+            </div>
+            <div style={{ color: '#666', fontSize: 13 }}>
+              机器人已在地图中完成定位，现在可以进行导航操作了。
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: '#666' }}>
+            <div style={{ marginBottom: 8 }}>💡 下一步操作：</div>
+            <ul style={{ paddingLeft: 20, margin: 0 }}>
+              <li>点击地图设置目标导航点</li>
+              <li>或继续调整机器人姿态</li>
+              <li>定位模式将持续运行直到关闭</li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
 
       {/* 定位失败Modal */}
       <Modal

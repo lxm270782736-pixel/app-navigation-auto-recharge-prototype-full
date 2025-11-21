@@ -497,21 +497,34 @@ class ROSService {
       }
 
       // 转换 ROS 格式到前端格式
-      return (response.maps || []).map((rosMap: any) => ({
-        id: rosMap.id,
-        name: rosMap.name,
-        createdAt: new Date(rosMap.created_at * 1000).toISOString(), // ROS 时间戳转换
-        thumbnail: rosMap.thumbnail || '',
-        width: rosMap.width,
-        height: rosMap.height,
-        resolution: rosMap.resolution,
-        origin: {
-          x: rosMap.origin_x,
-          y: rosMap.origin_y,
-          orientation: rosMap.origin_orientation,
-        },
-        data: [], // 元数据不包含完整数据
-      }));
+      // 注意：ROS ListMaps 服务返回的是 string[] 类型，每个元素只是地图名称（字符串）
+      return (response.maps || [])
+        .filter((mapName: any) => {
+          // 过滤掉无效的地图名称
+          if (!mapName || typeof mapName !== 'string') {
+            console.warn('[ROS Service] 跳过无效地图名称:', mapName);
+            return false;
+          }
+          return true;
+        })
+        .map((mapName: string) => {
+          // mapName 是字符串类型（文件夹名称），不是对象
+          return {
+            id: mapName,
+            name: mapName,
+            createdAt: new Date().toISOString(), // list_maps 不返回时间戳，使用当前时间
+            thumbnail: '', // list_maps 不返回缩略图
+            width: 0, // list_maps 不返回详细信息，需要调用 load_map 获取
+            height: 0,
+            resolution: 0.05,
+            origin: {
+              x: 0,
+              y: 0,
+              orientation: 0,
+            },
+            data: [], // 元数据不包含完整数据
+          };
+        });
     } catch (error) {
       console.error('Failed to get map metadata from ROS:', error);
       throw error;
@@ -565,7 +578,6 @@ class ROSService {
       {
         map_name: mapData.name,
         map_data: rosMapData,
-        created_at: new Date(mapData.createdAt).getTime() / 1000, // 传递创建时间（转为秒）
       }
     );
 
@@ -576,6 +588,11 @@ class ROSService {
 
   // 从 ROS 加载地图（包含完整数据）
   async loadMapFromROS(mapName: string): Promise<MapData> {
+    // 验证地图名称
+    if (!mapName || typeof mapName !== 'string' || mapName.trim() === '') {
+      throw new Error('Map name cannot be empty');
+    }
+
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string; map_data: any }>(
       '/localization/load_map',
       'localization_msgs/LoadMap',
@@ -640,9 +657,21 @@ class ROSService {
 
   // 转换ROS地图数据到内部格式
   private convertROSMapToMapData(rosMap: any): MapData {
+    // 处理 map_load_time - 如果是 ROS 时间戳对象，转换为字符串；如果是字符串，直接使用；否则使用默认值
+    let mapName = '实时地图';
+    if (rosMap.info.map_load_time) {
+      if (typeof rosMap.info.map_load_time === 'string') {
+        mapName = rosMap.info.map_load_time;
+      } else if (typeof rosMap.info.map_load_time === 'object' && rosMap.info.map_load_time.secs !== undefined) {
+        // ROS 时间戳对象，转换为可读的日期时间字符串
+        const date = new Date(rosMap.info.map_load_time.secs * 1000);
+        mapName = date.toLocaleString('zh-CN');
+      }
+    }
+
     return {
       id: Date.now().toString(),
-      name: rosMap.info.map_load_time || '实时地图',
+      name: mapName,
       createdAt: new Date().toISOString(),
       thumbnail: '',
       width: rosMap.info.width,

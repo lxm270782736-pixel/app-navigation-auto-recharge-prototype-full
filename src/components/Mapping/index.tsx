@@ -159,11 +159,17 @@ export const Mapping: React.FC = () => {
       return;
     }
 
+    // 规范化地图名称（移除特殊字符）
+    const sanitizedName = mapStorageService.sanitizeMapName(mapName);
+    if (sanitizedName !== mapName) {
+      message.warning(`地图名称已规范化为: ${sanitizedName}`);
+    }
+
     try {
       // 创建地图数据（不生成缩略图）
       const mapData: MapData = {
-        id: mapName, // 使用 name 作为 id
-        name: mapName,
+        id: sanitizedName, // 使用规范化后的 name 作为 id
+        name: sanitizedName,
         createdAt: new Date().toISOString(),
         thumbnail: '', // 不保存缩略图
         width: currentMapData.width!,

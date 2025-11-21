@@ -224,17 +224,16 @@ export const Navigation: React.FC = () => {
       ),
       onOk: async () => {
         try {
-          // 生成地图名称
-          const timestamp = new Date().toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-          }).replace(/\//g, '-');
-          const mapName = `实时地图_${timestamp}`;
+          // 生成安全的地图名称（只包含字母、数字、下划线）
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+
+          const mapName = `map_${year}${month}${day}_${hours}${minutes}${seconds}`;
 
           // 创建地图数据（不生成缩略图）
           const mapToSave: MapData = {
@@ -247,7 +246,7 @@ export const Navigation: React.FC = () => {
 
           // 保存地图到 ROS
           await rosService.saveMapToROS(mapToSave);
-          message.success(`地图已保存为 "${mapName}"`);
+          message.success(`地图已保存: ${mapName}`);
         } catch (error) {
           console.error('保存地图失败:', error);
           message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
