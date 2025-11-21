@@ -460,7 +460,7 @@ class ROSService {
     // 调用 ROS 定位服务应用地图
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/apply_map',
-      'localization_msgs/SetMapName',
+      'localization_msgs/ApplyMap',
       {
         map_name: mapData.name,
       }
@@ -476,7 +476,7 @@ class ROSService {
     // 使用 apply_map 服务设置地图名称（地图可以不存在）
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/apply_map',
-      'localization_msgs/SetMapName',
+      'localization_msgs/ApplyMap',
       {
         map_name: mapName,
       }

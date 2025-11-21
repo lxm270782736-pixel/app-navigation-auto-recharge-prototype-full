@@ -564,7 +564,7 @@ class MockROSBridge:
                 print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
         elif service == "/localization/apply_map":
-            # 服务类型: localization_msgs/SetMapName
+            # 服务类型: localization_msgs/ApplyMap
             # 应用地图（设置为当前地图）或设置地图名称（用于建图）
             map_name = args.get("map_name", "")
 
