@@ -86,7 +86,7 @@ NavigationGoal {
 - Uses ROS Action pattern (`/move_chassis_to_server`)
 - Sends: goal with pose + tasks + config
 - Receives: status updates (PENDING→ACTIVE→SUCCEEDED/ABORTED/PREEMPTED), feedback (distance, progress, ETA), result (success + message)
-- See NAVIGATION_EVENTS.md for detailed event handling
+- See docs/NAVIGATION_EVENTS.md for detailed event handling
 
 **Navigation Result Analysis (CRITICAL)**
 Navigation success requires checking TWO separate conditions:
@@ -97,7 +97,7 @@ This dual-check pattern is essential because:
 - Robot can reach goal position (condition 1 passes) but attached tasks may fail (condition 2 fails)
 - Both must succeed for overall navigation success
 - Example: Robot reaches waypoint but camera task fails → navigation should be marked as failed
-- See NAVIGATION_EVENTS.md for complete event handling details
+- See docs/NAVIGATION_EVENTS.md for complete event handling details
 
 ### Extensible Task System
 
@@ -120,7 +120,7 @@ Located in `src/types/task.ts` - highly modular design supporting 15+ task types
   - Connect nodes to define execution flow
   - Support for parallel execution and conditional branching
   - Real-time parameter editing in node cards
-  - See VISUAL_TASK_FLOW_EDITOR.md for detailed usage
+  - See docs/VISUAL_TASK_FLOW_EDITOR.md for detailed usage
 
 **Adding New Tasks**
 1. Add to `TaskType` enum in src/types/task.ts
@@ -130,7 +130,7 @@ Located in `src/types/task.ts` - highly modular design supporting 15+ task types
 5. Implement execution in mock_rosbridge.py `execute_tasks()`
 6. Implement in real ROS action server
 
-See TASK_SYSTEM.md for architectural details and TASK_USAGE_GUIDE.md for examples.
+See docs/TASK_SYSTEM.md for architectural details and docs/TASK_USAGE_GUIDE.md for examples.
 
 ### Map Rendering Engine
 
@@ -226,14 +226,14 @@ The `mock_rosbridge.py` implements:
 ## Documentation References
 
 **Essential Reading**
-- **NAVIGATION_EVENTS.md** - Critical: Navigation result/feedback/status event handling details
-- **TASK_SYSTEM.md** - Extensible task architecture design and adding new task types
-- **VISUAL_TASK_FLOW_EDITOR.md** - Visual flow editor (React Flow-based) usage guide
-- **ROS_INTEGRATION.md** - Real ROS backend integration and topic/service interfaces
-- **MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture and ROS Service migration plan
+- **docs/NAVIGATION_EVENTS.md** - Critical: Navigation result/feedback/status event handling details
+- **docs/TASK_SYSTEM.md** - Extensible task architecture design and adding new task types
+- **docs/VISUAL_TASK_FLOW_EDITOR.md** - Visual flow editor (React Flow-based) usage guide
+- **docs/ROS_INTEGRATION.md** - Real ROS backend integration and topic/service interfaces
+- **docs/MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture and ROS Service migration plan
 
 **Additional Documentation**
-- STARTUP_SCRIPTS.md, MOCK_NAVIGATION.md, TASK_USAGE_GUIDE.md, TASK_QUICKSTART.md, VISUAL_TASK_EDITOR_RESEARCH.md
+- docs/STARTUP_SCRIPTS.md, docs/MOCK_NAVIGATION.md, docs/TASK_USAGE_GUIDE.md, docs/TASK_QUICKSTART.md, docs/VISUAL_TASK_EDITOR_RESEARCH.md
 
 ## Code Style Notes
 
