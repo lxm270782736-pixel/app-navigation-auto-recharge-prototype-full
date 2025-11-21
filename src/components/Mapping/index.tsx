@@ -118,7 +118,32 @@ export const Mapping: React.FC = () => {
         okType: 'danger',
         cancelText: '取消',
         onOk: async () => {
-          await setMapNameAndStartMapping(sanitizedName);
+          try {
+            // 先删除旧地图
+            message.loading({ content: `正在删除旧地图 "${sanitizedName}"...`, key: 'deleteMap', duration: 0 });
+
+            await rosService.deleteMapFromROS(sanitizedName);
+
+            // 同时从本地缓存删除
+            mapStorageService.deleteMapFromLocalCache(sanitizedName);
+
+            message.success({
+              content: `旧地图 "${sanitizedName}" 已删除`,
+              key: 'deleteMap',
+              duration: 2,
+            });
+
+            console.log('[建图] 已删除旧地图:', sanitizedName);
+
+            // 继续设置地图名称并开始建图
+            await setMapNameAndStartMapping(sanitizedName);
+          } catch (error) {
+            console.error('删除旧地图失败:', error);
+            message.error({
+              content: '删除旧地图失败: ' + (error instanceof Error ? error.message : '未知错误'),
+              key: 'deleteMap',
+            });
+          }
         },
       });
     } else {
@@ -252,97 +277,21 @@ export const Mapping: React.FC = () => {
         message.success('建图已停止，遥控器已关闭');
       }
 
-      // 弹出更新地图确认对话框
+      // 通知地图已保存，并从ROS同步到本地缓存
       if (pendingMapName) {
-        Modal.confirm({
-          title: '更新地图',
-          content: (
-            <div>
-              <p>是否将建图结果更新到地图 <strong>"{pendingMapName}"</strong>？</p>
-              {currentMapData && (
-                <div style={{ marginTop: 12, fontSize: 13, color: '#666' }}>
-                  <div>地图尺寸: {currentMapData.width} × {currentMapData.height} px</div>
-                  <div>分辨率: {currentMapData.resolution?.toFixed(3)} m/px</div>
-                </div>
-              )}
-            </div>
-          ),
-          okText: '更新地图',
-          cancelText: '取消',
-          centered: true,
-          onOk: async () => {
-            await updateMap();
-          },
-          onCancel: async () => {
-            await cancelUpdateMap();
-          },
+        message.info({
+          content: `地图 "${pendingMapName}" 已保存到ROS，正在同步到本地...`,
+          duration: 2,
         });
+
+        // 从ROS同步地图到本地缓存
+        await syncMapFromROS();
       } else {
         message.warning('未设置地图名称');
       }
     } catch (error) {
       message.error('停止建图失败');
       console.error('Failed to stop mapping:', error);
-    }
-  };
-
-  // 更新地图（使用pendingMapName）
-  const updateMap = async () => {
-    if (!pendingMapName) {
-      message.error('地图名称未设置');
-      return;
-    }
-
-    if (!currentMapData || !currentMapData.data) {
-      message.error('地图数据不完整，无法保存');
-      return;
-    }
-
-    try {
-      message.loading({ content: '正在更新地图...', key: 'updateMap', duration: 0 });
-
-      // 生成缩略图
-      const thumbnail = mapStorageService.generateThumbnail(
-        currentMapData.data,
-        currentMapData.width!,
-        currentMapData.height!
-      );
-
-      // 创建地图数据（含缩略图）
-      const mapData: MapData = {
-        id: pendingMapName,
-        name: pendingMapName,
-        createdAt: new Date().toISOString(),
-        thumbnail, // 保存缩略图
-        width: currentMapData.width!,
-        height: currentMapData.height!,
-        resolution: currentMapData.resolution!,
-        origin: currentMapData.origin!,
-        data: currentMapData.data,
-      };
-
-      // 保存到 ROS 服务
-      await rosService.saveMapToROS(mapData);
-
-      // 同时保存到本地缓存
-      mapStorageService.saveMapToLocalCache(mapData);
-
-      message.success({
-        content: `地图 "${pendingMapName}" 已更新`,
-        key: 'updateMap',
-        duration: 2,
-      });
-
-      console.log('[建图] 地图已更新:', pendingMapName);
-
-      // 跳转到地图管理页面
-      navigate('/maps');
-    } catch (error) {
-      message.error({
-        content: '更新地图失败: ' + (error instanceof Error ? error.message : '未知错误'),
-        key: 'updateMap',
-      });
-      console.error('Failed to update map:', error);
     }
   };
 
@@ -400,8 +349,8 @@ export const Mapping: React.FC = () => {
     }
   };
 
-  // 取消更新地图（触发加载ROS服务端的指定地图）
-  const cancelUpdateMap = async () => {
+  // 从ROS同步地图到本地缓存
+  const syncMapFromROS = async () => {
     // 如果没有设置过地图名称，直接返回
     if (!pendingMapName) {
       console.log('[建图] 没有待加载的地图名称');
@@ -410,7 +359,7 @@ export const Mapping: React.FC = () => {
 
     try {
       // 从ROS服务端加载指定名称的地图到本地缓存
-      message.loading({ content: `正在加载地图 "${pendingMapName}"...`, key: 'loadMap', duration: 0 });
+      message.loading({ content: `正在同步地图 "${pendingMapName}"...`, key: 'syncMap', duration: 0 });
 
       // 加载完整的地图数据
       const mapData = await rosService.loadMapFromROS(pendingMapName);
@@ -419,17 +368,17 @@ export const Mapping: React.FC = () => {
       mapStorageService.saveMapToLocalCache(mapData);
 
       message.success({
-        content: `地图 "${pendingMapName}" 已加载到本地缓存`,
-        key: 'loadMap',
+        content: `地图 "${pendingMapName}" 已同步到本地`,
+        key: 'syncMap',
         duration: 2,
       });
 
-      console.log('[建图] 已从ROS加载并缓存地图:', pendingMapName);
+      console.log('[建图] 已从ROS同步地图到本地:', pendingMapName);
     } catch (error) {
-      console.error('加载ROS地图失败:', error);
+      console.error('同步地图失败:', error);
       message.warning({
-        content: `地图 "${pendingMapName}" 可能尚未保存到ROS`,
-        key: 'loadMap',
+        content: `地图 "${pendingMapName}" 同步失败，ROS端可能尚未保存`,
+        key: 'syncMap',
         duration: 3,
       });
     }
