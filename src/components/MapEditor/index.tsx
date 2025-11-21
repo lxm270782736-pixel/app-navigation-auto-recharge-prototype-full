@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Button, message, Input, Space, Radio, Slider } from 'antd';
+import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert } from 'antd';
 import {
   ArrowLeftOutlined,
   SaveOutlined,
@@ -11,6 +11,7 @@ import {
   QuestionCircleOutlined,
   UndoOutlined,
   RedoOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { rosService } from '@/services/ros';
@@ -299,48 +300,137 @@ export const MapEditor: React.FC = () => {
   const handleDelete = async () => {
     if (!mapData) return;
 
-    if (window.confirm(`确定要删除地图 "${mapData.name}" 吗？此操作不可恢复。`)) {
-      try {
-        let rosDeleteSuccess = false;
-        let localDeleteSuccess = false;
+    Modal.confirm({
+      title: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 20 }} />
+          <span>删除地图</span>
+        </div>
+      ),
+      width: 520,
+      icon: null,
+      content: (
+        <div>
+          <Alert
+            message="警告：此操作不可恢复！"
+            description={
+              mapData.localOnly
+                ? '该地图仅存在于本地缓存，删除后将无法恢复。'
+                : '该地图将从本地缓存和ROS后端同时删除，删除后将无法恢复。'
+            }
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
 
-        // 1. 立即删除本地缓存（优先本地策略）
+          <div style={{
+            display: 'flex',
+            gap: 16,
+            padding: 16,
+            background: '#fafafa',
+            borderRadius: 8,
+            border: '1px solid #f0f0f0',
+          }}>
+            {/* 地图缩略图 */}
+            <div style={{
+              width: 120,
+              height: 120,
+              flexShrink: 0,
+              background: '#f0f0f0',
+              borderRadius: 4,
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {mapData.thumbnail ? (
+                <img
+                  src={mapData.thumbnail}
+                  alt={mapData.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <span style={{ color: '#999', fontSize: 12 }}>无缩略图</span>
+              )}
+            </div>
+
+            {/* 地图信息 */}
+            <div style={{ flex: 1 }}>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                  {mapData.name}
+                </div>
+                {mapData.localOnly && (
+                  <Tag color="orange" style={{ margin: 0 }}>仅本地</Tag>
+                )}
+              </div>
+
+              <div style={{ fontSize: 13, color: '#666', lineHeight: '22px' }}>
+                <div>创建时间：{dayjs(mapData.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
+                <div>地图尺寸：{mapData.width} × {mapData.height} 像素</div>
+                <div>分辨率：{mapData.resolution.toFixed(3)} m/px</div>
+                <div>存储位置：
+                  {mapData.localOnly ? (
+                    <span style={{ color: '#fa8c16' }}> 仅本地缓存</span>
+                  ) : (
+                    <span style={{ color: '#52c41a' }}> 本地缓存 + ROS后端</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, fontSize: 13, color: '#666' }}>
+            确定要删除地图 <strong style={{ color: '#ff4d4f' }}>"{mapData.name}"</strong> 吗？
+          </div>
+        </div>
+      ),
+      okText: '确认删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
         try {
-          mapStorageService.deleteMapFromLocalCache(mapData.id);
-          localDeleteSuccess = true;
-          console.log('[地图删除] 本地缓存已删除');
-        } catch (error) {
-          console.error('[地图删除] 本地缓存删除失败:', error);
-        }
+          let rosDeleteSuccess = false;
+          let localDeleteSuccess = false;
 
-        // 2. 尝试删除ROS后端（如果已连接）
-        if (connectionStatus === ConnectionStatus.CONNECTED) {
+          // 1. 立即删除本地缓存（优先本地策略）
           try {
-            await rosService.deleteMapFromROS(mapData.id);
-            rosDeleteSuccess = true;
-            console.log('[地图删除] ROS后端已删除');
+            mapStorageService.deleteMapFromLocalCache(mapData.id);
+            localDeleteSuccess = true;
+            console.log('[地图删除] 本地缓存已删除');
           } catch (error) {
-            console.error('[地图删除] ROS后端删除失败:', error);
-            // ROS删除失败不阻止本地删除
+            console.error('[地图删除] 本地缓存删除失败:', error);
           }
-        }
 
-        // 3. 显示结果并返回
-        if (localDeleteSuccess && rosDeleteSuccess) {
-          message.success('地图已删除（本地和ROS同步完成）');
-        } else if (localDeleteSuccess && !rosDeleteSuccess) {
-          message.warning('地图已从本地删除，但ROS删除失败');
-        } else if (!localDeleteSuccess) {
-          message.error('地图删除失败');
-          return; // 失败不跳转
-        }
+          // 2. 尝试删除ROS后端（如果已连接）
+          if (connectionStatus === ConnectionStatus.CONNECTED) {
+            try {
+              await rosService.deleteMapFromROS(mapData.id);
+              rosDeleteSuccess = true;
+              console.log('[地图删除] ROS后端已删除');
+            } catch (error) {
+              console.error('[地图删除] ROS后端删除失败:', error);
+              // ROS删除失败不阻止本地删除
+            }
+          }
 
-        navigate('/maps');
-      } catch (error) {
-        console.error('删除地图失败:', error);
-        message.error('删除地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
-      }
-    }
+          // 3. 显示结果并返回
+          if (localDeleteSuccess && rosDeleteSuccess) {
+            message.success('地图已删除（本地和ROS同步完成）');
+          } else if (localDeleteSuccess && !rosDeleteSuccess) {
+            message.warning('地图已从本地删除，但ROS删除失败');
+          } else if (!localDeleteSuccess) {
+            message.error('地图删除失败');
+            return; // 失败不跳转
+          }
+
+          navigate('/maps');
+        } catch (error) {
+          console.error('删除地图失败:', error);
+          message.error('删除地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        }
+      },
+    });
   };
 
   if (!mapData) {

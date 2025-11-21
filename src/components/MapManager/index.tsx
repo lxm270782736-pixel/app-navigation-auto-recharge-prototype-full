@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, List, Modal, Empty, message, Space, Badge, Tag } from 'antd';
+import { Card, Button, List, Modal, Empty, message, Space, Badge, Tag, Alert } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -9,6 +9,7 @@ import {
   EditOutlined,
   ReloadOutlined,
   CloudUploadOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
@@ -461,15 +462,96 @@ export const MapManager: React.FC = () => {
       )}
 
       <Modal
-        title="删除地图"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 20 }} />
+            <span>删除地图</span>
+          </div>
+        }
         open={deleteModalVisible}
         onOk={confirmDelete}
         onCancel={() => setDeleteModalVisible(false)}
         okText="确认删除"
         cancelText="取消"
         okButtonProps={{ danger: true }}
+        width={520}
       >
-        <p>确定要删除地图 "{selectedMap?.name}" 吗？此操作不可恢复。</p>
+        {selectedMap && (
+          <div>
+            <Alert
+              message="警告：此操作不可恢复！"
+              description={
+                selectedMap.localOnly
+                  ? '该地图仅存在于本地缓存，删除后将无法恢复。'
+                  : '该地图将从本地缓存和ROS后端同时删除，删除后将无法恢复。'
+              }
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+
+            <div style={{
+              display: 'flex',
+              gap: 16,
+              padding: 16,
+              background: '#fafafa',
+              borderRadius: 8,
+              border: '1px solid #f0f0f0',
+            }}>
+              {/* 地图缩略图 */}
+              <div style={{
+                width: 120,
+                height: 120,
+                flexShrink: 0,
+                background: '#f0f0f0',
+                borderRadius: 4,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {selectedMap.thumbnail ? (
+                  <img
+                    src={selectedMap.thumbnail}
+                    alt={selectedMap.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                ) : (
+                  <span style={{ color: '#999', fontSize: 12 }}>无缩略图</span>
+                )}
+              </div>
+
+              {/* 地图信息 */}
+              <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                    {selectedMap.name}
+                  </div>
+                  {selectedMap.localOnly && (
+                    <Tag color="orange" style={{ margin: 0 }}>仅本地</Tag>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 13, color: '#666', lineHeight: '22px' }}>
+                  <div>创建时间：{dayjs(selectedMap.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
+                  <div>地图尺寸：{selectedMap.width} × {selectedMap.height} 像素</div>
+                  <div>分辨率：{selectedMap.resolution.toFixed(3)} m/px</div>
+                  <div>存储位置：
+                    {selectedMap.localOnly ? (
+                      <span style={{ color: '#fa8c16' }}> 仅本地缓存</span>
+                    ) : (
+                      <span style={{ color: '#52c41a' }}> 本地缓存 + ROS后端</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, fontSize: 13, color: '#666' }}>
+              确定要删除地图 <strong style={{ color: '#ff4d4f' }}>"{selectedMap.name}"</strong> 吗？
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
