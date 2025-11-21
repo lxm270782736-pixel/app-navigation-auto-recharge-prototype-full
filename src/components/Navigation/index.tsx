@@ -5,7 +5,6 @@ import {
   ArrowLeftOutlined,
   EnvironmentOutlined,
   SaveOutlined,
-  FolderOpenOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
@@ -62,6 +61,27 @@ export const Navigation: React.FC = () => {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionStatus]);
+
+  // 自动检测并打开地图选择（连接后2秒仍无地图数据）
+  useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      return;
+    }
+
+    // 连接后等待2秒，检查是否有地图数据
+    const timer = setTimeout(() => {
+      if (!currentMap && connectionStatus === ConnectionStatus.CONNECTED) {
+        // 如果没有地图数据，自动打开地图选择modal
+        console.log('[导航] 未检测到地图数据，自动打开地图选择');
+        handleOpenApplyMapModal();
+      }
+    }, 2000); // 等待2秒让/map话题有机会发布
+
+    return () => {
+      clearTimeout(timer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionStatus, currentMap]);
 
   // 订阅机器人位置
   useEffect(() => {
@@ -360,25 +380,19 @@ export const Navigation: React.FC = () => {
           justifyContent: 'center',
           gap: '24px',
         }}>
-          <div style={{ fontSize: '16px', color: '#666' }}>
-            {connectionStatus === ConnectionStatus.CONNECTED
-              ? '等待地图数据...'
-              : '请先连接 ROS...'}
-          </div>
-
-          {connectionStatus === ConnectionStatus.CONNECTED && (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '14px', color: '#999', marginBottom: 16 }}>
-                未检测到实时地图，您可以应用一个历史地图来开始导航
+          {connectionStatus === ConnectionStatus.CONNECTED ? (
+            <>
+              <Spin size="large" />
+              <div style={{ fontSize: '16px', color: '#666' }}>
+                等待地图数据...
               </div>
-              <Button
-                type="primary"
-                icon={<FolderOpenOutlined />}
-                onClick={handleOpenApplyMapModal}
-                size="large"
-              >
-                应用历史地图
-              </Button>
+              <div style={{ fontSize: '14px', color: '#999' }}>
+                未检测到实时地图，正在加载历史地图列表...
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: '16px', color: '#666' }}>
+              请先连接 ROS...
             </div>
           )}
         </div>

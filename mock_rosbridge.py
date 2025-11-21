@@ -25,6 +25,7 @@ class MockROSBridge:
         self.mapping_active = False
         self.map_data = self.generate_sample_map()
         self.current_map_set = False  # 标记是否已设置当前地图（通过apply_map）
+        self.pending_map_name = ""  # 待保存的地图名称（建图开始前设置）
         # 初始位置设置在地图中心可见区域
         self.robot_pose = {"x": 2.0, "y": 2.0, "theta": 0.0}
         self.movement_time = 0.0
@@ -564,10 +565,17 @@ class MockROSBridge:
 
         elif service == "/localization/apply_map":
             # 服务类型: localization_msgs/SetMapName
-            # 应用地图（设置为当前地图）
+            # 应用地图（设置为当前地图）或设置地图名称（用于建图）
             map_name = args.get("map_name", "")
 
-            if map_name in self.saved_maps:
+            if not map_name:
+                response["values"] = {
+                    "success": False,
+                    "message": "地图名称不能为空"
+                }
+                print("✗ 定位服务: 地图名称不能为空")
+            elif map_name in self.saved_maps:
+                # 情况1: 地图存在，加载并应用该地图
                 map_meta = self.saved_maps[map_name]
 
                 # 将地图设置为当前地图
@@ -607,11 +615,13 @@ class MockROSBridge:
                 print(f"✓ 定位服务: 应用地图 '{map_name}' 为当前地图")
                 print(f"   地图将通过 /map 话题实时发布")
             else:
+                # 情况2: 地图不存在，仅设置地图名称（用于建图）
+                self.pending_map_name = map_name
                 response["values"] = {
-                    "success": False,
-                    "message": f"地图 '{map_name}' 不存在"
+                    "success": True,
+                    "message": f"地图名称已设置为 '{map_name}'（将用于新建地图）"
                 }
-                print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
+                print(f"✓ 定位服务: 地图名称已设置为 '{map_name}'（将用于新建地图）")
 
         await websocket.send(json.dumps(response))
 

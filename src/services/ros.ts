@@ -471,6 +471,22 @@ class ROSService {
     }
   }
 
+  // 设置地图名称（用于建图开始前）
+  async setMapName(mapName: string): Promise<void> {
+    // 使用 apply_map 服务设置地图名称（地图可以不存在）
+    const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
+      '/localization/apply_map',
+      'localization_msgs/SetMapName',
+      {
+        map_name: mapName,
+      }
+    );
+
+    if (!response.success) {
+      throw new Error(response.message || '设置地图名称失败');
+    }
+  }
+
   // 获取地图列表
   async getMapList(): Promise<string[]> {
     const response = await this.callService<{}, { maps: string[] }>(

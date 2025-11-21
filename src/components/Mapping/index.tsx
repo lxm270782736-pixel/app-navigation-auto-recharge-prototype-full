@@ -31,6 +31,12 @@ export const Mapping: React.FC = () => {
   const [skipJoystick, setSkipJoystick] = useState(false);
   const [skipMappingNode, setSkipMappingNode] = useState(false);
 
+  // 地图名称输入状态
+  const [mapNameModalVisible, setMapNameModalVisible] = useState(false);
+  const [inputMapName, setInputMapName] = useState('');
+  const [existingMaps, setExistingMaps] = useState<string[]>([]);
+  const [pendingMapName, setPendingMapName] = useState<string>(''); // 记住建图开始前设置的地图名称
+
   // 组件卸载时停止建图
   useEffect(() => {
     return () => {
@@ -69,13 +75,86 @@ export const Mapping: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  const startMapping = () => {
-    // 打开建图启动交互框
-    setMappingModalVisible(true);
-    setMappingStep(0);
-    setMappingStepStatus(['wait', 'wait']);
-    setSkipJoystick(false);
-    setSkipMappingNode(false);
+  const startMapping = async () => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
+
+    // 先弹出地图名称输入对话框
+    try {
+      // 生成默认地图名称
+      const defaultName = await mapStorageService.generateDefaultMapName();
+      setInputMapName(defaultName);
+
+      // 获取已存在的地图列表
+      const maps = await rosService.getAllMapMetadata();
+      setExistingMaps(maps.map(m => m.name));
+
+      // 打开地图名称输入对话框
+      setMapNameModalVisible(true);
+    } catch (error) {
+      console.error('加载地图列表失败:', error);
+      message.error('加载地图列表失败');
+    }
+  };
+
+  // 确认地图名称并开始建图
+  const confirmMapNameAndStart = async () => {
+    if (!inputMapName.trim()) {
+      message.error('请输入地图名称');
+      return;
+    }
+
+    // 规范化地图名称
+    const sanitizedName = mapStorageService.sanitizeMapName(inputMapName);
+
+    // 检查是否存在同名地图
+    if (existingMaps.includes(sanitizedName)) {
+      Modal.confirm({
+        title: '地图名称冲突',
+        content: `地图 "${sanitizedName}" 已存在，是否覆盖？`,
+        okText: '覆盖',
+        okType: 'danger',
+        cancelText: '取消',
+        onOk: async () => {
+          await setMapNameAndStartMapping(sanitizedName);
+        },
+      });
+    } else {
+      await setMapNameAndStartMapping(sanitizedName);
+    }
+  };
+
+  // 设置地图名称并开始建图流程
+  const setMapNameAndStartMapping = async (finalMapName: string) => {
+    try {
+      message.loading({ content: '正在设置地图名称...', key: 'setMapName', duration: 0 });
+
+      // 调用 ROS 服务设置地图名称
+      await rosService.setMapName(finalMapName);
+
+      // 记住这个地图名称供后续使用
+      setPendingMapName(finalMapName);
+
+      message.success({ content: `地图名称已设置为 "${finalMapName}"`, key: 'setMapName', duration: 2 });
+
+      // 关闭地图名称输入对话框
+      setMapNameModalVisible(false);
+
+      // 打开建图启动交互框
+      setMappingModalVisible(true);
+      setMappingStep(0);
+      setMappingStepStatus(['wait', 'wait']);
+      setSkipJoystick(false);
+      setSkipMappingNode(false);
+    } catch (error) {
+      console.error('设置地图名称失败:', error);
+      message.error({
+        content: '设置地图名称失败: ' + (error instanceof Error ? error.message : '未知错误'),
+        key: 'setMapName',
+      });
+    }
   };
 
   const executeMappingStartup = async () => {
@@ -173,13 +252,97 @@ export const Mapping: React.FC = () => {
         message.success('建图已停止，遥控器已关闭');
       }
 
-      // 生成默认地图名称
-      const defaultName = await mapStorageService.generateDefaultMapName();
-      setMapName(defaultName);
-      setSaveModalVisible(true);
+      // 弹出更新地图确认对话框
+      if (pendingMapName) {
+        Modal.confirm({
+          title: '更新地图',
+          content: (
+            <div>
+              <p>是否将建图结果更新到地图 <strong>"{pendingMapName}"</strong>？</p>
+              {currentMapData && (
+                <div style={{ marginTop: 12, fontSize: 13, color: '#666' }}>
+                  <div>地图尺寸: {currentMapData.width} × {currentMapData.height} px</div>
+                  <div>分辨率: {currentMapData.resolution?.toFixed(3)} m/px</div>
+                </div>
+              )}
+            </div>
+          ),
+          okText: '更新地图',
+          cancelText: '取消',
+          centered: true,
+          onOk: async () => {
+            await updateMap();
+          },
+          onCancel: async () => {
+            await cancelUpdateMap();
+          },
+        });
+      } else {
+        message.warning('未设置地图名称');
+      }
     } catch (error) {
       message.error('停止建图失败');
       console.error('Failed to stop mapping:', error);
+    }
+  };
+
+  // 更新地图（使用pendingMapName）
+  const updateMap = async () => {
+    if (!pendingMapName) {
+      message.error('地图名称未设置');
+      return;
+    }
+
+    if (!currentMapData || !currentMapData.data) {
+      message.error('地图数据不完整，无法保存');
+      return;
+    }
+
+    try {
+      message.loading({ content: '正在更新地图...', key: 'updateMap', duration: 0 });
+
+      // 生成缩略图
+      const thumbnail = mapStorageService.generateThumbnail(
+        currentMapData.data,
+        currentMapData.width!,
+        currentMapData.height!
+      );
+
+      // 创建地图数据（含缩略图）
+      const mapData: MapData = {
+        id: pendingMapName,
+        name: pendingMapName,
+        createdAt: new Date().toISOString(),
+        thumbnail, // 保存缩略图
+        width: currentMapData.width!,
+        height: currentMapData.height!,
+        resolution: currentMapData.resolution!,
+        origin: currentMapData.origin!,
+        data: currentMapData.data,
+      };
+
+      // 保存到 ROS 服务
+      await rosService.saveMapToROS(mapData);
+
+      // 同时保存到本地缓存
+      mapStorageService.saveMapToLocalCache(mapData);
+
+      message.success({
+        content: `地图 "${pendingMapName}" 已更新`,
+        key: 'updateMap',
+        duration: 2,
+      });
+
+      console.log('[建图] 地图已更新:', pendingMapName);
+
+      // 跳转到地图管理页面
+      navigate('/maps');
+    } catch (error) {
+      message.error({
+        content: '更新地图失败: ' + (error instanceof Error ? error.message : '未知错误'),
+        key: 'updateMap',
+      });
+      console.error('Failed to update map:', error);
     }
   };
 
@@ -234,6 +397,41 @@ export const Mapping: React.FC = () => {
     } catch (error) {
       message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
       console.error('Failed to save map:', error);
+    }
+  };
+
+  // 取消更新地图（触发加载ROS服务端的指定地图）
+  const cancelUpdateMap = async () => {
+    // 如果没有设置过地图名称，直接返回
+    if (!pendingMapName) {
+      console.log('[建图] 没有待加载的地图名称');
+      return;
+    }
+
+    try {
+      // 从ROS服务端加载指定名称的地图到本地缓存
+      message.loading({ content: `正在加载地图 "${pendingMapName}"...`, key: 'loadMap', duration: 0 });
+
+      // 加载完整的地图数据
+      const mapData = await rosService.loadMapFromROS(pendingMapName);
+
+      // 保存到本地缓存
+      mapStorageService.saveMapToLocalCache(mapData);
+
+      message.success({
+        content: `地图 "${pendingMapName}" 已加载到本地缓存`,
+        key: 'loadMap',
+        duration: 2,
+      });
+
+      console.log('[建图] 已从ROS加载并缓存地图:', pendingMapName);
+    } catch (error) {
+      console.error('加载ROS地图失败:', error);
+      message.warning({
+        content: `地图 "${pendingMapName}" 可能尚未保存到ROS`,
+        key: 'loadMap',
+        duration: 3,
+      });
     }
   };
 
@@ -395,6 +593,64 @@ export const Mapping: React.FC = () => {
         )}
       </Card>
 
+      {/* 地图名称输入Modal */}
+      <Modal
+        title="设置地图名称"
+        open={mapNameModalVisible}
+        centered
+        onOk={confirmMapNameAndStart}
+        onCancel={() => setMapNameModalVisible(false)}
+        okText="确认并开始建图"
+        cancelText="取消"
+        width={480}
+      >
+        <div style={{ padding: '12px 0' }}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 8, color: '#666', fontSize: 14 }}>
+              请为即将建立的地图命名：
+            </div>
+            <Input
+              value={inputMapName}
+              onChange={(e) => setInputMapName(e.target.value)}
+              placeholder="输入地图名称"
+              maxLength={50}
+              onPressEnter={confirmMapNameAndStart}
+            />
+            <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+              地图名称将用于保存和识别地图，建议使用有意义的名称
+            </div>
+          </div>
+
+          {existingMaps.length > 0 && (
+            <div style={{
+              padding: 12,
+              background: '#fafafa',
+              borderRadius: 4,
+              border: '1px solid #f0f0f0'
+            }}>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+                已存在的地图 ({existingMaps.length}):
+              </div>
+              <div style={{
+                maxHeight: 120,
+                overflowY: 'auto',
+                fontSize: 12,
+                color: '#999'
+              }}>
+                {existingMaps.map((name, index) => (
+                  <div key={index} style={{ padding: '4px 0' }}>
+                    • {name}
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#fa8c16' }}>
+                ⚠️ 如果输入已存在的地图名称，将提示是否覆盖
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       {/* 建图启动流程Modal */}
       <Modal
         title="启动建图模式"
@@ -540,7 +796,7 @@ export const Mapping: React.FC = () => {
         </div>
       </Modal>
 
-      {/* 保存地图Modal */}
+      {/* 保存地图Modal（已废弃，改用Modal.confirm） */}
       <Modal
         title="保存地图"
         open={saveModalVisible}
