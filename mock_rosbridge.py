@@ -24,6 +24,7 @@ class MockROSBridge:
         self.subscriptions = {}
         self.mapping_active = False
         self.map_data = self.generate_sample_map()
+        self.current_map_set = False  # 标记是否已设置当前地图（通过apply_map）
         # 初始位置设置在地图中心可见区域
         self.robot_pose = {"x": 2.0, "y": 2.0, "theta": 0.0}
         self.movement_time = 0.0
@@ -596,6 +597,9 @@ class MockROSBridge:
                     "data": map_meta.get("data", [])
                 }
 
+                # 标记已设置当前地图，开始发布
+                self.current_map_set = True
+
                 response["values"] = {
                     "success": True,
                     "message": f"地图 '{map_name}' 已应用为当前地图"
@@ -612,9 +616,10 @@ class MockROSBridge:
         await websocket.send(json.dumps(response))
 
     async def publish_map(self, websocket):
-        """定期发布地图数据"""
+        """定期发布地图数据（仅在设置了当前地图后发布）"""
         while websocket in self.clients and "/map" in self.subscriptions:
-            if self.mapping_active or True:  # 总是发布地图用于测试
+            # 只有在通过apply_map设置了当前地图后才发布
+            if self.current_map_set:
                 message = {
                     "op": "publish",
                     "topic": "/map",
@@ -1305,9 +1310,14 @@ async def main():
     http_runner = await create_http_server()
     print("✓ HTTP API 服务器已启动")
 
-    # 启动 WebSocket 服务器
-    async with websockets.serve(bridge.handle_client, "localhost", 9090):
-        print("✓ WebSocket 服务器已启动")
+    # 启动 WebSocket 服务器（设置更大的消息大小限制以支持地图数据传输）
+    async with websockets.serve(
+        bridge.handle_client,
+        "localhost",
+        9090,
+        max_size=50 * 1024 * 1024  # 50MB 消息大小限制（支持大地图传输）
+    ):
+        print("✓ WebSocket 服务器已启动 (max_size: 50MB)")
         await asyncio.Future()  # 永久运行
 
 if __name__ == "__main__":

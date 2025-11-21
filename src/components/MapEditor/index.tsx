@@ -301,14 +301,9 @@ export const MapEditor: React.FC = () => {
     if (!mapData) return;
 
     Modal.confirm({
-      title: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 20 }} />
-          <span>删除地图</span>
-        </div>
-      ),
+      title: '删除地图',
       width: 520,
-      icon: null,
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
       content: (
         <div>
           <Alert

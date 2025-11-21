@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, message, Modal } from 'antd';
+import { Button, message, Modal, List, Card, Empty, Spin } from 'antd';
 import {
   ArrowLeftOutlined,
   EnvironmentOutlined,
   SaveOutlined,
+  FolderOpenOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { NavigationControl } from '@/components/common/NavigationControl';
@@ -14,6 +16,7 @@ import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose } from '@/types';
+import dayjs from 'dayjs';
 
 export const Navigation: React.FC = () => {
   const navigate = useNavigate();
@@ -33,6 +36,11 @@ export const Navigation: React.FC = () => {
     eta?: number;
     current_task?: string;
   }>({});
+
+  // 应用地图相关状态
+  const [applyMapModalVisible, setApplyMapModalVisible] = useState(false);
+  const [availableMaps, setAvailableMaps] = useState<MapData[]>([]);
+  const [loadingMaps, setLoadingMaps] = useState(false);
 
   // 订阅实时地图数据
   useEffect(() => {
@@ -193,6 +201,80 @@ export const Navigation: React.FC = () => {
   //   console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
   // }, [isNavigating]);
 
+  // 加载可用地图列表
+  const loadAvailableMaps = async () => {
+    setLoadingMaps(true);
+    try {
+      // 优先从本地缓存加载
+      const localMaps = mapStorageService.getAllMapsFromLocalCache();
+      if (localMaps.length > 0) {
+        setAvailableMaps(localMaps);
+        setLoadingMaps(false);
+        return;
+      }
+
+      // 从ROS加载
+      if (connectionStatus === ConnectionStatus.CONNECTED) {
+        const rosMaps = await rosService.getAllMapMetadata();
+        setAvailableMaps(rosMaps);
+      }
+    } catch (error) {
+      console.error('加载地图列表失败:', error);
+      message.error('加载地图列表失败');
+    } finally {
+      setLoadingMaps(false);
+    }
+  };
+
+  // 打开应用地图对话框
+  const handleOpenApplyMapModal = () => {
+    setApplyMapModalVisible(true);
+    loadAvailableMaps();
+  };
+
+  // 应用选中的地图
+  const handleApplyMap = async (map: MapData) => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
+
+    // 如果是本地独有的地图，不能应用
+    if (map.localOnly) {
+      message.warning('该地图仅存在于本地，请先同步到ROS后再应用');
+      return;
+    }
+
+    try {
+      message.loading({ content: '正在应用地图...', key: 'applyMap', duration: 0 });
+
+      // 调用 ROS 服务，将地图设置为当前地图
+      await rosService.setCurrentMap(map);
+
+      // 从ROS加载完整的地图数据（包含occupancy grid）
+      const fullMapData = await rosService.loadMapFromROS(map.name);
+
+      // 立即设置当前地图，不等待/map话题发布
+      setCurrentMap(fullMapData);
+      setIsMapRealtime(true);
+
+      message.success({
+        content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`,
+        key: 'applyMap',
+        duration: 3,
+      });
+
+      console.log('[导航] 已应用地图:', map.name);
+      setApplyMapModalVisible(false);
+    } catch (error) {
+      console.error('应用地图失败:', error);
+      message.error({
+        content: '应用地图失败: ' + (error instanceof Error ? error.message : '未知错误'),
+        key: 'applyMap',
+      });
+    }
+  };
+
   const handleMapClick = (x: number, y: number, theta?: number) => {
     // 设置目标点
     const pose: Pose = { x, y, theta: theta || 0 };
@@ -269,18 +351,142 @@ export const Navigation: React.FC = () => {
 
   if (!currentMap) {
     return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '16px',
-        color: '#666'
-      }}>
-        {connectionStatus === ConnectionStatus.CONNECTED
-          ? '等待地图数据...'
-          : '请先连接 ROS...'}
-      </div>
+      <>
+        <div style={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '24px',
+        }}>
+          <div style={{ fontSize: '16px', color: '#666' }}>
+            {connectionStatus === ConnectionStatus.CONNECTED
+              ? '等待地图数据...'
+              : '请先连接 ROS...'}
+          </div>
+
+          {connectionStatus === ConnectionStatus.CONNECTED && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', color: '#999', marginBottom: 16 }}>
+                未检测到实时地图，您可以应用一个历史地图来开始导航
+              </div>
+              <Button
+                type="primary"
+                icon={<FolderOpenOutlined />}
+                onClick={handleOpenApplyMapModal}
+                size="large"
+              >
+                应用历史地图
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* 应用历史地图对话框 */}
+        <Modal
+          title="应用历史地图"
+          open={applyMapModalVisible}
+          onCancel={() => setApplyMapModalVisible(false)}
+          footer={null}
+          width={800}
+          centered
+        >
+          {loadingMaps ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <Spin size="large" />
+              <div style={{ marginTop: 16, color: '#666' }}>加载地图列表...</div>
+            </div>
+          ) : availableMaps.length === 0 ? (
+            <Empty
+              description="暂无可用地图"
+              style={{ padding: '40px 0' }}
+            />
+          ) : (
+            <List
+              grid={{ gutter: 16, xs: 1, sm: 2, md: 3 }}
+              dataSource={availableMaps}
+              renderItem={(map) => (
+                <List.Item>
+                  <Card
+                    hoverable
+                    cover={
+                      map.thumbnail ? (
+                        <img
+                          alt={map.name}
+                          src={map.thumbnail}
+                          style={{
+                            width: '100%',
+                            height: '180px',
+                            objectFit: 'cover',
+                            background: '#f0f0f0',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: '100%',
+                            height: '180px',
+                            background: '#f0f0f0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#999',
+                          }}
+                        >
+                          无缩略图
+                        </div>
+                      )
+                    }
+                    actions={[
+                      <Button
+                        key="apply"
+                        type="primary"
+                        icon={<CheckCircleOutlined />}
+                        onClick={() => handleApplyMap(map)}
+                        disabled={map.localOnly}
+                      >
+                        应用
+                      </Button>
+                    ]}
+                  >
+                    <Card.Meta
+                      title={map.name}
+                      description={
+                        <div>
+                          <div style={{ marginBottom: 4 }}>
+                            {dayjs(map.createdAt).format('YYYY-MM-DD HH:mm')}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            {map.width} × {map.height} px
+                          </div>
+                        </div>
+                      }
+                    />
+                    {map.localOnly && (
+                      <div style={{ marginTop: 8 }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            fontSize: '12px',
+                            background: '#fff7e6',
+                            border: '1px solid #ffd591',
+                            borderRadius: '2px',
+                            color: '#d46b08',
+                          }}
+                        >
+                          仅本地
+                        </span>
+                      </div>
+                    )}
+                  </Card>
+                </List.Item>
+              )}
+            />
+          )}
+        </Modal>
+      </>
     );
   }
 
