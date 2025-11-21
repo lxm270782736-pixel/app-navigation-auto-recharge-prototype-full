@@ -10,6 +10,7 @@ import { MapCanvas } from '@/components/common/MapCanvas';
 import { NavigationControl } from '@/components/common/NavigationControl';
 import { SimpleLocalizationControl } from '@/components/common/SimpleLocalizationControl';
 import { rosService } from '@/services/ros';
+import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose } from '@/types';
@@ -235,17 +236,28 @@ export const Navigation: React.FC = () => {
 
           const mapName = `map_${year}${month}${day}_${hours}${minutes}${seconds}`;
 
-          // 创建地图数据（不生成缩略图）
+          // 生成缩略图
+          const thumbnail = mapStorageService.generateThumbnail(
+            currentMap.data,
+            currentMap.width,
+            currentMap.height
+          );
+
+          // 创建地图数据（含缩略图）
           const mapToSave: MapData = {
             ...currentMap,
             id: mapName,
             name: mapName,
             createdAt: new Date().toISOString(),
-            thumbnail: '',
+            thumbnail,
           };
 
           // 保存地图到 ROS
           await rosService.saveMapToROS(mapToSave);
+
+          // 同时保存到本地缓存
+          mapStorageService.saveMapToLocalCache(mapToSave);
+
           message.success(`地图已保存: ${mapName}`);
         } catch (error) {
           console.error('保存地图失败:', error);

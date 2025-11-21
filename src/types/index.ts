@@ -97,6 +97,7 @@ export interface MapData {
     orientation: number;
   };
   data: number[]; // 占据栅格数据: -1=未知, 0=空闲, 100=占据
+  localOnly?: boolean; // 仅存在于本地缓存，未同步到ROS
 }
 
 // 位置和姿态

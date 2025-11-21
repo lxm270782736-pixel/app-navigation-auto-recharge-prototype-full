@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, message, Modal, Input, Spin, Steps, Space } from 'antd';
+import { Card, Button, message, Modal, Input, Spin, Steps, Space, Checkbox } from 'antd';
 import {
   ArrowLeftOutlined,
   StopOutlined,
@@ -28,6 +28,8 @@ export const Mapping: React.FC = () => {
   const [mappingModalVisible, setMappingModalVisible] = useState(false);
   const [mappingStep, setMappingStep] = useState(0);
   const [mappingStepStatus, setMappingStepStatus] = useState<('wait' | 'process' | 'finish' | 'error')[]>(['wait', 'wait']);
+  const [skipJoystick, setSkipJoystick] = useState(false);
+  const [skipMappingNode, setSkipMappingNode] = useState(false);
 
   // 组件卸载时停止建图
   useEffect(() => {
@@ -72,41 +74,56 @@ export const Mapping: React.FC = () => {
     setMappingModalVisible(true);
     setMappingStep(0);
     setMappingStepStatus(['wait', 'wait']);
+    setSkipJoystick(false);
+    setSkipMappingNode(false);
   };
 
   const executeMappingStartup = async () => {
     try {
-      // 步骤 1: 启动遥控器
+      // 步骤 1: 启动遥控器（可跳过）
       setMappingStep(1);
       setMappingStepStatus(['process', 'wait']);
 
-      const joystickResult = await rosService.startJoystick();
-      if (!joystickResult.success) {
-        setMappingStepStatus(['error', 'wait']);
-        message.error(joystickResult.message || '启动遥控器失败');
-        return;
-      }
+      if (skipJoystick) {
+        console.log('[建图] 跳过启动遥控器');
+        setMappingStepStatus(['finish', 'wait']);
+        message.info('已跳过启动遥控器');
+      } else {
+        const joystickResult = await rosService.startJoystick();
+        if (!joystickResult.success) {
+          setMappingStepStatus(['error', 'wait']);
+          message.error(joystickResult.message || '启动遥控器失败');
+          return;
+        }
 
-      setMappingStepStatus(['finish', 'wait']);
-      message.success('遥控器已启动');
+        setMappingStepStatus(['finish', 'wait']);
+        message.success('遥控器已启动');
+      }
 
       // 延迟一下，让用户看到第一步完成
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // 步骤 2: 启动建图节点
+      // 步骤 2: 启动建图节点（可跳过）
       setMappingStep(2);
       setMappingStepStatus(['finish', 'process']);
 
-      const mappingResult = await rosService.startMapping();
-      if (!mappingResult.success) {
-        setMappingStepStatus(['finish', 'error']);
-        message.error(mappingResult.message || '启动建图模式失败');
-        return;
-      }
+      if (skipMappingNode) {
+        console.log('[建图] 跳过启动建图节点');
+        setMappingStepStatus(['finish', 'finish']);
+        setIsMapping(true);
+        message.info('已跳过启动建图节点');
+      } else {
+        const mappingResult = await rosService.startMapping();
+        if (!mappingResult.success) {
+          setMappingStepStatus(['finish', 'error']);
+          message.error(mappingResult.message || '启动建图模式失败');
+          return;
+        }
 
-      setMappingStepStatus(['finish', 'finish']);
-      setIsMapping(true);
-      message.success('建图模式已启动');
+        setMappingStepStatus(['finish', 'finish']);
+        setIsMapping(true);
+        message.success('建图模式已启动');
+      }
     } catch (error) {
       message.error('启动建图失败');
       console.error(error);
@@ -166,12 +183,19 @@ export const Mapping: React.FC = () => {
     }
 
     try {
-      // 创建地图数据（不生成缩略图）
+      // 生成缩略图
+      const thumbnail = mapStorageService.generateThumbnail(
+        currentMapData.data,
+        currentMapData.width!,
+        currentMapData.height!
+      );
+
+      // 创建地图数据（含缩略图）
       const mapData: MapData = {
         id: sanitizedName, // 使用规范化后的 name 作为 id
         name: sanitizedName,
         createdAt: new Date().toISOString(),
-        thumbnail: '', // 不保存缩略图
+        thumbnail, // 保存缩略图
         width: currentMapData.width!,
         height: currentMapData.height!,
         resolution: currentMapData.resolution!,
@@ -179,8 +203,12 @@ export const Mapping: React.FC = () => {
         data: currentMapData.data,
       };
 
-      // 保存到 ROS 服务（原生数据）
+      // 保存到 ROS 服务
       await rosService.saveMapToROS(mapData);
+
+      // 同时保存到本地缓存
+      mapStorageService.saveMapToLocalCache(mapData);
+
       message.success('地图保存成功');
 
       setSaveModalVisible(false);
@@ -411,6 +439,32 @@ export const Mapping: React.FC = () => {
                   },
                 ]}
               />
+
+              <div style={{ marginTop: 24, padding: 16, background: '#fafafa', borderRadius: 4 }}>
+                <div style={{ marginBottom: 12, color: '#666', fontSize: 13, fontWeight: 500 }}>
+                  跳过选项：
+                </div>
+                <Space direction="vertical">
+                  <Checkbox
+                    checked={skipJoystick}
+                    onChange={(e) => setSkipJoystick(e.target.checked)}
+                  >
+                    <span style={{ fontSize: 13 }}>跳过启动遥控器</span>
+                    <div style={{ fontSize: 12, color: '#999', marginLeft: 24 }}>
+                      如果遥控器已手动启动，可跳过此步骤
+                    </div>
+                  </Checkbox>
+                  <Checkbox
+                    checked={skipMappingNode}
+                    onChange={(e) => setSkipMappingNode(e.target.checked)}
+                  >
+                    <span style={{ fontSize: 13 }}>跳过启动建图节点</span>
+                    <div style={{ fontSize: 12, color: '#999', marginLeft: 24 }}>
+                      如果建图节点已手动启动，可跳过此步骤
+                    </div>
+                  </Checkbox>
+                </Space>
+              </div>
             </div>
           ) : (
             <div>
@@ -420,17 +474,21 @@ export const Mapping: React.FC = () => {
                 current={mappingStep - 1}
                 items={[
                   {
-                    title: '启动遥控器',
+                    title: skipJoystick ? '启动遥控器（已跳过）' : '启动遥控器',
                     status: mappingStepStatus[0],
-                    description: '启动机器人遥控系统，使机器人可以通过手柄控制移动',
+                    description: skipJoystick
+                      ? '用户选择跳过此步骤'
+                      : '启动机器人遥控系统，使机器人可以通过手柄控制移动',
                     icon: mappingStepStatus[0] === 'process' ? <LoadingOutlined /> :
                       mappingStepStatus[0] === 'finish' ? <CheckCircleOutlined /> :
                       mappingStepStatus[0] === 'error' ? <CloseCircleOutlined /> : undefined,
                   },
                   {
-                    title: '启动建图节点',
+                    title: skipMappingNode ? '启动建图节点（已跳过）' : '启动建图节点',
                     status: mappingStepStatus[1],
-                    description: '启动SLAM建图算法，开始构建环境地图',
+                    description: skipMappingNode
+                      ? '用户选择跳过此步骤'
+                      : '启动SLAM建图算法，开始构建环境地图',
                     icon: mappingStepStatus[1] === 'process' ? <LoadingOutlined /> :
                       mappingStepStatus[1] === 'finish' ? <CheckCircleOutlined /> :
                       mappingStepStatus[1] === 'error' ? <CloseCircleOutlined /> : undefined,
@@ -449,7 +507,13 @@ export const Mapping: React.FC = () => {
                     ✅ 建图模式已成功启动
                   </div>
                   <div style={{ color: '#666', fontSize: 13 }}>
-                    请使用遥控器控制机器人在环境中移动，系统将自动构建地图
+                    {skipJoystick && skipMappingNode
+                      ? '所有步骤均已跳过，请确认遥控器和建图节点已手动启动'
+                      : skipJoystick
+                      ? '遥控器启动已跳过，请确认遥控器已手动启动后使用'
+                      : skipMappingNode
+                      ? '建图节点启动已跳过，请确认建图节点已手动启动'
+                      : '请使用遥控器控制机器人在环境中移动，系统将自动构建地图'}
                   </div>
                 </div>
               )}

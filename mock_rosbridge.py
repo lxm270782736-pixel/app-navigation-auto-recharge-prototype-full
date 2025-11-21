@@ -408,18 +408,31 @@ class MockROSBridge:
         # ========== 定位/地图管理服务 (新增) ==========
         elif service == "/localization/list_maps":
             # 服务类型: localization_msgs/ListMaps
-            # 返回：string[] maps（只包含地图名称列表，不包含详细元数据）
-            # 注意：与实际 ROS 服务保持一致，只返回字符串数组
-            maps_list = list(self.saved_maps.keys())  # 只返回地图名称（字符串数组）
+            # 返回：MapMetadata[] maps（包含完整的元数据和缩略图）
+            maps_list = []
+            for map_id, map_meta in self.saved_maps.items():
+                maps_list.append({
+                    "id": map_meta["id"],
+                    "name": map_meta["name"],
+                    "created_at": map_meta["created_at"],
+                    "thumbnail": map_meta.get("thumbnail", ""),  # 包含缩略图
+                    "width": map_meta["width"],
+                    "height": map_meta["height"],
+                    "resolution": map_meta["resolution"],
+                    "origin_x": map_meta["origin_x"],
+                    "origin_y": map_meta["origin_y"],
+                    "origin_orientation": map_meta["origin_orientation"],
+                })
 
             response["values"] = {
                 "success": True,
                 "message": f"找到 {len(maps_list)} 个地图",
-                "maps": maps_list  # string[] 类型
+                "maps": maps_list  # MapMetadata[] 类型
             }
-            print(f"✓ 定位服务: 列出地图 - 共 {len(maps_list)} 个")
-            for map_name in maps_list:
-                print(f"  - {map_name}")
+            print(f"✓ 定位服务: 列出地图 - 共 {len(maps_list)} 个（含元数据和缩略图）")
+            for map_meta in maps_list:
+                thumb_len = len(map_meta.get("thumbnail", ""))
+                print(f"  - {map_meta['name']} ({map_meta['width']}x{map_meta['height']}, 缩略图: {thumb_len} bytes)")
 
         elif service == "/localization/load_map":
             # 服务类型: localization_msgs/LoadMap
@@ -472,10 +485,11 @@ class MockROSBridge:
 
         elif service == "/localization/save_map":
             # 服务类型: localization_msgs/SaveMap
-            # 保存地图（保存原生数据，不保存缩略图）
+            # 保存地图（保存原生数据和缩略图）
             map_name = args.get("map_name", "")
             map_data = args.get("map_data", {})
             created_at = args.get("created_at", int(time.time()))
+            thumbnail = args.get("thumbnail", "")
 
             if not map_name:
                 response["values"] = {
@@ -495,12 +509,12 @@ class MockROSBridge:
                 origin = info.get("origin", {}).get("position", {})
                 origin_orientation = info.get("origin", {}).get("orientation", {})
 
-                # 保存地图元数据和完整数据（不保存缩略图）
+                # 保存地图元数据、完整数据和缩略图
                 map_to_save = {
                     "id": map_name,
                     "name": map_name,
                     "created_at": int(created_at),
-                    "thumbnail": "",  # 不保存缩略图，按需从原图生成
+                    "thumbnail": thumbnail,  # 保存缩略图（base64格式）
                     "width": info.get("width", 0),
                     "height": info.get("height", 0),
                     "resolution": info.get("resolution", 0.05),
@@ -520,7 +534,8 @@ class MockROSBridge:
                     "success": True,
                     "message": f"地图 '{map_name}' 保存成功"
                 }
-                print(f"✓ 定位服务: 保存地图 '{map_name}' - {info.get('width')}x{info.get('height')} (原生数据{', 已写入磁盘' if disk_success else ''})")
+                thumb_info = f", 缩略图: {len(thumbnail)} bytes" if thumbnail else ""
+                print(f"✓ 定位服务: 保存地图 '{map_name}' - {info.get('width')}x{info.get('height')}{thumb_info} (原生数据{', 已写入磁盘' if disk_success else ''})")
 
         elif service == "/localization/delete_map":
             # 服务类型: localization_msgs/DeleteMap

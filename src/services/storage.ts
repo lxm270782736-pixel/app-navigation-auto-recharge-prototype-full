@@ -83,6 +83,49 @@ class MapStorageService {
     }
   }
 
+  // 从本地缓存加载所有地图（包含完整数据）- 用于地图管理界面
+  getAllMapsFromLocalCache(): MapData[] {
+    const metadataList = this.getAllMapMetadata();
+    console.log(`[本地缓存] 找到 ${metadataList.length} 个地图`);
+
+    return metadataList.map((metadata) => {
+      const data = this.getMapDataFromLocalStorage(metadata.id);
+      return {
+        ...metadata,
+        data: data || [], // 如果数据丢失，使用空数组
+      };
+    });
+  }
+
+  // 保存地图到本地缓存（直接保存，不经过服务器）
+  saveMapToLocalCache(map: MapData): void {
+    this.saveMapToLocalStorage(map);
+    console.log(`[本地缓存] 地图 ${map.name} 已保存`);
+  }
+
+  // 从本地缓存删除地图
+  deleteMapFromLocalCache(mapId: string): void {
+    this.deleteMapFromLocalStorage(mapId);
+    console.log(`[本地缓存] 地图 ${mapId} 已删除`);
+  }
+
+  // 清空本地缓存（用于强制刷新）
+  clearLocalCache(): void {
+    const metadataList = this.getAllMapMetadata();
+    metadataList.forEach((metadata) => {
+      const dataKey = MAP_DATA_KEY_PREFIX + metadata.id;
+      localStorage.removeItem(dataKey);
+    });
+    localStorage.removeItem(MAP_STORAGE_KEY);
+    console.log('[本地缓存] 已清空所有地图缓存');
+  }
+
+  // 检查本地缓存是否为空
+  isLocalCacheEmpty(): boolean {
+    const metadataList = this.getAllMapMetadata();
+    return metadataList.length === 0;
+  }
+
   // 获取单个地图的数据
   private getMapDataFromLocalStorage(mapId: string): number[] | null {
     const dataKey = MAP_DATA_KEY_PREFIX + mapId;

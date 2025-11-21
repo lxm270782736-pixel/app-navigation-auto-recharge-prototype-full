@@ -497,32 +497,32 @@ class ROSService {
       }
 
       // 转换 ROS 格式到前端格式
-      // 注意：ROS ListMaps 服务返回的是 string[] 类型，每个元素只是地图名称（字符串）
+      // 注意：ROS ListMaps 服务现在返回 MapMetadata[] 类型，包含完整的元数据和缩略图
       return (response.maps || [])
-        .filter((mapName: any) => {
-          // 过滤掉无效的地图名称
-          if (!mapName || typeof mapName !== 'string') {
-            console.warn('[ROS Service] 跳过无效地图名称:', mapName);
+        .filter((mapMeta: any) => {
+          // 过滤掉无效的地图
+          if (!mapMeta || !mapMeta.id || !mapMeta.name) {
+            console.warn('[ROS Service] 跳过无效地图:', mapMeta);
             return false;
           }
           return true;
         })
-        .map((mapName: string) => {
-          // mapName 是字符串类型（文件夹名称），不是对象
+        .map((mapMeta: any) => {
+          // mapMeta 是 MapMetadata 对象，包含所有元数据
           return {
-            id: mapName,
-            name: mapName,
-            createdAt: new Date().toISOString(), // list_maps 不返回时间戳，使用当前时间
-            thumbnail: '', // list_maps 不返回缩略图
-            width: 0, // list_maps 不返回详细信息，需要调用 load_map 获取
-            height: 0,
-            resolution: 0.05,
+            id: mapMeta.id,
+            name: mapMeta.name,
+            createdAt: mapMeta.created_at ? new Date(mapMeta.created_at * 1000).toISOString() : new Date().toISOString(),
+            thumbnail: mapMeta.thumbnail || '', // 已包含 base64 缩略图
+            width: mapMeta.width || 0,
+            height: mapMeta.height || 0,
+            resolution: mapMeta.resolution || 0.05,
             origin: {
-              x: 0,
-              y: 0,
-              orientation: 0,
+              x: mapMeta.origin_x || 0,
+              y: mapMeta.origin_y || 0,
+              orientation: mapMeta.origin_orientation || 0,
             },
-            data: [], // 元数据不包含完整数据
+            data: [], // 元数据不包含完整数据，需要调用 load_map 获取
           };
         });
     } catch (error) {
@@ -544,7 +544,7 @@ class ROSService {
     }
   }
 
-  // 保存地图到 ROS（保存原生数据，不保存缩略图）
+  // 保存地图到 ROS（保存原生数据和元数据）
   async saveMapToROS(mapData: MapData): Promise<void> {
     // 构建 ROS 地图格式
     const rosMapData = {
@@ -572,12 +572,19 @@ class ROSService {
       data: mapData.data,
     };
 
+    // 转换创建时间为时间戳
+    const createdAtTimestamp = mapData.createdAt
+      ? Math.floor(new Date(mapData.createdAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
+
     const response = await this.callService<any, { success: boolean; message: string }>(
       '/localization/save_map',
       'localization_msgs/SaveMap',
       {
         map_name: mapData.name,
         map_data: rosMapData,
+        created_at: createdAtTimestamp,
+        thumbnail: mapData.thumbnail || '', // 传递缩略图（base64格式）
       }
     );
 
