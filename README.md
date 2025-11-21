@@ -179,7 +179,12 @@
 - npm 或 yarn
 - ROS 1 (Melodic/Noetic) - 用于真实机器人
 - rosbridge_suite 已安装
-
+```bash
+sudo apt update
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo apt install ros-noetic-rosbridge-suite
+```
 ### 安装依赖
 
 ```bash

@@ -30,6 +30,9 @@ fi
 echo "✓ rosbridge_server已安装"
 echo ""
 
+source /home/astribot/Documents/astribot_localization/devel/setup.bash
+
+
 # 检查是否已有进程在运行
 if lsof -Pi :9090 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
     echo "⚠️  端口9090已被占用"
