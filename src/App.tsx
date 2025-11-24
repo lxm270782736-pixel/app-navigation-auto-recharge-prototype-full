@@ -34,7 +34,7 @@ function AppContent() {
 function App() {
   return (
     <ConfigProvider locale={zhCN}>
-      <ROSProvider autoConnect={true} rosUrl="ws://localhost:9090">
+      <ROSProvider autoConnect={true}>
         <BrowserRouter>
           <AppContent />
         </BrowserRouter>
