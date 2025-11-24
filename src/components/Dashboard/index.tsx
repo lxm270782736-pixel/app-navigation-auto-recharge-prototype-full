@@ -285,20 +285,6 @@ export const Dashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
-
-      {/* 最近活动 */}
-      <Card title="系统信息" style={{ marginTop: '24px' }}>
-        <Row gutter={[16, 16]}>
-          <Col span={12}>
-            <p><strong>ROS版本:</strong> ROS 1 Noetic</p>
-            <p><strong>导航栈:</strong> move_base</p>
-          </Col>
-          <Col span={12}>
-            <p><strong>SLAM算法:</strong> GMapping</p>
-            <p><strong>定位方法:</strong> AMCL</p>
-          </Col>
-        </Row>
-      </Card>
     </div>
   );
 };

@@ -243,7 +243,6 @@ export const MapManager: React.FC = () => {
 
     try {
       // 同步删除：本地和ROS并行处理
-      const deletePromises: Promise<any>[] = [];
       let rosDeleteSuccess = false;
       let localDeleteSuccess = false;
 
