@@ -224,22 +224,19 @@ export const Navigation: React.FC = () => {
   //   console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
   // }, [isNavigating]);
 
-  // 加载可用地图列表
+  // 加载可用地图列表（只从ROS后端加载）
   const loadAvailableMaps = async () => {
     setLoadingMaps(true);
     try {
-      // 优先从本地缓存加载
-      const localMaps = mapStorageService.getAllMapsFromLocalCache();
-      if (localMaps.length > 0) {
-        setAvailableMaps(localMaps);
-        setLoadingMaps(false);
-        return;
-      }
-
-      // 从ROS加载
+      // 只从ROS后端加载地图，不使用本地缓存
       if (connectionStatus === ConnectionStatus.CONNECTED) {
         const rosMaps = await rosService.getAllMapMetadata();
-        setAvailableMaps(rosMaps);
+        // 过滤掉本地独有的地图
+        const rosOnlyMaps = rosMaps.filter(map => !map.localOnly);
+        setAvailableMaps(rosOnlyMaps);
+      } else {
+        message.warning('请先连接 ROS');
+        setAvailableMaps([]);
       }
     } catch (error) {
       console.error('加载地图列表失败:', error);
@@ -259,12 +256,6 @@ export const Navigation: React.FC = () => {
   const handleApplyMap = async (map: MapData) => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       message.warning('请先连接 ROS');
-      return;
-    }
-
-    // 如果是本地独有的地图，不能应用
-    if (map.localOnly) {
-      message.warning('该地图仅存在于本地，请先同步到ROS后再应用');
       return;
     }
 
@@ -476,7 +467,6 @@ export const Navigation: React.FC = () => {
                         type="primary"
                         icon={<CheckCircleOutlined />}
                         onClick={() => handleApplyMap(map)}
-                        disabled={map.localOnly}
                       >
                         应用
                       </Button>
@@ -495,23 +485,6 @@ export const Navigation: React.FC = () => {
                         </div>
                       }
                     />
-                    {map.localOnly && (
-                      <div style={{ marginTop: 8 }}>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '2px 8px',
-                            fontSize: '12px',
-                            background: '#fff7e6',
-                            border: '1px solid #ffd591',
-                            borderRadius: '2px',
-                            color: '#d46b08',
-                          }}
-                        >
-                          仅本地
-                        </span>
-                      </div>
-                    )}
                   </Card>
                 </List.Item>
               )}
