@@ -1,5 +1,11 @@
 #!/bin/bash
 
+LOG_FILE="/tmp/nav_ui.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+NAVI_UI_DIR="$(cd "$(dirname "$0")"; pwd)"
+cd $NAVI_UI_DIR
+echo "NAVI_UI_DIR: $NAVI_UI_DIR"
 echo "=========================================="
 echo "  机器人导航UI - 真机模式"
 echo "=========================================="
