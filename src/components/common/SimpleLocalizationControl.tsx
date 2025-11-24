@@ -82,16 +82,16 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const handleLocalizationManual = async () => {
     setLoading('localization');
     setLastLocalizationType('manual');
-    setStatusMessage('等待设置初始位置...');
+    setStatusMessage('启动定位模式...');
 
     try {
-      // 1. 切换到建图模式
-      const result = await rosService.startMapping();
+      // 1. 启动手动定位模式
+      const result = await rosService.startLocalization();
 
       if (!result.success) {
         setCurrentMode('idle');
-        setStatusMessage('切换建图模式失败');
-        setFailureMessage(result.message || '切换建图模式失败，请重试');
+        setStatusMessage('启动定位模式失败');
+        setFailureMessage(result.message || '启动定位模式失败，请重试');
         setFailureModalVisible(true);
         setLoading(null);
         return;
