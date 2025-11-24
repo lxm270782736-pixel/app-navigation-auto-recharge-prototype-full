@@ -530,7 +530,7 @@ export const MapEditor: React.FC = () => {
               <BgColorsOutlined /> 障碍物
             </Radio.Button>
             <Radio.Button value={EditTool.UNKNOWN}>
-              <ClearOutlined /> 橡皮擦
+              <ClearOutlined /> 未知区域
             </Radio.Button>
           </Radio.Group>
         </div>
