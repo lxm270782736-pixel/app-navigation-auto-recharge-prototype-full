@@ -255,11 +255,11 @@ class MockROSBridge:
             w = orientation.get("w", 1.0)
             self.robot_pose["theta"] = 2.0 * math.atan2(z, w)
 
-            print(f"机器人位姿已更新: {self.robot_pose}")
+            print(f"📍 收到初始位姿: x={self.robot_pose['x']:.2f}, y={self.robot_pose['y']:.2f}, theta={self.robot_pose['theta']:.2f}")
+            print("   ⏳ 粒子滤波初始化中...")
 
-            # 发送初始化状态（模拟初始化成功）
-            # 在实际ROS系统中，这个状态会由定位节点在初始化完成后发送
-            await self.publish_init_status(websocket, success=True)
+            # 异步处理定位初始化过程
+            asyncio.create_task(self.process_localization_init(websocket))
 
     async def handle_service_call(self, websocket, data):
         """处理服务调用"""
@@ -310,30 +310,18 @@ class MockROSBridge:
             self.print_system_status()
 
         elif service == "/localization/start_localization":
-            print("📍 正在启动定位模式（手动）...")
-            print("   ⏳ 等待初始位置设置...")
+            print("📍 启动定位模式（手动）...")
+            print("   等待用户设置初始位置...")
             self.localization_mode = "localization"
-            self.localization_status_message = "定位中（手动）..."
-            # 模拟定位过程
-            print("   ⏳ 粒子滤波定位中 (10秒)...")
-            await asyncio.sleep(10)
-            # 模拟成功/失败 (50%失败率)
-            import random
-            if random.random() < 0.5:
-                self.localization_status_message = "定位失败（手动）: 粒子收敛失败"
-                response["values"] = {
-                    "success": False,
-                    "message": "定位失败: 粒子收敛失败"
-                }
-                print("✗ 定位服务: 定位失败（手动）- 粒子收敛失败")
-            else:
-                self.localization_status_message = "定位成功（手动）"
-                response["values"] = {
-                    "success": True,
-                    "message": "定位成功"
-                }
-                print("✓ 定位服务: 定位完成（手动）")
-            self.print_system_status()
+            self.localization_status_message = "等待初始位置设置..."
+            await asyncio.sleep(10)  # 模拟等待过程
+            # 手动定位模式立即返回成功，等待用户设置初始位置
+            response["values"] = {
+                "success": True,
+                "message": "已进入手动定位模式，请设置初始位置"
+            }
+
+            print("✓ 定位服务: 已进入手动定位模式")
 
         elif service == "/localization/start_localization_auto":
             print("📍 正在启动定位模式（自动）...")
@@ -809,10 +797,29 @@ class MockROSBridge:
                 }
             }
             try:
-                print(f"发送初始化状态: {'成功' if success else '失败'}")
+                print(f"📢 发送初始化状态: {'✓ 成功' if success else '✗ 失败'}")
                 await websocket.send(json.dumps(message))
             except Exception as e:
                 print(f"发送初始化状态失败: {e}")
+
+    async def process_localization_init(self, websocket):
+        """处理定位初始化过程（模拟）"""
+        # 模拟定位初始化过程（2-3秒）
+        import random
+        await asyncio.sleep(2 + random.random())  # 2-3秒随机延迟
+
+        # 模拟成功/失败（20%失败率，手动定位比自动定位更可靠）
+        success = random.random() > 0.2
+
+        if success:
+            print("   ✓ 粒子滤波初始化成功")
+            self.localization_status_message = "定位成功（手动）"
+        else:
+            print("   ✗ 粒子滤波初始化失败")
+            self.localization_status_message = "定位失败（手动）"
+
+        # 发送初始化状态
+        await self.publish_init_status(websocket, success)
 
     async def handle_action_goal(self, websocket, data):
         """处理导航 Action Goal"""

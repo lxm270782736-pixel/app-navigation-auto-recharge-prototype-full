@@ -84,9 +84,30 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     setLastLocalizationType('manual');
     setStatusMessage('启动定位模式...');
 
+    // 显示切换中弹窗
+    const switchingModal = Modal.info({
+      title: '定位模式切换中',
+      content: (
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <Space direction="vertical" size="middle">
+            <SyncOutlined spin style={{ fontSize: '48px', color: '#1890ff' }} />
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              正在切换到手动定位模式，请稍候...
+            </div>
+          </Space>
+        </div>
+      ),
+      icon: null,
+      okButtonProps: { style: { display: 'none' } },
+      centered: true,
+    });
+
     try {
       // 1. 启动手动定位模式
       const result = await rosService.startLocalization();
+
+      // 关闭切换中弹窗
+      switchingModal.destroy();
 
       if (!result.success) {
         setCurrentMode('idle');
@@ -127,6 +148,9 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       setLoading(null);
 
     } catch (error) {
+      // 关闭切换中弹窗
+      switchingModal.destroy();
+
       message.error('启动重定位模式失败');
       console.error(error);
       setCurrentMode('idle');
@@ -139,10 +163,30 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     setLoading('localization_auto');
     setLastLocalizationType('auto');
     setStatusMessage('定位中（自动）...');
-    message.info('正在自动定位中，请等待约10秒...');
+
+    // 显示切换中弹窗
+    const switchingModal = Modal.info({
+      title: '定位模式切换中',
+      content: (
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <Space direction="vertical" size="middle">
+            <SyncOutlined spin style={{ fontSize: '48px', color: '#1890ff' }} />
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              正在切换到自动定位模式，请稍候...
+            </div>
+          </Space>
+        </div>
+      ),
+      icon: null,
+      okButtonProps: { style: { display: 'none' } },
+      centered: true,
+    });
 
     try {
       const result = await rosService.startLocalizationAuto();
+
+      // 关闭切换中弹窗
+      switchingModal.destroy();
 
       if (result.success) {
         // 定位成功
@@ -158,6 +202,9 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
         setFailureModalVisible(true);
       }
     } catch (error) {
+      // 关闭切换中弹窗
+      switchingModal.destroy();
+
       message.error('启动自动定位模式失败');
       console.error(error);
       setCurrentMode('idle');
