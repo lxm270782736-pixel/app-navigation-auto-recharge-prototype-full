@@ -294,8 +294,15 @@ class MockROSBridge:
             self.localization_mode = "mapping"
             self.localization_status_message = "建图模式已启动"
             self.mapping_active = True
+
+            # 开始建图时，标记地图可以发布（用于实时显示建图过程）
+            self.current_map_set = True
+
             response["values"] = {"success": True, "message": "建图模式已启动"}
-            print(f"✓ 定位服务: 建图模式已启动 (遥控器状态: {'已启动' if self.joystick_active else '未启动'})")
+            if self.pending_map_name:
+                print(f"✓ 定位服务: 建图模式已启动 (地图名称: '{self.pending_map_name}', 遥控器: {'已启动' if self.joystick_active else '未启动'})")
+            else:
+                print(f"✓ 定位服务: 建图模式已启动 (遥控器状态: {'已启动' if self.joystick_active else '未启动'})")
             self.print_system_status()
 
         elif service == "/localization/start_localization":
@@ -360,8 +367,48 @@ class MockROSBridge:
             was_mapping = self.mapping_active
             if was_mapping:
                 print("🛑 正在停止建图节点...")
-                print("   ⏳ 保存地图数据 (2秒)...")
-                await asyncio.sleep(2)  # 模拟停止过程
+
+                # 如果在建图模式且设置了地图名称，自动保存地图
+                if self.pending_map_name and self.map_data:
+                    print(f"   💾 自动保存地图 '{self.pending_map_name}'...")
+
+                    # 获取当前地图数据
+                    info = self.map_data.get("info", {})
+                    origin = info.get("origin", {}).get("position", {})
+                    origin_orientation = info.get("origin", {}).get("orientation", {})
+
+                    # 保存地图元数据和完整数据
+                    map_to_save = {
+                        "id": self.pending_map_name,
+                        "name": self.pending_map_name,
+                        "created_at": int(time.time()),
+                        "thumbnail": "",  # 前端会生成缩略图
+                        "width": info.get("width", 0),
+                        "height": info.get("height", 0),
+                        "resolution": info.get("resolution", 0.05),
+                        "origin_x": origin.get("x", 0.0),
+                        "origin_y": origin.get("y", 0.0),
+                        "origin_orientation": origin_orientation.get("z", 0.0),
+                        "data": self.map_data.get("data", [])
+                    }
+
+                    # 保存到内存
+                    self.saved_maps[self.pending_map_name] = map_to_save
+
+                    # 保存到磁盘
+                    disk_success = self.save_map_to_disk(self.pending_map_name, map_to_save)
+
+                    if disk_success:
+                        print(f"   ✓ 地图 '{self.pending_map_name}' 已自动保存到ROS")
+                    else:
+                        print(f"   ✗ 地图 '{self.pending_map_name}' 保存失败")
+
+                    # 保存完成后清除待处理的地图名称
+                    self.pending_map_name = ""
+                else:
+                    print("   ⏳ 保存地图数据 (2秒)...")
+                    await asyncio.sleep(2)  # 模拟停止过程
+
             self.localization_mode = "idle"
             self.mapping_active = False
             self.localization_status_message = "定位服务已停止"
