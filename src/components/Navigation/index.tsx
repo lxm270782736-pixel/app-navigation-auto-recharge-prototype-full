@@ -41,6 +41,9 @@ export const Navigation: React.FC = () => {
   const [availableMaps, setAvailableMaps] = useState<MapData[]>([]);
   const [loadingMaps, setLoadingMaps] = useState(false);
 
+  // 重定位模式状态
+  const [isRelocalizationMode, setIsRelocalizationMode] = useState(false);
+
   // 订阅实时地图数据
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
@@ -295,11 +298,26 @@ export const Navigation: React.FC = () => {
     }
   };
 
+  // 处理重定位开始
+  const handleRelocalizationStart = () => {
+    console.log('[导航] 进入重定位模式');
+    setIsRelocalizationMode(true);
+  };
+
   const handleMapClick = (x: number, y: number, theta?: number) => {
-    // 设置目标点
     const pose: Pose = { x, y, theta: theta || 0 };
-    setGoalPose(pose);
-    message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
+
+    if (isRelocalizationMode) {
+      // 重定位模式：设置初始位置
+      console.log('[重定位] 设置初始位置:', pose);
+      rosService.setInitialPose(pose);
+      message.success(`初始位置已发送，等待确认...`);
+      setIsRelocalizationMode(false); // 退出重定位模式
+    } else {
+      // 导航模式：设置目标点
+      setGoalPose(pose);
+      message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
+    }
   };
 
   // 保存地图
@@ -568,6 +586,7 @@ export const Navigation: React.FC = () => {
             onModeChange={(mode) => {
               console.log('Localization mode changed:', mode);
             }}
+            onRelocalizationStart={handleRelocalizationStart}
           />
 
           <NavigationControl

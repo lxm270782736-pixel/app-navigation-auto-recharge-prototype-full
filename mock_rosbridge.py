@@ -257,6 +257,10 @@ class MockROSBridge:
 
             print(f"机器人位姿已更新: {self.robot_pose}")
 
+            # 发送初始化状态（模拟初始化成功）
+            # 在实际ROS系统中，这个状态会由定位节点在初始化完成后发送
+            await self.publish_init_status(websocket, success=True)
+
     async def handle_service_call(self, websocket, data):
         """处理服务调用"""
         service = data.get("service")
@@ -778,7 +782,7 @@ class MockROSBridge:
             await asyncio.sleep(0.1)
 
     async def publish_localization_status(self, websocket):
-        return 
+        return
         """定期发布定位服务状态"""
         while websocket in self.clients and "/localization/status" in self.subscriptions:
             message = {
@@ -793,6 +797,22 @@ class MockROSBridge:
             except:
                 break
             await asyncio.sleep(1.0)  # 每秒更新一次状态
+
+    async def publish_init_status(self, websocket, success: bool):
+        """发布初始化状态（单次发送）"""
+        if "/localization/init_status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/localization/init_status",
+                "msg": {
+                    "data": success
+                }
+            }
+            try:
+                print(f"发送初始化状态: {'成功' if success else '失败'}")
+                await websocket.send(json.dumps(message))
+            except Exception as e:
+                print(f"发送初始化状态失败: {e}")
 
     async def handle_action_goal(self, websocket, data):
         """处理导航 Action Goal"""

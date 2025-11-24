@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useROS } from '@/contexts/ROSContext';
+import { ConnectionStatus } from '@/types';
 import { Card, Button, Space, message, Modal, Tag, Descriptions } from 'antd';
 import {
   AimOutlined,
@@ -10,11 +12,13 @@ import { rosService } from '@/services/ros';
 
 interface SimpleLocalizationControlProps {
   onModeChange?: (mode: string) => void;
+  onRelocalizationStart?: () => void; // 开始重定位时的回调
 }
 
 type LocalizationMode = 'idle' | 'localization' | 'localization_auto';
 
-export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({ onModeChange }) => {
+export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({ onModeChange, onRelocalizationStart }) => {
+  const { connectionStatus } = useROS();
   const [currentMode, setCurrentMode] = useState<LocalizationMode>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('未启动');
   const [loading, setLoading] = useState<string | null>(null);
@@ -22,35 +26,111 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [failureMessage, setFailureMessage] = useState('');
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('manual');
+  const [waitingForInitStatus, setWaitingForInitStatus] = useState(false);
+  const initStatusUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  // 订阅初始化状态话题
+  useEffect(() => {
+    // 清理旧订阅
+    if (initStatusUnsubscribeRef.current) {
+      console.log('[重定位] 清理旧订阅');
+      initStatusUnsubscribeRef.current();
+      initStatusUnsubscribeRef.current = null;
+    }
+
+    if (connectionStatus !== ConnectionStatus.CONNECTED || !waitingForInitStatus) {
+      return;
+    }
+
+    console.log('[重定位] 开始订阅初始化状态话题');
+    const unsubscribe = rosService.subscribeTopic<{ data: boolean }>(
+      '/localization/init_status',
+      'std_msgs/Bool',
+      (msg) => {
+        console.log('[重定位] 收到初始化状态:', msg.data);
+        setWaitingForInitStatus(false);
+
+        if (msg.data === true) {
+          // 初始化成功
+          setCurrentMode('localization');
+          setStatusMessage('定位成功（手动）');
+          setSuccessModalVisible(true);
+          onModeChange?.('localization');
+          message.success('机器人初始位置设置成功！');
+        } else {
+          // 初始化失败
+          setCurrentMode('idle');
+          setStatusMessage('定位失败（手动）');
+          setFailureMessage('初始位置设置失败，请重试');
+          setFailureModalVisible(true);
+        }
+      }
+    );
+
+    initStatusUnsubscribeRef.current = unsubscribe;
+
+    // 确保总是返回清理函数
+    return () => {
+      console.log('[重定位] useEffect 清理，取消订阅');
+      if (initStatusUnsubscribeRef.current) {
+        initStatusUnsubscribeRef.current();
+        initStatusUnsubscribeRef.current = null;
+      }
+    };
+  }, [connectionStatus, waitingForInitStatus, onModeChange]);
 
   const handleLocalizationManual = async () => {
     setLoading('localization');
     setLastLocalizationType('manual');
-    setStatusMessage('定位中（手动）...');
-    message.info('正在定位中，请等待约10秒...');
+    setStatusMessage('等待设置初始位置...');
 
     try {
-      const result = await rosService.startLocalization();
+      // 1. 切换到建图模式
+      const result = await rosService.startMapping();
 
-      if (result.success) {
-        // 定位成功
-        setCurrentMode('localization');
-        setStatusMessage('定位成功（手动）');
-        setSuccessModalVisible(true);
-        onModeChange?.('localization');
-      } else {
-        // 定位失败
+      if (!result.success) {
         setCurrentMode('idle');
-        setStatusMessage('定位失败（手动）');
-        setFailureMessage(result.message || '定位失败，请重试');
+        setStatusMessage('切换建图模式失败');
+        setFailureMessage(result.message || '切换建图模式失败，请重试');
         setFailureModalVisible(true);
+        setLoading(null);
+        return;
       }
+
+      // 2. 通知父组件进入重定位模式（让地图可以点击设置初始位置）
+      onRelocalizationStart?.();
+
+      // 3. 开始等待初始化状态
+      setWaitingForInitStatus(true);
+
+      // 4. 显示提示信息 - 使用Modal让用户更清楚
+      Modal.info({
+        title: '请设置初始位姿',
+        content: (
+          <div>
+            <p style={{ fontSize: '14px', marginBottom: '12px' }}>
+              已进入手动重定位模式，请在地图上点击机器人的当前位置：
+            </p>
+            <ul style={{ paddingLeft: '20px', fontSize: '14px', color: '#666' }}>
+              <li>在地图上找到机器人当前所在位置</li>
+              <li>点击地图设置初始位置</li>
+              <li>拖拽调整机器人朝向</li>
+              <li>系统将自动确认初始化结果</li>
+            </ul>
+          </div>
+        ),
+        okText: '我知道了',
+        centered: true,
+      });
+
+      setStatusMessage('请在地图上点击初始位置');
+      setLoading(null);
+
     } catch (error) {
-      message.error('启动定位模式失败');
+      message.error('启动重定位模式失败');
       console.error(error);
       setCurrentMode('idle');
-      setStatusMessage('定位失败');
-    } finally {
+      setStatusMessage('启动失败');
       setLoading(null);
     }
   };
