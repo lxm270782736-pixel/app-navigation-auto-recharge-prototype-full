@@ -439,17 +439,47 @@ class MapStorageService {
 
   // 生成默认地图名称
   async generateDefaultMapName(): Promise<string> {
-    const maps = await this.getAllMaps();
-    const unnamedMaps = maps.filter((m: MapData) => m.name.startsWith('untitled_map_'));
-    const numbers = unnamedMaps
-      .map((m: MapData) => {
-        const match = m.name.match(/untitled_map_(\d+)/);
-        return match ? parseInt(match[1], 10) : 0;
-      })
-      .filter((n: number) => !isNaN(n));
+    try {
+      // 获取本地缓存的地图
+      const localMaps = this.getAllMapsFromLocalCache();
 
-    const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
-    return `untitled_map_${maxNumber + 1}`;
+      // 尝试从 ROS 获取地图列表
+      let rosMaps: MapData[] = [];
+      try {
+        const { rosService } = await import('./ros');
+        rosMaps = await rosService.getAllMapMetadata();
+      } catch (error) {
+        console.warn('无法从 ROS 获取地图列表，仅使用本地缓存:', error);
+      }
+
+      // 合并本地和 ROS 的地图列表
+      const allMapNames = new Set<string>([
+        ...localMaps.map(m => m.name),
+        ...rosMaps.map(m => m.name),
+      ]);
+
+      // 找出所有 untitled_map_ 开头的地图名称
+      const unnamedMapNumbers: number[] = [];
+      allMapNames.forEach(name => {
+        if (name.startsWith('untitled_map_')) {
+          const match = name.match(/untitled_map_(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num)) {
+              unnamedMapNumbers.push(num);
+            }
+          }
+        }
+      });
+
+      // 找到最大的数字，然后+1
+      const maxNumber = unnamedMapNumbers.length > 0 ? Math.max(...unnamedMapNumbers) : 0;
+      return `untitled_map_${maxNumber + 1}`;
+    } catch (error) {
+      console.error('生成默认地图名称失败:', error);
+      // 失败时使用时间戳作为后备方案
+      return `untitled_map_${Date.now()}`;
+    }
   }
 }
 

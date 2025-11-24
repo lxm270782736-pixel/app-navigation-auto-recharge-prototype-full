@@ -468,6 +468,7 @@ export const MapManager: React.FC = () => {
           </div>
         }
         open={deleteModalVisible}
+        centered
         onOk={confirmDelete}
         onCancel={() => setDeleteModalVisible(false)}
         okText="确认删除"

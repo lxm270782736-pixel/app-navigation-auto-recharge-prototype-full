@@ -36,6 +36,7 @@ export const Mapping: React.FC = () => {
   const [inputMapName, setInputMapName] = useState('');
   const [existingMaps, setExistingMaps] = useState<string[]>([]);
   const [pendingMapName, setPendingMapName] = useState<string>(''); // 记住建图开始前设置的地图名称
+  const [successModalVisible, setSuccessModalVisible] = useState(false); // 建图成功弹窗
 
   // 组件卸载时停止建图
   useEffect(() => {
@@ -120,6 +121,7 @@ export const Mapping: React.FC = () => {
       Modal.confirm({
         title: '地图名称冲突',
         content: `地图 "${sanitizedName}" 已存在，是否覆盖？`,
+        centered: true,
         okText: '覆盖',
         okType: 'danger',
         cancelText: '取消',
@@ -283,15 +285,25 @@ export const Mapping: React.FC = () => {
         message.success('建图已停止，遥控器已关闭');
       }
 
-      // 通知地图已保存，并从ROS同步到本地缓存
+      // 从ROS同步地图到本地缓存，并显示成功弹窗
       if (pendingMapName) {
-        message.info({
+        message.loading({
           content: `地图 "${pendingMapName}" 已保存到ROS，正在同步到本地...`,
-          duration: 2,
+          key: 'syncMap',
+          duration: 0,
         });
 
-        // 从ROS同步地图到本地缓存
-        await syncMapFromROS();
+        try {
+          // 从ROS同步地图到本地缓存
+          await syncMapFromROS();
+
+          // 显示建图成功弹窗
+          setSuccessModalVisible(true);
+        } catch (error) {
+          // 同步失败也显示弹窗，但不影响建图完成的流程
+          console.error('同步地图失败，但建图已完成:', error);
+          setSuccessModalVisible(true);
+        }
       } else {
         message.warning('未设置地图名称');
       }
@@ -364,9 +376,6 @@ export const Mapping: React.FC = () => {
     }
 
     try {
-      // 从ROS服务端加载指定名称的地图到本地缓存
-      message.loading({ content: `正在同步地图 "${pendingMapName}"...`, key: 'syncMap', duration: 0 });
-
       // 加载完整的地图数据
       const mapData = await rosService.loadMapFromROS(pendingMapName);
 
@@ -382,11 +391,12 @@ export const Mapping: React.FC = () => {
       console.log('[建图] 已从ROS同步地图到本地:', pendingMapName);
     } catch (error) {
       console.error('同步地图失败:', error);
-      message.warning({
+      message.error({
         content: `地图 "${pendingMapName}" 同步失败，ROS端可能尚未保存`,
         key: 'syncMap',
         duration: 3,
       });
+      throw error; // 抛出错误以便调用者处理
     }
   };
 
@@ -769,6 +779,87 @@ export const Mapping: React.FC = () => {
             placeholder="输入地图名称"
             maxLength={50}
           />
+        </div>
+      </Modal>
+
+      {/* 建图成功弹窗 */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircleOutlined style={{ fontSize: '24px', color: '#52c41a' }} />
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>建图成功</span>
+          </div>
+        }
+        open={successModalVisible}
+        centered
+        width={500}
+        footer={null}
+        onCancel={() => setSuccessModalVisible(false)}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{
+            marginBottom: 24,
+            padding: 16,
+            background: '#f6ffed',
+            borderRadius: 8,
+            border: '1px solid #b7eb8f',
+          }}>
+            <div style={{ color: '#389e0d', fontSize: 16, marginBottom: 8, fontWeight: 500 }}>
+              地图已成功保存
+            </div>
+            <div style={{ color: '#666', fontSize: 14 }}>
+              地图名称：<strong>{pendingMapName}</strong>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 14, color: '#666', marginBottom: 12 }}>
+              💡 下一步操作：
+            </div>
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Button
+                type="primary"
+                size="large"
+                block
+                onClick={async () => {
+                  try {
+                    // 加载地图数据
+                    const mapData = await rosService.loadMapFromROS(pendingMapName);
+                    // 应用地图
+                    await rosService.setCurrentMap(mapData);
+                    message.success('地图已应用');
+                    setSuccessModalVisible(false);
+                    // 跳转到导航界面
+                    navigate('/navigation');
+                  } catch (error) {
+                    console.error('应用地图失败:', error);
+                    message.error('应用地图失败');
+                  }
+                }}
+              >
+                应用地图并开始导航
+              </Button>
+              <Button
+                size="large"
+                block
+                onClick={() => {
+                  setSuccessModalVisible(false);
+                  navigate('/maps');
+                }}
+              >
+                进入地图管理
+              </Button>
+              <Button
+                size="large"
+                block
+                onClick={() => {
+                  setSuccessModalVisible(false);
+                }}
+              >
+                继续建图
+              </Button>
+            </Space>
+          </div>
         </div>
       </Modal>
     </div>

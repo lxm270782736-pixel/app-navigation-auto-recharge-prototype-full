@@ -302,6 +302,7 @@ export const MapEditor: React.FC = () => {
 
     Modal.confirm({
       title: '删除地图',
+      centered: true,
       width: 520,
       icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
       content: (
