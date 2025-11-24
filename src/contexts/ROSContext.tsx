@@ -27,13 +27,16 @@ interface ROSProviderProps {
 export const ROSProvider: React.FC<ROSProviderProps> = ({
   children,
   autoConnect = true,
-  rosUrl = 'ws://localhost:9090',
+  rosUrl,
 }) => {
+  // 动态获取ROS Bridge地址：使用当前网页的主机名 + 9090端口
+  const defaultRosUrl = rosUrl || `ws://${window.location.hostname}:9090`;
+
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     ConnectionStatus.DISCONNECTED
   );
 
-  const connect = async (url: string = rosUrl) => {
+  const connect = async (url: string = defaultRosUrl) => {
     try {
       setConnectionStatus(ConnectionStatus.CONNECTING);
       await rosService.connect(url);
@@ -76,7 +79,7 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
       rosService.off('connection', handleConnection);
       rosService.off('error', handleError);
     };
-  }, [autoConnect, rosUrl]);
+  }, [autoConnect, defaultRosUrl]);
 
   return (
     <ROSContext.Provider value={{ connectionStatus, connect, disconnect }}>
