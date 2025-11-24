@@ -36,7 +36,10 @@ export const Mapping: React.FC = () => {
   const [inputMapName, setInputMapName] = useState('');
   const [existingMaps, setExistingMaps] = useState<string[]>([]);
   const [pendingMapName, setPendingMapName] = useState<string>(''); // 记住建图开始前设置的地图名称
+  const [savingModalVisible, setSavingModalVisible] = useState(false); // 地图保存中弹窗
   const [successModalVisible, setSuccessModalVisible] = useState(false); // 建图成功弹窗
+  const [failureModalVisible, setFailureModalVisible] = useState(false); // 建图失败弹窗
+  const [failureMessage, setFailureMessage] = useState<string>(''); // 失败原因
 
   // 组件卸载时停止建图
   useEffect(() => {
@@ -249,12 +252,18 @@ export const Mapping: React.FC = () => {
   };
 
   const stopMapping = async () => {
+    // 立即显示保存中弹窗
+    setSavingModalVisible(true);
+
     try {
       // 步骤 1: 停止建图节点（如果启动时跳过了，则停止时也跳过）
       if (!skipMappingNode) {
         const stopResult = await rosService.stopLocalization();
         if (!stopResult.success) {
-          message.error(stopResult.message || '停止建图失败');
+          // 停止建图失败
+          setSavingModalVisible(false);
+          setFailureMessage(stopResult.message || '停止建图失败');
+          setFailureModalVisible(true);
           return;
         }
       } else {
@@ -266,7 +275,7 @@ export const Mapping: React.FC = () => {
         const joystickResult = await rosService.stopJoystick();
         if (!joystickResult.success) {
           // 遥控器停止失败不影响整体流程，只是警告
-          message.warning(joystickResult.message || '停止遥控器失败');
+          console.warn('[建图] 停止遥控器失败:', joystickResult.message);
         }
       } else {
         console.log('[建图] 停止时跳过遥控器（启动时已跳过）');
@@ -274,42 +283,34 @@ export const Mapping: React.FC = () => {
 
       setIsMapping(false);
 
-      // 根据跳过情况显示不同的提示
-      if (skipJoystick && skipMappingNode) {
-        message.success('建图已停止（所有服务均由您手动管理）');
-      } else if (skipJoystick) {
-        message.success('建图已停止（遥控器请手动管理）');
-      } else if (skipMappingNode) {
-        message.success('建图已停止，遥控器已关闭（建图节点请手动管理）');
-      } else {
-        message.success('建图已停止，遥控器已关闭');
-      }
-
-      // 从ROS同步地图到本地缓存，并显示成功弹窗
+      // 从ROS同步地图到本地缓存
       if (pendingMapName) {
-        message.loading({
-          content: `地图 "${pendingMapName}" 已保存到ROS，正在同步到本地...`,
-          key: 'syncMap',
-          duration: 0,
-        });
-
         try {
           // 从ROS同步地图到本地缓存
           await syncMapFromROS();
 
-          // 显示建图成功弹窗
+          // 关闭保存中弹窗，显示建图成功弹窗
+          setSavingModalVisible(false);
           setSuccessModalVisible(true);
         } catch (error) {
-          // 同步失败也显示弹窗，但不影响建图完成的流程
-          console.error('同步地图失败，但建图已完成:', error);
-          setSuccessModalVisible(true);
+          // 同步失败，显示失败弹窗
+          console.error('同步地图失败:', error);
+          setSavingModalVisible(false);
+          setFailureMessage('地图同步失败: ' + (error instanceof Error ? error.message : '未知错误'));
+          setFailureModalVisible(true);
         }
       } else {
-        message.warning('未设置地图名称');
+        // 没有设置地图名称
+        setSavingModalVisible(false);
+        setFailureMessage('未设置地图名称');
+        setFailureModalVisible(true);
       }
     } catch (error) {
-      message.error('停止建图失败');
-      console.error('Failed to stop mapping:', error);
+      // 整体流程失败
+      console.error('停止建图失败:', error);
+      setSavingModalVisible(false);
+      setFailureMessage('停止建图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      setFailureModalVisible(true);
     }
   };
 
@@ -372,7 +373,7 @@ export const Mapping: React.FC = () => {
     // 如果没有设置过地图名称，直接返回
     if (!pendingMapName) {
       console.log('[建图] 没有待加载的地图名称');
-      return;
+      throw new Error('未设置地图名称');
     }
 
     try {
@@ -382,20 +383,9 @@ export const Mapping: React.FC = () => {
       // 保存到本地缓存
       mapStorageService.saveMapToLocalCache(mapData);
 
-      message.success({
-        content: `地图 "${pendingMapName}" 已同步到本地`,
-        key: 'syncMap',
-        duration: 2,
-      });
-
       console.log('[建图] 已从ROS同步地图到本地:', pendingMapName);
     } catch (error) {
       console.error('同步地图失败:', error);
-      message.error({
-        content: `地图 "${pendingMapName}" 同步失败，ROS端可能尚未保存`,
-        key: 'syncMap',
-        duration: 3,
-      });
       throw error; // 抛出错误以便调用者处理
     }
   };
@@ -779,6 +769,96 @@ export const Mapping: React.FC = () => {
             placeholder="输入地图名称"
             maxLength={50}
           />
+        </div>
+      </Modal>
+
+      {/* 地图保存中弹窗 */}
+      <Modal
+        open={savingModalVisible}
+        centered
+        width={400}
+        footer={null}
+        closable={false}
+        maskClosable={false}
+      >
+        <div style={{ textAlign: 'center', padding: '32px 0' }}>
+          <LoadingOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '24px' }} />
+          <div style={{ fontSize: '18px', fontWeight: 500, marginBottom: '16px' }}>
+            地图保存中...
+          </div>
+          <div style={{ fontSize: '14px', color: '#666' }}>
+            正在保存地图 <strong>{pendingMapName}</strong>
+          </div>
+          <div style={{ fontSize: '13px', color: '#999', marginTop: '8px' }}>
+            请稍候，不要关闭窗口
+          </div>
+        </div>
+      </Modal>
+
+      {/* 建图失败弹窗 */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CloseCircleOutlined style={{ fontSize: '24px', color: '#ff4d4f' }} />
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>建图失败</span>
+          </div>
+        }
+        open={failureModalVisible}
+        centered
+        width={500}
+        footer={
+          <Space>
+            <Button onClick={() => setFailureModalVisible(false)}>关闭</Button>
+            <Button type="primary" onClick={() => {
+              setFailureModalVisible(false);
+              // 重新开始建图流程
+              startMapping();
+            }}>
+              重新建图
+            </Button>
+          </Space>
+        }
+        onCancel={() => setFailureModalVisible(false)}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{
+            marginBottom: 24,
+            padding: 16,
+            background: '#fff2f0',
+            borderRadius: 8,
+            border: '1px solid #ffccc7',
+          }}>
+            <div style={{ color: '#cf1322', fontSize: 16, marginBottom: 8, fontWeight: 500 }}>
+              保存失败
+            </div>
+            <div style={{ color: '#666', fontSize: 14 }}>
+              地图名称：<strong>{pendingMapName}</strong>
+            </div>
+          </div>
+
+          <div style={{
+            marginBottom: 16,
+            padding: 12,
+            background: '#fafafa',
+            borderRadius: 4,
+          }}>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+              <strong>失败原因：</strong>
+            </div>
+            <div style={{ fontSize: 14, color: '#ff4d4f' }}>
+              {failureMessage}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 13, color: '#666' }}>
+            <div style={{ marginBottom: 8 }}>💡 建议操作：</div>
+            <ul style={{ paddingLeft: 20, margin: 0 }}>
+              <li>检查 ROS 服务是否正常运行</li>
+              <li>确认磁盘空间是否充足</li>
+              <li>查看 ROS 日志了解详细错误信息</li>
+              <li>点击"重新建图"重试</li>
+            </ul>
+          </div>
         </div>
       </Modal>
 
