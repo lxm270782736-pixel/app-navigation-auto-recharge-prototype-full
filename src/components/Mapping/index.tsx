@@ -87,15 +87,21 @@ export const Mapping: React.FC = () => {
       const defaultName = await mapStorageService.generateDefaultMapName();
       setInputMapName(defaultName);
 
-      // 获取已存在的地图列表
-      const maps = await rosService.getAllMapMetadata();
-      setExistingMaps(maps.map(m => m.name));
+      // 获取已存在的地图列表（如果失败不影响建图流程）
+      try {
+        const maps = await rosService.getAllMapMetadata();
+        setExistingMaps(maps.map(m => m.name));
+      } catch (error) {
+        console.warn('获取地图列表失败，将使用空列表继续:', error);
+        message.warning('无法获取现有地图列表，请注意可能存在同名地图');
+        setExistingMaps([]);
+      }
 
-      // 打开地图名称输入对话框
+      // 打开地图名称输入对话框（无论地图列表是否获取成功）
       setMapNameModalVisible(true);
     } catch (error) {
-      console.error('加载地图列表失败:', error);
-      message.error('加载地图列表失败');
+      console.error('初始化建图流程失败:', error);
+      message.error('初始化建图流程失败');
     }
   };
 
