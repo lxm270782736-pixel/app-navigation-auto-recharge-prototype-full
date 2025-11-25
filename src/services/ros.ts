@@ -649,7 +649,7 @@ class ROSService {
   setInitialPose(pose: Pose) {
     this.publishMessage('/initialpose', 'geometry_msgs/PoseWithCovarianceStamped', {
       header: {
-        frame_id: 'map',
+        frame_id: 'world',
       },
       pose: {
         pose: {

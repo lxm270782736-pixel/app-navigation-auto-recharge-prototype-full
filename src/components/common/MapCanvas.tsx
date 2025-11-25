@@ -209,30 +209,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // 清空画布
     ctx.clearRect(0, 0, mapData.width, mapData.height);
 
-    // 绘制地图数据
+    // 绘制地图数据（沿横向对称翻转）
     const imageData = ctx.createImageData(mapData.width, mapData.height);
 
-    for (let i = 0; i < mapData.data.length; i++) {
-      const value = mapData.data[i];
-      const index = i * 4;
+    for (let y = 0; y < mapData.height; y++) {
+      for (let x = 0; x < mapData.width; x++) {
+        // 原始数据索引（行优先）
+        const srcIndex = y * mapData.width + x;
+        // 翻转后的Y坐标
+        const flippedY = mapData.height - 1 - y;
+        // 翻转后的索引
+        const dstIndex = flippedY * mapData.width + x;
 
-      if (value === -1) {
-        // 未知区域 - 灰色
-        imageData.data[index] = 128;
-        imageData.data[index + 1] = 128;
-        imageData.data[index + 2] = 128;
-      } else if (value === 0) {
-        // 空闲区域 - 白色
-        imageData.data[index] = 255;
-        imageData.data[index + 1] = 255;
-        imageData.data[index + 2] = 255;
-      } else {
-        // 占据区域 - 黑色
-        imageData.data[index] = 0;
-        imageData.data[index + 1] = 0;
-        imageData.data[index + 2] = 0;
+        const value = mapData.data[srcIndex];
+        const pixelIndex = dstIndex * 4;
+
+        if (value === -1) {
+          // 未知区域 - 灰色
+          imageData.data[pixelIndex] = 128;
+          imageData.data[pixelIndex + 1] = 128;
+          imageData.data[pixelIndex + 2] = 128;
+        } else if (value === 0) {
+          // 空闲区域 - 白色
+          imageData.data[pixelIndex] = 255;
+          imageData.data[pixelIndex + 1] = 255;
+          imageData.data[pixelIndex + 2] = 255;
+        } else {
+          // 占据区域 - 黑色
+          imageData.data[pixelIndex] = 0;
+          imageData.data[pixelIndex + 1] = 0;
+          imageData.data[pixelIndex + 2] = 0;
+        }
+        imageData.data[pixelIndex + 3] = 255; // Alpha
       }
-      imageData.data[index + 3] = 255; // Alpha
     }
 
     ctx.putImageData(imageData, 0, 0);
@@ -700,10 +709,12 @@ function worldToMap(
   const mapX = Math.floor((x - mapData.origin.x) / mapData.resolution);
   const mapY = Math.floor((y - mapData.origin.y) / mapData.resolution);
 
-  // 翻转Y轴（地图坐标系和图像坐标系Y轴相反）
+  // 翻转Y轴（因为地图显示已经上下翻转）
+  const flippedY = mapData.height - 1 - mapY;
+
   return {
     x: mapX,
-    y: mapY,
+    y: flippedY,
   };
 }
 
@@ -713,12 +724,12 @@ function mapToWorld(
   y: number,
   mapData: MapData
 ): { x: number; y: number } {
-  // 翻转Y轴
-  const mapY =  y;
+  // 反向翻转Y轴（因为地图显示已经上下翻转）
+  const originalY = mapData.height - 1 - y;
 
   return {
     x: x * mapData.resolution + mapData.origin.x,
-    y: mapY * mapData.resolution + mapData.origin.y,
+    y: originalY * mapData.resolution + mapData.origin.y,
   };
 }
 
