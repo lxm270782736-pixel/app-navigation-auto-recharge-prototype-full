@@ -576,7 +576,7 @@ export const MapEditor: React.FC = () => {
           <MapCanvas
             mapData={mapData}
             showRobotTrail={false}
-            showCoordinateSystem={false}
+            showCoordinateSystem={true}
             showOperationHints={false}
             onMapClick={editTool !== EditTool.NONE ? handleMapEdit : undefined}
             disableDirectionSetting={editTool !== EditTool.NONE}

@@ -537,6 +537,7 @@ export const Navigation: React.FC = () => {
           robotPose={robotPose}
           goalPose={goalPose}
           onMapClick={handleMapClick}
+          showCoordinateSystem={true}
         />
 
         {/* 浮动控制面板 */}

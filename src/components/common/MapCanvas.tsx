@@ -777,7 +777,7 @@ function drawCoordinateSystem(ctx: CanvasRenderingContext2D, mapData: MapData) {
   // Y轴标签
   ctx.fillStyle = '#00ff00';
   ctx.font = 'bold 16px Arial';
-  ctx.fillText('Y', yAxisEnd.x + 10, yAxisEnd.y - 5);
+  ctx.fillText('Y', yAxisEnd.x + 5, yAxisEnd.y - 5);
 
   // // 绘制原点标记
   // ctx.fillStyle = '#0000ff';
@@ -795,7 +795,7 @@ function drawCoordinateSystem(ctx: CanvasRenderingContext2D, mapData: MapData) {
   // ctx.fillRect(5, 5, 250, 80);
 
   // ctx.fillStyle = '#ffffff';
-  // ctx.font = '12px monospace';
+  // ctx.font = 'px monospace';
   // ctx.fillText(`地图原点: (${mapData.origin.x.toFixed(2)}, ${mapData.origin.y.toFixed(2)})`, 10, 25);
   // ctx.fillText(`分辨率: ${mapData.resolution.toFixed(3)} m/px`, 10, 45);
   // ctx.fillText(`地图尺寸: ${mapData.width} × ${mapData.height} px`, 10, 65);

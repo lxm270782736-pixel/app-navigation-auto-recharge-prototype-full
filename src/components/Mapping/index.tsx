@@ -457,7 +457,7 @@ export const Mapping: React.FC = () => {
                   }}
                   showRobotPose={true}
                   showRobotTrail={true}
-                  showCoordinateSystem={false}
+                  showCoordinateSystem={true}
                   showOperationHints={false}
                 />
 
