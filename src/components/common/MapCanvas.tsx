@@ -655,6 +655,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
             cursor: onMapClick ? 'crosshair' : 'default',
+            border: '2px solid #000',
+            boxSizing: 'border-box',
           }}
         />
       </div>
@@ -746,6 +748,16 @@ function drawCoordinateSystem(ctx: CanvasRenderingContext2D, mapData: MapData) {
   // 获取原点在地图像素坐标系中的位置
   const origin = worldToMap(0, 0, mapData);
 
+  // 检查原点是否在地图可见范围内
+  const isOriginVisible = origin.x >= 0 && origin.x < mapData.width &&
+                          origin.y >= 0 && origin.y < mapData.height;
+
+  // 如果原点不在可见范围内，不绘制坐标系
+  if (!isOriginVisible) {
+    console.log('[MapCanvas] 坐标原点不在地图可见范围内，跳过绘制');
+    return;
+  }
+
   // 坐标轴长度（单位：米）
   const axisLength = 1.0; // 1米
 
@@ -785,28 +797,7 @@ function drawCoordinateSystem(ctx: CanvasRenderingContext2D, mapData: MapData) {
   // Y轴标签
   ctx.fillStyle = '#00ff00';
   ctx.font = 'bold 16px Arial';
-  ctx.fillText('Y', yAxisEnd.x + 5, yAxisEnd.y - 5);
-
-  // // 绘制原点标记
-  // ctx.fillStyle = '#0000ff';
-  // ctx.beginPath();
-  // ctx.arc(origin.x, origin.y, 5, 0, Math.PI * 2);
-  // ctx.fill();
-
-  // // 原点标签（显示世界坐标原点）
-  // ctx.fillStyle = '#0000ff';
-  // ctx.font = 'bold 14px Arial';
-  // ctx.fillText('O (0, 0)', origin.x + 10, origin.y - 10);
-
-  // // 显示地图原点信息（左上角）
-  // ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  // ctx.fillRect(5, 5, 250, 80);
-
-  // ctx.fillStyle = '#ffffff';
-  // ctx.font = 'px monospace';
-  // ctx.fillText(`地图原点: (${mapData.origin.x.toFixed(2)}, ${mapData.origin.y.toFixed(2)})`, 10, 25);
-  // ctx.fillText(`分辨率: ${mapData.resolution.toFixed(3)} m/px`, 10, 45);
-  // ctx.fillText(`地图尺寸: ${mapData.width} × ${mapData.height} px`, 10, 65);
+  ctx.fillText('Y', yAxisEnd.x + 10, yAxisEnd.y - 5);
 
   ctx.restore();
 }

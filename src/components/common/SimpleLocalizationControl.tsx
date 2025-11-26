@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useROS } from '@/contexts/ROSContext';
-import { ConnectionStatus } from '@/types';
+import { ConnectionStatus, Pose } from '@/types';
 import { Card, Button, Space, message, Modal, Tag, Descriptions } from 'antd';
 import {
   AimOutlined,
@@ -13,11 +13,12 @@ import { rosService } from '@/services/ros';
 interface SimpleLocalizationControlProps {
   onModeChange?: (mode: string) => void;
   onRelocalizationStart?: () => void; // 开始重定位时的回调
+  robotPose?: Pose; // 机器人实时位置
 }
 
 type LocalizationMode = 'idle' | 'localization' | 'localization_auto';
 
-export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({ onModeChange, onRelocalizationStart }) => {
+export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({ onModeChange, onRelocalizationStart, robotPose }) => {
   const { connectionStatus } = useROS();
   const [currentMode, setCurrentMode] = useState<LocalizationMode>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('未启动');
@@ -244,6 +245,17 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
         <Descriptions.Item label="当前模式">{getModeTag()}</Descriptions.Item>
         <Descriptions.Item label="状态信息">{statusMessage}</Descriptions.Item>
+        <Descriptions.Item label="机器人位置">
+          {robotPose ? (
+            <div style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+              <div>X: {robotPose.x.toFixed(3)} m</div>
+              <div>Y: {robotPose.y.toFixed(3)} m</div>
+              <div>θ: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°</div>
+            </div>
+          ) : (
+            <span style={{ color: '#999' }}>未获取</span>
+          )}
+        </Descriptions.Item>
       </Descriptions>
 
       <Space direction="vertical" style={{ width: '100%' }} size="small">

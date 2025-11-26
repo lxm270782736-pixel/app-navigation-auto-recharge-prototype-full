@@ -72,14 +72,20 @@ export const Navigation: React.FC = () => {
       return;
     }
 
-    // 连接后等待2秒，检查是否有地图数据
+    // 如果已经有地图数据，不需要等待
+    if (currentMap) {
+      console.log('[导航] 已检测到地图数据，无需打开地图选择');
+      return;
+    }
+
+    // 没有地图数据，等待2秒让/map话题有机会发布
     const timer = setTimeout(() => {
       if (!currentMap && connectionStatus === ConnectionStatus.CONNECTED) {
-        // 如果没有地图数据，自动打开地图选择modal
+        // 2秒后仍无地图数据，自动打开地图选择modal
         console.log('[导航] 未检测到地图数据，自动打开地图选择');
         handleOpenApplyMapModal();
       }
-    }, 2000); // 等待2秒让/map话题有机会发布
+    }, 2000);
 
     return () => {
       clearTimeout(timer);
@@ -514,7 +520,7 @@ export const Navigation: React.FC = () => {
           返回
         </Button>
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          导航 - {currentMap.name || '当前实时地图'}
+          导航 - {isMapRealtime ? '实时地图' : currentMap.name}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
           <Button
@@ -564,6 +570,7 @@ export const Navigation: React.FC = () => {
               console.log('Localization mode changed:', mode);
             }}
             onRelocalizationStart={handleRelocalizationStart}
+            robotPose={robotPose}
           />
 
           <NavigationControl
