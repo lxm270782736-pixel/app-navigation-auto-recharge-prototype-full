@@ -26,6 +26,7 @@ export const Navigation: React.FC = () => {
   const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
+  const [initialPose, setInitialPose] = useState<Pose | undefined>(); // 初始化位姿
   const [isNavigating, setIsNavigating] = useState(false);
   // 导航状态信息
   const [navigationStatus, setNavigationStatus] = useState<string>('');
@@ -302,6 +303,7 @@ export const Navigation: React.FC = () => {
       // 重定位模式：设置初始位置
       console.log('[重定位] 设置初始位置:', pose);
       rosService.setInitialPose(pose);
+      setInitialPose(pose); // 保存初始位姿以便显示标记
       message.success(`初始位置已发送，等待确认...`);
       setIsRelocalizationMode(false); // 退出重定位模式
     } else {
@@ -536,6 +538,7 @@ export const Navigation: React.FC = () => {
           mapData={currentMap}
           robotPose={robotPose}
           goalPose={goalPose}
+          initialPose={initialPose}
           onMapClick={handleMapClick}
           showCoordinateSystem={true}
         />

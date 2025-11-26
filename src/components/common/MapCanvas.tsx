@@ -8,6 +8,7 @@ interface MapCanvasProps {
   mapData: MapData;
   robotPose?: Pose;
   goalPose?: Pose;
+  initialPose?: Pose; // 初始化位姿（重定位时设置的位置）
   path?: PathPoint[];
   onMapClick?: (x: number, y: number, theta?: number) => void;
   className?: string;
@@ -23,6 +24,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   mapData,
   robotPose: externalRobotPose,
   goalPose,
+  initialPose,
   path,
   onMapClick,
   className,
@@ -305,6 +307,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       drawRobot(ctx, robotPos.x, robotPos.y, robotPose.theta, '#52c41a', '机器人', mapData);
     }
 
+    // 绘制初始位姿（在目标位置之前绘制，避免遮挡）
+    if (initialPose) {
+      const initialPos = worldToMap(initialPose.x, initialPose.y, mapData);
+      drawInitialPose(ctx, initialPos.x, initialPos.y, initialPose.theta, mapData);
+    }
+
     // 绘制目标位置
     if (goalPose) {
       const goalPos = worldToMap(goalPose.x, goalPose.y, mapData);
@@ -320,7 +328,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (brushPreviewPos && brushSize > 0 && disableDirectionSetting) {
       drawBrushPreview(ctx, brushPreviewPos.x, brushPreviewPos.y, brushSize);
     }
-  }, [mapData, robotPose, goalPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting]);
+  }, [mapData, robotPose, goalPose, initialPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting]);
 
   // 处理鼠标滚轮缩放
   useEffect(() => {
@@ -1152,6 +1160,135 @@ function drawGoal(
 
   // ctx.fillStyle = '#ffffff';
   // ctx.fillText(label, centerX, labelY + 4);
+
+  ctx.restore();
+}
+
+// 绘制初始位姿（重定位标记）
+function drawInitialPose(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  theta: number,
+  mapData: MapData
+) {
+  ctx.save();
+
+  // 启用最佳抗锯齿设置
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const color = '#722ed1'; // 紫色
+  const size = Math.max(3, 0.15 / mapData.resolution);
+
+  // 使用半像素偏移以获得更清晰的线条
+  const centerX = Math.round(x) + 0.5;
+  const centerY = Math.round(y) + 0.5;
+
+  // 绘制外发光效果
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, size + 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // 绘制十字准星外圈
+  const crossRadius = size * 1.3;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, crossRadius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 绘制十字准星线条（四条线）
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  const lineLength = size * 0.8;
+  const innerGap = size * 0.3;
+
+  // 上
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY - innerGap);
+  ctx.lineTo(centerX, centerY - crossRadius - lineLength);
+  ctx.stroke();
+
+  // 下
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY + innerGap);
+  ctx.lineTo(centerX, centerY + crossRadius + lineLength);
+  ctx.stroke();
+
+  // 左
+  ctx.beginPath();
+  ctx.moveTo(centerX - innerGap, centerY);
+  ctx.lineTo(centerX - crossRadius - lineLength, centerY);
+  ctx.stroke();
+
+  // 右
+  ctx.beginPath();
+  ctx.moveTo(centerX + innerGap, centerY);
+  ctx.lineTo(centerX + crossRadius + lineLength, centerY);
+  ctx.stroke();
+
+  // 绘制中心圆（渐变）
+  const centerGradient = ctx.createRadialGradient(
+    centerX - size / 3,
+    centerY - size / 3,
+    0,
+    centerX,
+    centerY,
+    size
+  );
+  centerGradient.addColorStop(0, '#d3adf7'); // 浅紫色
+  centerGradient.addColorStop(1, color);
+
+  ctx.fillStyle = centerGradient;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 中心圆边框
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 绘制方向箭头（实心三角形）
+  const arrowSize = size * 0.7;
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+  ctx.shadowBlur = 2;
+  ctx.beginPath();
+  // 箭头尖端
+  ctx.moveTo(
+    centerX + Math.cos(theta) * arrowSize,
+    centerY - Math.sin(theta) * arrowSize
+  );
+  // 箭头左侧
+  ctx.lineTo(
+    centerX + Math.cos(theta + Math.PI * 2 / 3) * arrowSize * 0.6,
+    centerY - Math.sin(theta + Math.PI * 2 / 3) * arrowSize * 0.6
+  );
+  // 箭头右侧
+  ctx.lineTo(
+    centerX + Math.cos(theta - Math.PI * 2 / 3) * arrowSize * 0.6,
+    centerY - Math.sin(theta - Math.PI * 2 / 3) * arrowSize * 0.6
+  );
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 }

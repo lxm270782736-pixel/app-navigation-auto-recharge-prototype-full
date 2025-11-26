@@ -33,7 +33,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   useEffect(() => {
     // 清理旧订阅
     if (initStatusUnsubscribeRef.current) {
-      console.log('[重定位] 清理旧订阅');
+      // console.log('[重定位] 清理旧订阅');
       initStatusUnsubscribeRef.current();
       initStatusUnsubscribeRef.current = null;
     }
@@ -42,12 +42,12 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       return;
     }
 
-    console.log('[重定位] 开始订阅初始化状态话题');
+    // console.log('[重定位] 开始订阅初始化状态话题');
     const unsubscribe = rosService.subscribeTopic<{ data: boolean }>(
       '/localization/init_status',
       'std_msgs/Bool',
       (msg) => {
-        console.log('[重定位] 收到初始化状态:', msg.data);
+        // console.log('[重定位] 收到初始化状态:', msg.data);
         setWaitingForInitStatus(false);
 
         if (msg.data === true) {
@@ -71,7 +71,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
 
     // 确保总是返回清理函数
     return () => {
-      console.log('[重定位] useEffect 清理，取消订阅');
+      // console.log('[重定位] useEffect 清理，取消订阅');
       if (initStatusUnsubscribeRef.current) {
         initStatusUnsubscribeRef.current();
         initStatusUnsubscribeRef.current = null;
