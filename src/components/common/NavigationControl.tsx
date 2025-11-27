@@ -127,7 +127,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 fontSize: '12px',
               }}
             >
-              请先在"定位服务管理"中启动定位模式
+              没有定位数据，请先在"定位服务管理"中启动定位模式
             </div>
           )}
 
