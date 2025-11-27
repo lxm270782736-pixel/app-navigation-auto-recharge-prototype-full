@@ -26,6 +26,7 @@ class MockROSBridge:
         self.map_data = self.generate_sample_map()
         self.current_map_set = False  # 标记是否已设置当前地图（通过apply_map）
         self.pending_map_name = ""  # 待保存的地图名称（建图开始前设置）
+        self.current_map_name = ""  # 当前应用的地图名称
         # 初始位置设置在地图中心可见区域
         self.robot_pose = {"x": 2.0, "y": 2.0, "theta": 0.0}
         self.movement_time = 0.0
@@ -648,6 +649,7 @@ class MockROSBridge:
 
                 # 标记已设置当前地图，开始发布
                 self.current_map_set = True
+                self.current_map_name = map_name  # 记录当前地图名称
 
                 response["values"] = {
                     "success": True,
@@ -663,6 +665,24 @@ class MockROSBridge:
                     "message": f"地图名称已设置为 '{map_name}'（将用于新建地图）"
                 }
                 print(f"✓ 定位服务: 地图名称已设置为 '{map_name}'（将用于新建地图）")
+
+        elif service == "/localization/get_current_map":
+            # 服务类型: localization_msgs/GetCurrentMap
+            # 获取当前应用的地图名称
+            if self.current_map_name:
+                response["values"] = {
+                    "success": True,
+                    "message": f"当前地图: {self.current_map_name}",
+                    "map_name": self.current_map_name
+                }
+                print(f"✓ 定位服务: 查询当前地图 - '{self.current_map_name}'")
+            else:
+                response["values"] = {
+                    "success": True,
+                    "message": "未设置当前地图",
+                    "map_name": ""
+                }
+                print(f"✓ 定位服务: 查询当前地图 - 未设置")
 
         await websocket.send(json.dumps(response))
 
@@ -1472,6 +1492,7 @@ async def main():
     print("  ✓ 保存地图 (/localization/save_map)")
     print("  ✓ 删除地图 (/localization/delete_map)")
     print("  ✓ 应用地图 (/localization/apply_map)")
+    print("  ✓ 获取当前地图 (/localization/get_current_map)")
     print()
     print("建图服务 (旧接口, 兼容性保留):")
     print("  ✓ 启动建图 (/start_mapping)")

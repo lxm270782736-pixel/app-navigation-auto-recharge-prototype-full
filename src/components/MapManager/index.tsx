@@ -18,6 +18,9 @@ import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
 import dayjs from 'dayjs';
 
+// LocalStorage key for current map
+const CURRENT_MAP_KEY = 'astribot_current_map_id';
+
 export const MapManager: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
@@ -27,14 +30,64 @@ export const MapManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [thumbnailsLoading, setThumbnailsLoading] = useState<Set<string>>(new Set());
 
+  // 从 localStorage 恢复当前地图ID
+  const [currentMapId, setCurrentMapId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(CURRENT_MAP_KEY);
+    } catch (error) {
+      console.error('读取当前地图ID失败:', error);
+      return null;
+    }
+  });
+
   useEffect(() => {
     loadMaps(false); // 默认从本地加载
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 验证当前地图ID是否仍然存在
+  useEffect(() => {
+    if (currentMapId && maps.length > 0) {
+      const mapExists = maps.some(map => map.id === currentMapId);
+      if (!mapExists) {
+        console.warn('[地图管理] 当前地图不存在，清除状态:', currentMapId);
+        setCurrentMapId(null);
+        try {
+          localStorage.removeItem(CURRENT_MAP_KEY);
+        } catch (error) {
+          console.error('清除 localStorage 失败:', error);
+        }
+      } else {
+        console.log('[地图管理] 当前地图状态已恢复:', currentMapId);
+      }
+    }
+  }, [maps, currentMapId]);
+
   const loadMaps = async (forceRefresh: boolean = false) => {
     try {
       setLoading(true);
+
+      // 如果是强制刷新，从ROS获取当前地图名称
+      if (forceRefresh && connectionStatus === ConnectionStatus.CONNECTED) {
+        try {
+          const currentMapName = await rosService.getCurrentMapName();
+          if (currentMapName) {
+            // 根据地图名称查找对应的地图ID
+            // 注意：这里假设地图ID和名称相同，如果不同需要调整
+            setCurrentMapId(currentMapName);
+            // 同步到 localStorage
+            localStorage.setItem(CURRENT_MAP_KEY, currentMapName);
+            console.log('[地图管理] 从ROS获取当前地图:', currentMapName);
+          } else {
+            // 如果ROS返回空，清除当前地图状态
+            setCurrentMapId(null);
+            localStorage.removeItem(CURRENT_MAP_KEY);
+            console.log('[地图管理] ROS未设置当前地图，已清除本地状态');
+          }
+        } catch (error) {
+          console.error('[地图管理] 获取当前地图失败:', error);
+        }
+      }
 
       // 如果不是强制刷新，优先从本地缓存加载
       if (!forceRefresh) {
@@ -182,6 +235,17 @@ export const MapManager: React.FC = () => {
       // 调用 ROS 服务，将地图设置为当前地图
       await rosService.setCurrentMap(map);
 
+      // 更新当前地图ID
+      setCurrentMapId(map.id);
+
+      // 持久化到 localStorage
+      try {
+        localStorage.setItem(CURRENT_MAP_KEY, map.id);
+        console.log('[地图管理] 当前地图ID已保存到 localStorage:', map.id);
+      } catch (error) {
+        console.error('保存当前地图ID到 localStorage 失败:', error);
+      }
+
       message.success({
         content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`,
         key: 'applyMap',
@@ -267,10 +331,21 @@ export const MapManager: React.FC = () => {
         }
       }
 
-      // 3. 更新UI状态
+      // 3. 如果删除的是当前地图，清除当前地图状态
+      if (selectedMap.id === currentMapId) {
+        setCurrentMapId(null);
+        try {
+          localStorage.removeItem(CURRENT_MAP_KEY);
+          console.log('[地图删除] 已清除当前地图状态');
+        } catch (error) {
+          console.error('清除 localStorage 失败:', error);
+        }
+      }
+
+      // 4. 更新UI状态
       setMaps((prevMaps) => prevMaps.filter((m) => m.id !== selectedMap.id));
 
-      // 4. 显示结果
+      // 5. 显示结果
       if (localDeleteSuccess && rosDeleteSuccess) {
         message.success('地图已删除（本地和ROS同步完成）');
       } else if (localDeleteSuccess && !rosDeleteSuccess) {
@@ -352,16 +427,22 @@ export const MapManager: React.FC = () => {
             xxl: 4,
           }}
           dataSource={maps}
-          renderItem={(map) => (
-            <List.Item>
-              <Badge.Ribbon
-                text="仅本地"
-                color="orange"
-                style={{ display: map.localOnly ? 'block' : 'none' }}
-              >
-                <Card
-                  hoverable
-                  cover={
+          renderItem={(map) => {
+            const isCurrentMap = currentMapId === map.id;
+            return (
+              <List.Item>
+                <Badge.Ribbon
+                  text={isCurrentMap ? "使用中" : "仅本地"}
+                  color={isCurrentMap ? "green" : "orange"}
+                  style={{ display: (isCurrentMap || map.localOnly) ? 'block' : 'none' }}
+                >
+                  <Card
+                    hoverable
+                    style={{
+                      border: isCurrentMap ? '2px solid #52c41a' : undefined,
+                      boxShadow: isCurrentMap ? '0 4px 12px rgba(82, 196, 26, 0.3)' : undefined,
+                    }}
+                    cover={
                     <div
                       style={{
                         height: '200px',
@@ -422,9 +503,11 @@ export const MapManager: React.FC = () => {
                             type="link"
                             icon={<CheckCircleOutlined />}
                             onClick={() => handleApplyMap(map)}
-                            style={{ color: '#52c41a' }}
+                            disabled={isCurrentMap}
+                            style={{ color: isCurrentMap ? '#999' : '#52c41a' }}
+                            title={isCurrentMap ? "当前使用中" : "应用此地图"}
                           >
-                            应用
+                            {isCurrentMap ? '使用中' : '应用'}
                           </Button>,
                           <Button
                             key="edit"
@@ -446,17 +529,18 @@ export const MapManager: React.FC = () => {
                         ]
                   }
                 >
-                  <Card.Meta
-                    title={map.name}
-                    description={dayjs(map.createdAt).format('YYYY-MM-DD HH:mm')}
-                  />
-                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#999' }}>
-                    {map.width} × {map.height} px
-                  </div>
-                </Card>
-              </Badge.Ribbon>
-            </List.Item>
-          )}
+                    <Card.Meta
+                      title={map.name}
+                      description={dayjs(map.createdAt).format('YYYY-MM-DD HH:mm')}
+                    />
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#999' }}>
+                      {map.width} × {map.height} px
+                    </div>
+                  </Card>
+                </Badge.Ribbon>
+              </List.Item>
+            );
+          }}
         />
       )}
 

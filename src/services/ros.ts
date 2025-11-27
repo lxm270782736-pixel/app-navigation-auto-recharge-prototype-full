@@ -471,6 +471,28 @@ class ROSService {
     }
   }
 
+  // 获取当前应用的地图名称
+  async getCurrentMapName(): Promise<string | null> {
+    try {
+      const response = await this.callService<{}, { success: boolean; message: string; map_name: string }>(
+        '/localization/get_current_map',
+        'localization_msgs/GetCurrentMap',
+        {}
+      );
+
+      if (response.success && response.map_name) {
+        console.log('[ROS Service] 当前地图:', response.map_name);
+        return response.map_name;
+      }
+
+      console.log('[ROS Service] 未设置当前地图');
+      return null;
+    } catch (error) {
+      console.error('[ROS Service] 获取当前地图失败:', error);
+      return null;
+    }
+  }
+
   // 设置地图名称（用于建图开始前）
   async setMapName(mapName: string): Promise<void> {
     // 使用 apply_map 服务设置地图名称（地图可以不存在）
