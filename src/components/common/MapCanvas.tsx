@@ -80,7 +80,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     const unsubscribe = rosService.subscribeTopic<any>(
-      '/odom',
+      '/loc_high_freq',
       'nav_msgs/Odometry',
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;

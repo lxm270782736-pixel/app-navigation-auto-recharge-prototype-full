@@ -222,7 +222,7 @@ class MockROSBridge:
         # 开始发布该话题的数据
         if topic == "/map":
             asyncio.create_task(self.publish_map(websocket))
-        elif topic == "/odom":
+        elif topic == "/loc_high_freq":
             asyncio.create_task(self.publish_robot_pose(websocket))
         elif topic == "/amcl_pose":
             asyncio.create_task(self.publish_amcl_pose(websocket))
@@ -704,7 +704,7 @@ class MockROSBridge:
 
     async def publish_robot_pose(self, websocket):
         """定期发布机器人位姿（使用 nav_msgs/Odometry）"""
-        while websocket in self.clients and "/odom" in self.subscriptions:
+        while websocket in self.clients and "/loc_high_freq" in self.subscriptions:
             # 模拟机器人沿圆形轨迹移动
             self.movement_time += 0.1
             radius = 3.0
@@ -718,7 +718,7 @@ class MockROSBridge:
 
             message = {
                 "op": "publish",
-                "topic": "/odom",
+                "topic": "/loc_high_freq",
                 "msg": {
                     "header": {
                         "frame_id": "odom",
