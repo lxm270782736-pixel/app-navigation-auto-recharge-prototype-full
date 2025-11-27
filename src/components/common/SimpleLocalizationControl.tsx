@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus, Pose } from '@/types';
-import { Card, Button, Space, message, Modal, Tag, Descriptions } from 'antd';
+import { Card, Button, Space, message, Modal, Tag, Descriptions, Radio } from 'antd';
 import {
   AimOutlined,
   SyncOutlined,
@@ -26,7 +26,8 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [failureModalVisible, setFailureModalVisible] = useState(false);
   const [failureMessage, setFailureMessage] = useState('');
   const [successModalVisible, setSuccessModalVisible] = useState(false);
-  const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('manual');
+  const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('auto'); // 默认自动
+  const [selectedRelocMode, setSelectedRelocMode] = useState<'auto' | 'manual'>('auto'); // 默认选中自动
   const [waitingForInitStatus, setWaitingForInitStatus] = useState(false);
   const initStatusUnsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -224,6 +225,14 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     }
   };
 
+  const handleStartRelocalization = () => {
+    if (selectedRelocMode === 'auto') {
+      handleLocalizationAuto();
+    } else {
+      handleLocalizationManual();
+    }
+  };
+
   const getModeTag = () => {
     const modeConfig = {
       idle: { color: 'default', text: '未启动' },
@@ -259,34 +268,46 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       </Descriptions>
 
       <Space direction="vertical" style={{ width: '100%' }} size="small">
-        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-          <Button
-            type="primary"
-            icon={<AimOutlined />}
-            onClick={handleLocalizationManual}
-            loading={loading === 'localization'}
+        {/* 模式选择 */}
+        <div>
+          <div style={{ fontSize: 13, marginBottom: 8, color: '#666' }}>重定位模式：</div>
+          <Radio.Group
+            value={selectedRelocMode}
+            onChange={(e) => setSelectedRelocMode(e.target.value)}
             disabled={loading !== null}
-            size="small"
-            style={{ flex: 1 }}
+            style={{ width: '100%' }}
+            buttonStyle="solid"
           >
-            {loading === 'localization' ? '手动定位中...' : '手动重定位'}
-          </Button>
-
-          <Button
-            type="primary"
-            icon={<SyncOutlined />}
-            onClick={handleLocalizationAuto}
-            loading={loading === 'localization_auto'}
-            disabled={loading !== null}
-            size="small"
-            style={{ flex: 1 }}
-          >
-            {loading === 'localization_auto' ? '自动定位中...' : '自动重定位'}
-          </Button>
+            <Radio.Button value="auto" style={{ width: '50%', textAlign: 'center' }}>
+              <SyncOutlined /> 自动
+            </Radio.Button>
+            <Radio.Button value="manual" style={{ width: '50%', textAlign: 'center' }}>
+              <AimOutlined /> 手动
+            </Radio.Button>
+          </Radio.Group>
         </div>
 
+        {/* 开始重定位按钮 */}
+        <Button
+          type="primary"
+          icon={selectedRelocMode === 'auto' ? <SyncOutlined /> : <AimOutlined />}
+          onClick={handleStartRelocalization}
+          loading={loading !== null}
+          disabled={loading !== null}
+          size="middle"
+          block
+        >
+          {loading !== null
+            ? `${selectedRelocMode === 'auto' ? '自动' : '手动'}定位中...`
+            : `开始${selectedRelocMode === 'auto' ? '自动' : '手动'}重定位`}
+        </Button>
+
         <div style={{ fontSize: 12, color: '#666', paddingLeft: 8 }}>
-          💡 {loading !== null ? '定位过程约需10秒，请等待完成' : '手动需在地图点击初始位置，自动则系统自动搜索'}
+          💡 {loading !== null
+            ? '定位过程约需10秒，请等待完成'
+            : selectedRelocMode === 'auto'
+              ? '自动模式：系统自动搜索机器人位置'
+              : '手动模式：需在地图点击初始位置'}
         </div>
       </Space>
 
@@ -321,15 +342,13 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
               <strong>✅ 机器人位置已成功确定</strong>
             </div>
             <div style={{ color: '#666', fontSize: 13 }}>
-              机器人已在地图中完成定位，现在可以进行导航操作了。
+              机器人已在地图中完成定位，定位模式将持续运行直到关闭。
             </div>
           </div>
           <div style={{ fontSize: 13, color: '#666' }}>
             <div style={{ marginBottom: 8 }}>💡 下一步操作：</div>
             <ul style={{ paddingLeft: 20, margin: 0 }}>
               <li>点击地图设置目标导航点</li>
-              <li>或继续调整机器人姿态</li>
-              <li>定位模式将持续运行直到关闭</li>
             </ul>
           </div>
         </div>
@@ -344,31 +363,60 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
         footer={
           <Space>
             <Button onClick={() => setFailureModalVisible(false)}>取消</Button>
+            {lastLocalizationType === 'auto' && (
+              <Button
+                onClick={() => {
+                  setFailureModalVisible(false);
+                  setSelectedRelocMode('manual');
+                  message.info('已切换到手动模式，请再次点击"开始手动重定位"按钮');
+                }}
+              >
+                切换手动模式
+              </Button>
+            )}
             <Button type="primary" onClick={handleRetryLocalization}>
               重试
             </Button>
           </Space>
         }
-        width={400}
+        width={450}
       >
         <div style={{ padding: '16px 0' }}>
           <div style={{ marginBottom: 16, textAlign: 'center' }}>
             <CloseCircleOutlined style={{ fontSize: 48, color: '#ff4d4f' }} />
           </div>
           <div style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: 500 }}>
-            定位失败
+            {lastLocalizationType === 'auto' ? '自动定位失败' : '手动定位失败'}
           </div>
           <div style={{ marginBottom: 16, padding: 12, background: '#fff2f0', borderRadius: 4, border: '1px solid #ffccc7' }}>
             <div style={{ color: '#cf1322', fontSize: 14 }}>
               <strong>失败原因：</strong>{failureMessage}
             </div>
           </div>
+
+          {lastLocalizationType === 'auto' && (
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
+              background: '#fff7e6',
+              borderRadius: 4,
+              border: '1px solid #ffd591'
+            }}>
+              <div style={{ color: '#d46b08', fontSize: 14, marginBottom: 8 }}>
+                <strong>💡 建议切换到手动模式</strong>
+              </div>
+              <div style={{ color: '#666', fontSize: 13 }}>
+                自动定位失败可能是因为环境特征不明显，建议切换到手动模式，在地图上手动指定机器人当前位置。
+              </div>
+            </div>
+          )}
+
           <div style={{ fontSize: 13, color: '#666' }}>
-            <div style={{ marginBottom: 8 }}>💡 建议操作：</div>
+            <div style={{ marginBottom: 8 }}>💡 其他建议操作：</div>
             <ul style={{ paddingLeft: 20, margin: 0 }}>
               <li>检查机器人是否在地图覆盖范围内</li>
               <li>确保激光雷达工作正常</li>
-              <li>尝试切换定位方式（手动/自动）</li>
+              {lastLocalizationType === 'manual' && <li>尝试切换到自动定位模式</li>}
               <li>点击"重试"按钮再次尝试定位</li>
             </ul>
           </div>
