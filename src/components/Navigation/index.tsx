@@ -581,6 +581,7 @@ export const Navigation: React.FC = () => {
             onNavigationStop={() => setIsNavigating(false)}
             navigationStatus={navigationStatus}
             navigationFeedback={navigationFeedback}
+            connectionStatus={connectionStatus}
           />
         </div>
 

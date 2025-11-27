@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Card, Space, Button, Switch, Collapse, message, InputNumber } from 'antd';
+import { Card, Space, Button, Switch, Collapse, message, InputNumber, Spin } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
   SettingOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
+import { ConnectionStatus } from '@/types';
 import type { Pose, NavigationGoal, TaskConfig, NavigationActionConfig } from '@/types';
 import { TaskConfigurationModal, TaskListView } from './TaskConfigurationModal';
 
@@ -30,6 +32,7 @@ interface NavigationControlProps {
     eta?: number;
     current_task?: string;
   };
+  connectionStatus?: ConnectionStatus;
 }
 
 export const NavigationControl: React.FC<NavigationControlProps> = ({
@@ -40,6 +43,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   onNavigationStop,
   navigationStatus,
   navigationFeedback,
+  connectionStatus = ConnectionStatus.DISCONNECTED,
 }) => {
 
   // 调试日志：监控 isNavigating 状态变化
@@ -117,7 +121,8 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
         style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="small">
-          {!robotPose && (
+          {/* ROS 未连接提示 */}
+          {connectionStatus !== ConnectionStatus.CONNECTED && (
             <div
               style={{
                 padding: '8px',
@@ -125,13 +130,17 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 border: '1px solid #ffd591',
                 borderRadius: '4px',
                 fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
               }}
             >
-              没有定位数据，请先在"定位服务管理"中启动定位模式
+              ⚠️ ROS 未连接，请先连接 ROS
             </div>
           )}
 
-          {robotPose && !goalPose && (
+          {/* 等待定位数据提示 */}
+          {connectionStatus === ConnectionStatus.CONNECTED && !robotPose && (
             <div
               style={{
                 padding: '8px',
@@ -139,9 +148,28 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 border: '1px solid #91d5ff',
                 borderRadius: '4px',
                 fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
               }}
             >
-              请在地图上点击选择导航目标位置
+              <Spin indicator={<LoadingOutlined style={{ fontSize: 14 }} spin />} size="small" />
+              等待定位数据...（如未启动定位，请在"定位服务管理"中启动）
+            </div>
+          )}
+
+          {/* 设置目标点提示 */}
+          {robotPose && !goalPose && (
+            <div
+              style={{
+                padding: '8px',
+                background: '#f6ffed',
+                border: '1px solid #b7eb8f',
+                borderRadius: '4px',
+                fontSize: '12px',
+              }}
+            >
+              ✓ 已获取定位数据，请在地图上点击选择导航目标位置
             </div>
           )}
 
