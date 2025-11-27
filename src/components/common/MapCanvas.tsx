@@ -20,6 +20,8 @@ interface MapCanvasProps {
   brushSize?: number; // 画笔大小（用于显示预览圆圈）
   laserScan?: LaserScan | null; // 雷达扫描数据
   showLaserScan?: boolean; // 是否显示雷达点
+  showGrid?: boolean; // 是否显示栅格
+  gridSize?: number; // 栅格大小（米），默认1.0
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -38,6 +40,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   brushSize = 0,
   laserScan = null,
   showLaserScan = false,
+  showGrid = false,
+  gridSize = 1.0,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -251,6 +255,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     ctx.putImageData(imageData, 0, 0);
+
+    // 绘制栅格
+    if (showGrid) {
+      drawGrid(ctx, mapData, gridSize);
+    }
 
     // 绘制坐标系
     if (showCoordinateSystem) {
@@ -750,6 +759,55 @@ function mapToWorld(
     x: x * mapData.resolution + mapData.origin.x,
     y: originalY * mapData.resolution + mapData.origin.y,
   };
+}
+
+// 绘制栅格
+function drawGrid(ctx: CanvasRenderingContext2D, mapData: MapData, gridSize: number) {
+  ctx.save();
+
+  // 栅格样式：半透明浅灰色
+  ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+  ctx.lineWidth = 1;
+
+  // 计算栅格在像素坐标中的间距
+  const gridSpacingPixels = gridSize / mapData.resolution;
+
+  // 找到地图原点在像素坐标系中的位置
+  const origin = worldToMap(0, 0, mapData);
+
+  // 绘制垂直线（沿X轴方向）
+  // 从原点向右绘制
+  for (let x = origin.x; x < mapData.width; x += gridSpacingPixels) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, mapData.height);
+    ctx.stroke();
+  }
+  // 从原点向左绘制
+  for (let x = origin.x - gridSpacingPixels; x >= 0; x -= gridSpacingPixels) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, mapData.height);
+    ctx.stroke();
+  }
+
+  // 绘制水平线（沿Y轴方向）
+  // 从原点向下绘制
+  for (let y = origin.y; y < mapData.height; y += gridSpacingPixels) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(mapData.width, y);
+    ctx.stroke();
+  }
+  // 从原点向上绘制
+  for (let y = origin.y - gridSpacingPixels; y >= 0; y -= gridSpacingPixels) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(mapData.width, y);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 // 绘制坐标系

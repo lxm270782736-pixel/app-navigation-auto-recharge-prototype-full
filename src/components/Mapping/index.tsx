@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, message, Modal, Input, Spin, Steps, Space, Checkbox, Switch } from 'antd';
+import { Card, Button, message, Modal, Input, Spin, Steps, Space, Checkbox, Switch, Select } from 'antd';
 import {
   ArrowLeftOutlined,
   StopOutlined,
@@ -31,6 +31,10 @@ export const Mapping: React.FC = () => {
   const [showLaserScan, setShowLaserScan] = useState(false); // 雷达显示开关
   const [hasLaserData, setHasLaserData] = useState(false); // 是否接收到雷达数据
   const laserDataTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 使用 ref 避免闭包问题
+
+  // 栅格显示状态
+  const [showGrid, setShowGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
 
   // 建图启动流程状态
   const [mappingModalVisible, setMappingModalVisible] = useState(false);
@@ -478,6 +482,29 @@ export const Mapping: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>SLAM 建图</span>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* 栅格显示开关 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', color: '#666' }}>栅格</span>
+                <Switch
+                  checked={showGrid}
+                  onChange={setShowGrid}
+                  size="small"
+                />
+                {showGrid && (
+                  <Select
+                    size="small"
+                    value={gridSize}
+                    onChange={setGridSize}
+                    style={{ width: 80 }}
+                    options={[
+                      { label: '0.5m', value: 0.5 },
+                      { label: '1.0m', value: 1.0 },
+                      { label: '2.0m', value: 2.0 },
+                      { label: '5.0m', value: 5.0 },
+                    ]}
+                  />
+                )}
+              </div>
               {/* 雷达显示开关 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px' }}>
                 <RadarChartOutlined style={{ fontSize: '16px', color: showLaserScan ? '#1890ff' : '#999' }} />
@@ -548,6 +575,8 @@ export const Mapping: React.FC = () => {
                   showOperationHints={false}
                   laserScan={laserScan}
                   showLaserScan={showLaserScan}
+                  showGrid={showGrid}
+                  gridSize={gridSize}
                 />
 
                 {/* 状态指示器 */}

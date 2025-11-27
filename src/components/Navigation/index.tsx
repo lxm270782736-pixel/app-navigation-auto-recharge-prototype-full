@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, message, Modal, List, Card, Empty, Spin } from 'antd';
+import { Button, message, Modal, List, Card, Empty, Spin, Switch, Select } from 'antd';
 import {
   ArrowLeftOutlined,
   EnvironmentOutlined,
@@ -44,6 +44,10 @@ export const Navigation: React.FC = () => {
 
   // 重定位模式状态
   const [isRelocalizationMode, setIsRelocalizationMode] = useState(false);
+
+  // 栅格显示状态
+  const [showGrid, setShowGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
 
   // 订阅实时地图数据
   useEffect(() => {
@@ -523,6 +527,28 @@ export const Navigation: React.FC = () => {
           导航 - {isMapRealtime ? '实时地图' : currentMap.name}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', color: '#666' }}>栅格</span>
+            <Switch
+              size="small"
+              checked={showGrid}
+              onChange={setShowGrid}
+            />
+            {showGrid && (
+              <Select
+                size="small"
+                value={gridSize}
+                onChange={setGridSize}
+                style={{ width: 80 }}
+                options={[
+                  { label: '0.5m', value: 0.5 },
+                  { label: '1.0m', value: 1.0 },
+                  { label: '2.0m', value: 2.0 },
+                  { label: '5.0m', value: 5.0 },
+                ]}
+              />
+            )}
+          </div>
           <Button
             icon={<SaveOutlined />}
             onClick={handleSaveMap}
@@ -547,6 +573,8 @@ export const Navigation: React.FC = () => {
           initialPose={initialPose}
           onMapClick={handleMapClick}
           showCoordinateSystem={true}
+          showGrid={showGrid}
+          gridSize={gridSize}
         />
 
         {/* 浮动控制面板 */}

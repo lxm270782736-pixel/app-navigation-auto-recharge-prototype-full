@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert, Tooltip } from 'antd';
+import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert, Tooltip, Switch, Select } from 'antd';
 import {
   ArrowLeftOutlined,
   SaveOutlined,
@@ -49,6 +49,10 @@ export const MapEditor: React.FC = () => {
   const [editTool, setEditTool] = useState<EditTool>(EditTool.NONE);
   const [brushSize, setBrushSize] = useState(5);
   const [isDrawing, setIsDrawing] = useState(false); // 是否正在绘制
+
+  // 栅格显示状态
+  const [showGrid, setShowGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
 
   // 历史记录（撤销/重做）
   const [history, setHistory] = useState<HistoryState[]>([]);
@@ -603,7 +607,29 @@ export const MapEditor: React.FC = () => {
           </div>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', color: '#666' }}>栅格</span>
+            <Switch
+              size="small"
+              checked={showGrid}
+              onChange={setShowGrid}
+            />
+            {showGrid && (
+              <Select
+                size="small"
+                value={gridSize}
+                onChange={setGridSize}
+                style={{ width: 80 }}
+                options={[
+                  { label: '0.5m', value: 0.5 },
+                  { label: '1.0m', value: 1.0 },
+                  { label: '2.0m', value: 2.0 },
+                  { label: '5.0m', value: 5.0 },
+                ]}
+              />
+            )}
+          </div>
           <Tooltip title="撤销上一步操作 (Ctrl+Z)">
             <Button
               icon={<UndoOutlined />}
@@ -636,6 +662,8 @@ export const MapEditor: React.FC = () => {
             onMapClick={editTool !== EditTool.NONE ? handleMapEdit : undefined}
             disableDirectionSetting={editTool !== EditTool.NONE}
             brushSize={brushSize}
+            showGrid={showGrid}
+            gridSize={gridSize}
           />
 
           {/* 地图信息卡片 */}
