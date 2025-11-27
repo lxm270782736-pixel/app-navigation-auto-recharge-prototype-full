@@ -43,7 +43,7 @@
 
 **启动流程**（前端实现）:
 1. **步骤1**: 启动遥控器 `/joystick/start`（可跳过）
-2. **步骤2**: 启动建图节点 `/localization/start_mapping`（可跳过）
+2. **步骤2**: 进入建图模式 `/localization/start_mapping`（可跳过）
 3. 用户可选择跳过任一步骤，适用于已手动启动的场景
 
 ---
@@ -682,7 +682,7 @@ if (!skipJoystick) {
   }
 }
 
-// 步骤2: 启动建图节点（可跳过）
+// 步骤2: 进入建图模式（可跳过）
 if (!skipMappingNode) {
   const mappingResult = await rosService.startMapping();
   if (!mappingResult.success) {

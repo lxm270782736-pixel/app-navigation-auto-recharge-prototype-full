@@ -295,7 +295,7 @@ class MockROSBridge:
         elif service == "/localization/start_mapping":
             if not self.joystick_active:
                 print("⚠ 警告: 建图前应先启动遥控器")
-            print("🗺️  正在启动建图节点...")
+            print("🗺️  正在进入建图模式...")
             print("   ⏳ 初始化SLAM算法 (5秒)...")
             await asyncio.sleep(5)  # 模拟建图节点启动过程
             self.localization_mode = "mapping"
@@ -1472,7 +1472,7 @@ async def main():
     print()
     print("支持的功能:")
     print("  ✓ 地图数据发布 (/map)")
-    print("  ✓ 机器人里程计发布 (/odom)")
+    print("  ✓ 机器人高频位姿发布 (/loc_high_freq)")
     print("  ✓ AMCL位姿估计 (/amcl_pose)")
     print("  ✓ 激光雷达扫描数据 (/scan) - 模拟360度激光雷达")
     print("  ✓ 初始位姿设置 (/initialpose)")

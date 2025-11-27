@@ -289,15 +289,15 @@ export const Mapping: React.FC = () => {
       // 延迟一下，让用户看到第一步完成
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // 步骤 2: 启动建图节点（可跳过）
+      // 步骤 2: 进入建图模式（可跳过）
       setMappingStep(2);
       setMappingStepStatus(['finish', 'process']);
 
       if (skipMappingNode) {
-        console.log('[建图] 跳过启动建图节点');
+        console.log('[建图] 跳过进入建图模式');
         setMappingStepStatus(['finish', 'finish']);
         setIsMapping(true);
-        message.info('已跳过启动建图节点');
+        message.info('已跳过进入建图模式');
       } else {
         const mappingResult = await rosService.startMapping();
         if (!mappingResult.success) {
@@ -752,7 +752,7 @@ export const Mapping: React.FC = () => {
                     description: '启动机器人遥控系统，使机器人可以通过手柄控制移动',
                   },
                   {
-                    title: '启动建图节点',
+                    title: '进入建图模式',
                     description: '启动SLAM建图算法，开始构建环境地图',
                   },
                 ]}
@@ -776,7 +776,7 @@ export const Mapping: React.FC = () => {
                     checked={skipMappingNode}
                     onChange={(e) => setSkipMappingNode(e.target.checked)}
                   >
-                    <span style={{ fontSize: 13 }}>跳过启动建图节点</span>
+                    <span style={{ fontSize: 13 }}>跳过进入建图模式</span>
                     <div style={{ fontSize: 12, color: '#999', marginLeft: 24 }}>
                       如果建图节点已手动启动，可跳过此步骤
                     </div>
@@ -802,7 +802,7 @@ export const Mapping: React.FC = () => {
                       mappingStepStatus[0] === 'error' ? <CloseCircleOutlined /> : undefined,
                   },
                   {
-                    title: skipMappingNode ? '启动建图节点（已跳过）' : '启动建图节点',
+                    title: skipMappingNode ? '进入建图模式（已跳过）' : '进入建图模式',
                     status: mappingStepStatus[1],
                     description: skipMappingNode
                       ? '用户选择跳过此步骤'
