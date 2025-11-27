@@ -40,6 +40,32 @@ export const MapManager: React.FC = () => {
     }
   });
 
+  // 地图排序函数：优先按时间倒序，没有时间的按名字排序
+  const sortMaps = (mapList: MapData[]): MapData[] => {
+    return [...mapList].sort((a, b) => {
+      const aHasTime = a.createdAt && !isNaN(new Date(a.createdAt).getTime());
+      const bHasTime = b.createdAt && !isNaN(new Date(b.createdAt).getTime());
+
+      // 如果都有有效时间，按时间倒序（最新的在前）
+      if (aHasTime && bHasTime) {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+
+      // 如果只有 a 有时间，a 排在前面
+      if (aHasTime && !bHasTime) {
+        return -1;
+      }
+
+      // 如果只有 b 有时间，b 排在前面
+      if (!aHasTime && bHasTime) {
+        return 1;
+      }
+
+      // 如果都没有时间，按名字字母顺序排序
+      return a.name.localeCompare(b.name);
+    });
+  };
+
   useEffect(() => {
     loadMaps(false); // 默认从本地加载
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,7 +119,7 @@ export const MapManager: React.FC = () => {
       if (!forceRefresh) {
         const localMaps = mapStorageService.getAllMapsFromLocalCache();
         if (localMaps.length > 0) {
-          setMaps(localMaps);
+          setMaps(sortMaps(localMaps));
           console.log('[地图管理] 从本地缓存加载', localMaps.length, '个地图');
           setLoading(false);
           return;
@@ -138,10 +164,12 @@ export const MapManager: React.FC = () => {
         }
       }
 
-      setMaps(finalMaps);
+      // 排序地图列表
+      const sortedMaps = sortMaps(finalMaps);
+      setMaps(sortedMaps);
 
       // 异步加载每个地图的完整数据（用于编辑）
-      loadFullMapData(finalMaps, forceRefresh);
+      loadFullMapData(sortedMaps, forceRefresh);
     } catch (error) {
       console.error('加载地图列表失败:', error);
       message.error('加载地图列表失败');
