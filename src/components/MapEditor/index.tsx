@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert } from 'antd';
+import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined,
   SaveOutlined,
@@ -166,6 +166,19 @@ export const MapEditor: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
+  // 浏览器关闭/刷新前的提示
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome requires returnValue to be set
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // 处理pending的历史保存（在绘制结束时）
   useEffect(() => {
     if (!isDrawing && pendingHistorySave) {
@@ -294,6 +307,26 @@ export const MapEditor: React.FC = () => {
     } catch (error) {
       console.error('保存地图失败:', error);
       message.error('保存地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    }
+  };
+
+  // 处理返回（检查未保存的更改）
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      Modal.confirm({
+        title: '有未保存的更改',
+        icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+        content: '您有未保存的地图修改，确定要离开吗？未保存的更改将丢失。',
+        centered: true,
+        okText: '放弃更改',
+        okType: 'danger',
+        cancelText: '继续编辑',
+        onOk: () => {
+          navigate('/maps');
+        },
+      });
+    } else {
+      navigate('/maps');
     }
   };
 
@@ -447,9 +480,11 @@ export const MapEditor: React.FC = () => {
           flexShrink: 0,
         }}
       >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/maps')}>
-          返回地图管理
-        </Button>
+        <Tooltip title={hasUnsavedChanges ? "有未保存的更改" : "返回地图管理"}>
+          <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
+            返回地图管理
+          </Button>
+        </Tooltip>
 
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isEditing ? (
@@ -470,32 +505,42 @@ export const MapEditor: React.FC = () => {
         <Space>
           {isEditing ? (
             <>
-              <Button onClick={() => {
-                setMapName(mapData.name);
-                setIsEditing(false);
-              }}>
-                取消
-              </Button>
-              <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
-                保存{hasUnsavedChanges ? ' *' : ''}
-              </Button>
+              <Tooltip title="取消编辑地图名称">
+                <Button onClick={() => {
+                  setMapName(mapData.name);
+                  setIsEditing(false);
+                }}>
+                  取消
+                </Button>
+              </Tooltip>
+              <Tooltip title="保存地图名称和修改">
+                <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
+                  保存{hasUnsavedChanges ? ' *' : ''}
+                </Button>
+              </Tooltip>
             </>
           ) : (
             <>
-              <Button onClick={() => setIsEditing(true)}>
-                编辑名称
-              </Button>
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
-                onClick={handleSave}
-                disabled={!hasUnsavedChanges}
-              >
-                保存地图{hasUnsavedChanges ? ' *' : ''}
-              </Button>
-              <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>
-                删除地图
-              </Button>
+              <Tooltip title="修改地图名称">
+                <Button onClick={() => setIsEditing(true)}>
+                  编辑名称
+                </Button>
+              </Tooltip>
+              <Tooltip title={hasUnsavedChanges ? "保存地图修改到ROS和本地" : "没有需要保存的修改"}>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  onClick={handleSave}
+                  disabled={!hasUnsavedChanges}
+                >
+                  保存地图{hasUnsavedChanges ? ' *' : ''}
+                </Button>
+              </Tooltip>
+              <Tooltip title="从本地和ROS删除此地图">
+                <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>
+                  删除地图
+                </Button>
+              </Tooltip>
             </>
           )}
         </Space>
@@ -520,18 +565,26 @@ export const MapEditor: React.FC = () => {
             onChange={(e) => setEditTool(e.target.value)}
             buttonStyle="solid"
           >
-            <Radio.Button value={EditTool.NONE}>
-              <QuestionCircleOutlined /> 无
-            </Radio.Button>
-            <Radio.Button value={EditTool.FREE}>
-              <HighlightOutlined /> 自由区域
-            </Radio.Button>
-            <Radio.Button value={EditTool.OBSTACLE}>
-              <BgColorsOutlined /> 障碍物
-            </Radio.Button>
-            <Radio.Button value={EditTool.UNKNOWN}>
-              <ClearOutlined /> 未知区域
-            </Radio.Button>
+            <Tooltip title="不编辑，仅浏览地图">
+              <Radio.Button value={EditTool.NONE}>
+                <QuestionCircleOutlined /> 无
+              </Radio.Button>
+            </Tooltip>
+            <Tooltip title="绘制可通行的自由区域（白色）">
+              <Radio.Button value={EditTool.FREE}>
+                <HighlightOutlined /> 自由区域
+              </Radio.Button>
+            </Tooltip>
+            <Tooltip title="绘制障碍物（黑色）">
+              <Radio.Button value={EditTool.OBSTACLE}>
+                <BgColorsOutlined /> 障碍物
+              </Radio.Button>
+            </Tooltip>
+            <Tooltip title="清除为未知区域（灰色）">
+              <Radio.Button value={EditTool.UNKNOWN}>
+                <ClearOutlined /> 未知区域
+              </Radio.Button>
+            </Tooltip>
           </Radio.Group>
         </div>
 
@@ -551,22 +604,24 @@ export const MapEditor: React.FC = () => {
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <Button
-            icon={<UndoOutlined />}
-            onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            title="撤销 (Ctrl+Z)"
-          >
-            撤销
-          </Button>
-          <Button
-            icon={<RedoOutlined />}
-            onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            title="重做 (Ctrl+Y)"
-          >
-            重做
-          </Button>
+          <Tooltip title="撤销上一步操作 (Ctrl+Z)">
+            <Button
+              icon={<UndoOutlined />}
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+            >
+              撤销
+            </Button>
+          </Tooltip>
+          <Tooltip title="重做上一步撤销 (Ctrl+Y)">
+            <Button
+              icon={<RedoOutlined />}
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+            >
+              重做
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
