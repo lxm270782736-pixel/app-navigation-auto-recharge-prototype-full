@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, message, Modal, Input, Spin, Steps, Space, Checkbox } from 'antd';
+import { Card, Button, message, Modal, Input, Spin, Steps, Space, Checkbox, Switch } from 'antd';
 import {
   ArrowLeftOutlined,
   StopOutlined,
@@ -8,12 +8,14 @@ import {
   LoadingOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  RadarChartOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData } from '@/types';
+import type { MapData, LaserScan } from '@/types';
 import { MapCanvas } from '@/components/common/MapCanvas';
 
 export const Mapping: React.FC = () => {
@@ -23,6 +25,12 @@ export const Mapping: React.FC = () => {
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [mapName, setMapName] = useState('');
   const [currentMapData, setCurrentMapData] = useState<Partial<MapData> | null>(null);
+
+  // 雷达相关状态
+  const [laserScan, setLaserScan] = useState<LaserScan | null>(null);
+  const [showLaserScan, setShowLaserScan] = useState(false); // 雷达显示开关
+  const [hasLaserData, setHasLaserData] = useState(false); // 是否接收到雷达数据
+  const laserDataTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 使用 ref 避免闭包问题
 
   // 建图启动流程状态
   const [mappingModalVisible, setMappingModalVisible] = useState(false);
@@ -76,6 +84,69 @@ export const Mapping: React.FC = () => {
 
     return () => {
       unsubscribe();
+    };
+  }, [connectionStatus]);
+
+  // 订阅雷达话题
+  useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      // 断开连接时重置雷达状态
+      setHasLaserData(false);
+      setLaserScan(null);
+      if (laserDataTimeoutRef.current) {
+        clearTimeout(laserDataTimeoutRef.current);
+        laserDataTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    // 初始状态：假设有雷达数据，避免刚连接时立即显示警告
+    // 如果2秒内没有收到数据，再显示警告
+    setHasLaserData(true);
+
+    const unsubscribe = rosService.subscribeTopic<any>(
+      '/scan',
+      'sensor_msgs/LaserScan',
+      (scanMsg) => {
+        // 接收到雷达数据
+        setHasLaserData(true);
+        setLaserScan({
+          angle_min: scanMsg.angle_min,
+          angle_max: scanMsg.angle_max,
+          angle_increment: scanMsg.angle_increment,
+          time_increment: scanMsg.time_increment,
+          scan_time: scanMsg.scan_time,
+          range_min: scanMsg.range_min,
+          range_max: scanMsg.range_max,
+          ranges: scanMsg.ranges,
+          intensities: scanMsg.intensities,
+        });
+
+        // 清除之前的超时检测
+        if (laserDataTimeoutRef.current) {
+          clearTimeout(laserDataTimeoutRef.current);
+        }
+
+        // 设置新的超时检测（2秒内没有新数据则认为雷达断开）
+        // 使用较短的超时时间，因为雷达数据应该是10Hz（每0.1秒更新一次）
+        laserDataTimeoutRef.current = setTimeout(() => {
+          setHasLaserData(false);
+        }, 2000);
+      }
+    );
+
+    // 设置初始超时检测（2秒后如果还没收到数据，显示警告）
+    laserDataTimeoutRef.current = setTimeout(() => {
+      setHasLaserData(false);
+    }, 2000);
+
+    return () => {
+      unsubscribe();
+      // 清理超时检测
+      if (laserDataTimeoutRef.current) {
+        clearTimeout(laserDataTimeoutRef.current);
+        laserDataTimeoutRef.current = null;
+      }
     };
   }, [connectionStatus]);
 
@@ -406,7 +477,23 @@ export const Mapping: React.FC = () => {
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>SLAM 建图</span>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* 雷达显示开关 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px' }}>
+                <RadarChartOutlined style={{ fontSize: '16px', color: showLaserScan ? '#1890ff' : '#999' }} />
+                <Switch
+                  checked={showLaserScan}
+                  onChange={setShowLaserScan}
+                  checkedChildren="雷达"
+                  unCheckedChildren="雷达"
+                  disabled={!hasLaserData}
+                />
+                {!hasLaserData && connectionStatus === ConnectionStatus.CONNECTED && (
+                  <span style={{ fontSize: '12px', color: '#ff4d4f' }}>
+                    <WarningOutlined /> 无雷达数据
+                  </span>
+                )}
+              </div>
               {!isMapping ? (
                 <Button
                   type="primary"
@@ -459,6 +546,8 @@ export const Mapping: React.FC = () => {
                   showRobotTrail={true}
                   showCoordinateSystem={true}
                   showOperationHints={false}
+                  laserScan={laserScan}
+                  showLaserScan={showLaserScan}
                 />
 
                 {/* 状态指示器 */}

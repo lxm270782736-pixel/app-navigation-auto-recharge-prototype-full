@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import type { MapData, Pose, PathPoint } from '@/types';
+import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
@@ -18,6 +18,8 @@ interface MapCanvasProps {
   showRobotPose?: boolean; // 是否显示机器人位姿信息（自动订阅）
   disableDirectionSetting?: boolean; // 禁用方向设置模式（用于地图编辑时连续编辑）
   brushSize?: number; // 画笔大小（用于显示预览圆圈）
+  laserScan?: LaserScan | null; // 雷达扫描数据
+  showLaserScan?: boolean; // 是否显示雷达点
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -34,6 +36,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   showRobotPose = false,
   disableDirectionSetting = false,
   brushSize = 0,
+  laserScan = null,
+  showLaserScan = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -296,6 +300,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
 
+    // 绘制雷达扫描点
+    if (showLaserScan && laserScan && robotPose) {
+      drawLaserScan(ctx, laserScan, robotPose, mapData);
+    }
+
     // 绘制机器人位置
     if (robotPose) {
       const robotPos = worldToMap(robotPose.x, robotPose.y, mapData);
@@ -328,7 +337,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (brushPreviewPos && brushSize > 0 && disableDirectionSetting) {
       drawBrushPreview(ctx, brushPreviewPos.x, brushPreviewPos.y, brushSize);
     }
-  }, [mapData, robotPose, goalPose, initialPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting]);
+  }, [mapData, robotPose, goalPose, initialPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting, laserScan, showLaserScan]);
 
   // 处理鼠标滚轮缩放
   useEffect(() => {
@@ -1336,4 +1345,45 @@ function lightenColor(color: string, percent: number): string {
   const G = Math.min(255, ((num >> 8) & 0x00ff) + amt);
   const B = Math.min(255, (num & 0x0000ff) + amt);
   return `#${(0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1)}`;
+}
+
+// 绘制雷达扫描点
+function drawLaserScan(
+  ctx: CanvasRenderingContext2D,
+  laserScan: LaserScan,
+  robotPose: Pose,
+  mapData: MapData
+) {
+  ctx.save();
+
+  // 雷达点颜色：半透明红色
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+
+  // 遍历所有雷达点
+  for (let i = 0; i < laserScan.ranges.length; i++) {
+    const range = laserScan.ranges[i];
+
+    // 过滤无效点（NaN、Inf、超出范围）
+    if (!isFinite(range) || range < laserScan.range_min || range > laserScan.range_max) {
+      continue;
+    }
+
+    // 计算当前点的角度（相对于雷达坐标系）
+    const angle = laserScan.angle_min + i * laserScan.angle_increment;
+
+    // 将雷达点从雷达坐标系转换到世界坐标系
+    // 假设雷达安装在机器人中心，朝向与机器人朝向一致
+    const worldX = robotPose.x + range * Math.cos(robotPose.theta + angle);
+    const worldY = robotPose.y + range * Math.sin(robotPose.theta + angle);
+
+    // 转换为地图像素坐标
+    const mapPos = worldToMap(worldX, worldY, mapData);
+
+    // 绘制雷达点（小圆点）
+    ctx.beginPath();
+    ctx.arc(mapPos.x, mapPos.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 }

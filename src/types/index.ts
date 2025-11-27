@@ -165,3 +165,16 @@ export interface MappingState {
   isMapping: boolean;
   mapData?: Partial<MapData>;
 }
+
+// 雷达扫描数据
+export interface LaserScan {
+  angle_min: number; // 最小角度（弧度）
+  angle_max: number; // 最大角度（弧度）
+  angle_increment: number; // 角度增量（弧度）
+  time_increment: number; // 测量时间增量（秒）
+  scan_time: number; // 扫描周期（秒）
+  range_min: number; // 最小距离（米）
+  range_max: number; // 最大距离（米）
+  ranges: number[]; // 距离数组（米），NaN/Inf表示无效
+  intensities?: number[]; // 强度数组（可选）
+}

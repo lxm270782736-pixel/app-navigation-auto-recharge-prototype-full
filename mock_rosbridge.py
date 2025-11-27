@@ -227,6 +227,8 @@ class MockROSBridge:
             asyncio.create_task(self.publish_amcl_pose(websocket))
         elif topic == "/localization/status":
             asyncio.create_task(self.publish_localization_status(websocket))
+        elif topic == "/scan":
+            asyncio.create_task(self.publish_laser_scan(websocket))
 
     async def handle_unsubscribe(self, websocket, data):
         """处理取消订阅"""
@@ -785,6 +787,110 @@ class MockROSBridge:
             except:
                 break
             await asyncio.sleep(1.0)  # 每秒更新一次状态
+
+    async def publish_laser_scan(self, websocket):
+        """定期发布雷达扫描数据（sensor_msgs/LaserScan）"""
+        while websocket in self.clients and "/scan" in self.subscriptions:
+            # 生成模拟的雷达扫描数据
+            scan_data = self.generate_laser_scan()
+
+            message = {
+                "op": "publish",
+                "topic": "/scan",
+                "msg": scan_data
+            }
+
+            try:
+                await websocket.send(json.dumps(message))
+            except:
+                break
+            await asyncio.sleep(0.1)  # 10Hz 发布频率
+
+    def generate_laser_scan(self):
+        """生成模拟的雷达扫描数据"""
+        # 雷达参数（模拟360度激光雷达）
+        angle_min = -math.pi  # -180度
+        angle_max = math.pi   # 180度
+        angle_increment = math.pi / 180.0  # 1度增量
+        num_readings = int((angle_max - angle_min) / angle_increment)
+
+        range_min = 0.15  # 最小距离 15cm
+        range_max = 12.0  # 最大距离 12m
+
+        # 获取当前地图数据和机器人位姿
+        map_info = self.map_data.get("info", {})
+        map_width = map_info.get("width", 384)
+        map_height = map_info.get("height", 384)
+        resolution = map_info.get("resolution", 0.05)
+        origin = map_info.get("origin", {}).get("position", {"x": -10.0, "y": -10.0})
+        map_grid = self.map_data.get("data", [])
+
+        robot_x = self.robot_pose["x"]
+        robot_y = self.robot_pose["y"]
+        robot_theta = self.robot_pose["theta"]
+
+        ranges = []
+
+        # 为每个角度计算距离
+        for i in range(num_readings):
+            angle = angle_min + i * angle_increment
+            # 雷达角度 + 机器人朝向
+            world_angle = robot_theta + angle
+
+            # 光线追踪：从机器人位置沿着该角度发射光线
+            hit_distance = range_max  # 默认最大距离
+
+            # 步进光线追踪（每次步进0.05米）
+            step_size = resolution
+            max_steps = int(range_max / step_size)
+
+            for step in range(1, max_steps):
+                # 计算当前检测点的世界坐标
+                test_distance = step * step_size
+                test_x = robot_x + test_distance * math.cos(world_angle)
+                test_y = robot_y + test_distance * math.sin(world_angle)
+
+                # 转换为地图栅格坐标
+                grid_x = int((test_x - origin["x"]) / resolution)
+                grid_y = int((test_y - origin["y"]) / resolution)
+
+                # 检查是否超出地图边界
+                if grid_x < 0 or grid_x >= map_width or grid_y < 0 or grid_y >= map_height:
+                    hit_distance = test_distance
+                    break
+
+                # 获取栅格值
+                grid_index = grid_y * map_width + grid_x
+                if grid_index < len(map_grid):
+                    grid_value = map_grid[grid_index]
+
+                    # 如果碰到障碍物（栅格值 > 50）
+                    if grid_value > 50:
+                        hit_distance = test_distance
+                        break
+
+            # 添加一些噪声使雷达数据更真实
+            noise = random.gauss(0, 0.01)  # 1cm标准差的高斯噪声
+            final_distance = max(range_min, min(range_max, hit_distance + noise))
+
+            ranges.append(final_distance)
+
+        # 构建LaserScan消息
+        return {
+            "header": {
+                "frame_id": "laser_frame",
+                "stamp": {"secs": int(time.time()), "nsecs": 0}
+            },
+            "angle_min": angle_min,
+            "angle_max": angle_max,
+            "angle_increment": angle_increment,
+            "time_increment": 0.0,  # 0表示所有测量同时进行
+            "scan_time": 0.1,  # 扫描周期 0.1秒（10Hz）
+            "range_min": range_min,
+            "range_max": range_max,
+            "ranges": ranges,
+            "intensities": []  # 强度数据（可选，这里不生成）
+        }
 
     async def publish_init_status(self, websocket, success: bool):
         """发布初始化状态（单次发送）"""
@@ -1348,6 +1454,7 @@ async def main():
     print("  ✓ 地图数据发布 (/map)")
     print("  ✓ 机器人里程计发布 (/odom)")
     print("  ✓ AMCL位姿估计 (/amcl_pose)")
+    print("  ✓ 激光雷达扫描数据 (/scan) - 模拟360度激光雷达")
     print("  ✓ 初始位姿设置 (/initialpose)")
     print()
     print("定位服务 (Localization Service):")
