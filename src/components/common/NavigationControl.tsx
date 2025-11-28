@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Card, Space, Button, Switch, Collapse, message, InputNumber, Spin } from 'antd';
+import { Card, Space, Button, Switch, Collapse, message, InputNumber, Spin, Radio } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
   SettingOutlined,
   LoadingOutlined,
+  ThunderboltOutlined,
+  AimOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { ConnectionStatus } from '@/types';
@@ -15,6 +17,12 @@ const { Panel } = Collapse;
 
 enum OperationMode {
   SET_GOAL = 'set_goal', // 设置目标点模式
+}
+
+// 导航模式
+enum NavigationMode {
+  OBSTACLE_AVOIDANCE = 'obstacle_avoidance', // 避障导航模式
+  LOCAL_NAVIGATION = 'local_navigation', // 局部导航模式
 }
 
 export { OperationMode };
@@ -53,6 +61,9 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   //   console.log('[NavigationControl] navigationFeedback:', navigationFeedback);
   // }, [isNavigating, navigationStatus, navigationFeedback]);
 
+  // 导航模式选择
+  const [navigationMode, setNavigationMode] = useState<NavigationMode>(NavigationMode.OBSTACLE_AVOIDANCE);
+
   // 任务配置
   const [tasks, setTasks] = useState<TaskConfig[]>([]);
   const [taskConfigModalVisible, setTaskConfigModalVisible] = useState(false);
@@ -83,16 +94,28 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     }
 
     try {
-      const goal: NavigationGoal = {
-        pose: goalPose,
-        tasks, // 使用任务配置面板的任务列表
-        actionConfig, // 添加导航参数配置
-      };
-
-      // console.log('[NavigationControl] 开始导航，调用 onNavigationStart');
       onNavigationStart(); // 先设置状态
-      await rosService.sendNavigationGoal(goal);
-      // message.success('导航已开始'); // 移除立即提示，通过导航状态显示
+
+      if (navigationMode === NavigationMode.LOCAL_NAVIGATION) {
+        // 局部导航模式：发送到 /small_range_goal 话题
+        rosService.sendLocalNavigationGoal(goalPose);
+        message.success('局部导航目标已发送');
+
+        // 局部导航模式没有反馈，立即重置导航状态
+        setTimeout(() => {
+          onNavigationStop();
+        }, 1000);
+      } else {
+        // 避障导航模式：使用现有的 Action 接口
+        const goal: NavigationGoal = {
+          pose: goalPose,
+          tasks, // 使用任务配置面板的任务列表
+          actionConfig, // 添加导航参数配置
+        };
+
+        await rosService.sendNavigationGoal(goal);
+        // message.success('导航已开始'); // 移除立即提示，通过导航状态显示
+      }
     } catch (error) {
       message.error('导航失败');
       console.error('Navigation failed:', error);
@@ -185,6 +208,26 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
             </div>
           )}
 
+          {/* 导航模式选择 */}
+          {!isNavigating && (
+            <div>
+              <div style={{ fontSize: 13, marginBottom: 8, color: '#666' }}>导航模式：</div>
+              <Radio.Group
+                value={navigationMode}
+                onChange={(e) => setNavigationMode(e.target.value)}
+                style={{ width: '100%' }}
+                buttonStyle="solid"
+              >
+                <Radio.Button value={NavigationMode.OBSTACLE_AVOIDANCE} style={{ width: '50%', textAlign: 'center' }}>
+                  <ThunderboltOutlined /> 避障
+                </Radio.Button>
+                <Radio.Button value={NavigationMode.LOCAL_NAVIGATION} style={{ width: '50%', textAlign: 'center' }}>
+                  <AimOutlined /> 局部
+                </Radio.Button>
+              </Radio.Group>
+            </div>
+          )}
+
           {isNavigating ? (
             <Button
               danger
@@ -196,16 +239,23 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
               停止导航
             </Button>
           ) : (
-            <Button
-              type="primary"
-              size="middle"
-              block
-              icon={<PlayCircleOutlined />}
-              onClick={handleStartNavigation}
-              disabled={!robotPose || !goalPose}
-            >
-              开始导航
-            </Button>
+            <>
+              <Button
+                type="primary"
+                size="middle"
+                block
+                icon={<PlayCircleOutlined />}
+                onClick={handleStartNavigation}
+                disabled={!robotPose || !goalPose}
+              >
+                开始导航
+              </Button>
+              <div style={{ fontSize: 12, color: '#666', paddingLeft: 8 }}>
+                💡 {navigationMode === NavigationMode.OBSTACLE_AVOIDANCE
+                  ? '全局路径规划，支持避障和任务'
+                  : '短距离快速导航，无避障规划'}
+              </div>
+            </>
           )}
 
           {/* 导航状态 - 默认显示 */}

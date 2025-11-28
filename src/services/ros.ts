@@ -292,6 +292,38 @@ class ROSService {
     actionClient.cancel();
   }
 
+  // 发送局部导航目标
+  sendLocalNavigationGoal(pose: Pose): void {
+    if (!this.ros) {
+      throw new Error('Not connected to ROS');
+    }
+
+    const poseMessage = {
+      header: {
+        stamp: {
+          secs: Math.floor(Date.now() / 1000),
+          nsecs: (Date.now() % 1000) * 1000000,
+        },
+        frame_id: 'map',
+      },
+      pose: {
+        position: {
+          x: pose.x,
+          y: pose.y,
+          z: 0,
+        },
+        orientation: {
+          x: 0,
+          y: 0,
+          z: Math.sin(pose.theta / 2),
+          w: Math.cos(pose.theta / 2),
+        },
+      },
+    };
+
+    this.publishMessage('/small_range_goal', 'geometry_msgs/PoseStamped', poseMessage);
+  }
+
   // ========== 定位服务 (Localization Service) ==========
 
   // 启动遥控器
