@@ -16,6 +16,7 @@ import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose } from '@/types';
+import { NodeLauncher } from '@/components/common/NodeLauncher';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -129,27 +130,39 @@ export const Dashboard: React.FC = () => {
         <p style={{ color: '#666', fontSize: '14px' }}>实时监控机器人状态和性能</p>
       </div>
 
-      {/* 连接状态卡片 */}
+      {/* 连接状态和节点控制区域 */}
       <Card style={{ marginBottom: '24px' }}>
-        <Row align="middle">
-          <Col flex="auto">
-            <Space size="large">
+        <Row gutter={[24, 16]}>
+          {/* ROS连接状态 */}
+          <Col xs={24} lg={12}>
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <div>
                 <ApiOutlined style={{ fontSize: '24px', marginRight: '8px', color: '#1890ff' }} />
-                <span style={{ fontSize: '16px' }}>ROS连接状态：</span>
-                <Badge
-                  status={statusInfo.status as any}
-                  text={statusInfo.text}
-                  style={{ marginLeft: '8px', fontSize: '16px' }}
-                />
+                <span style={{ fontSize: '16px', fontWeight: 500 }}>ROS连接状态</span>
               </div>
-              {connectionStatus === ConnectionStatus.CONNECTED && (
-                <div style={{ color: '#52c41a' }}>
-                  <WifiOutlined style={{ marginRight: '4px' }} />
-                  ws://localhost:9090
-                </div>
-              )}
+              <div style={{ paddingLeft: '32px' }}>
+                <Space size="large">
+                  <div>
+                    <Badge
+                      status={statusInfo.status as any}
+                      text={statusInfo.text}
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                  {connectionStatus === ConnectionStatus.CONNECTED && (
+                    <div style={{ color: '#52c41a' }}>
+                      <WifiOutlined style={{ marginRight: '4px' }} />
+                      ws://localhost:9090
+                    </div>
+                  )}
+                </Space>
+              </div>
             </Space>
+          </Col>
+
+          {/* 节点启动控制 */}
+          <Col xs={24} lg={12}>
+            <NodeLauncher />
           </Col>
         </Row>
       </Card>

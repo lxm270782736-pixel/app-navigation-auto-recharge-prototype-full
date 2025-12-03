@@ -35,6 +35,9 @@ class MockROSBridge:
         self.navigation_goal = None
         self.navigation_start_pose = None
         self.navigation_start_time = 0.0
+        # 节点运行状态
+        self.slam_running = False
+        self.navigation_node_running = False
         self.navigation_tasks = []
         # 定位服务状态
         self.localization_mode = "idle"  # idle, mapping, localization, localization_auto, obstacle_avoidance
@@ -230,6 +233,12 @@ class MockROSBridge:
             asyncio.create_task(self.publish_localization_status(websocket))
         elif topic == "/scan":
             asyncio.create_task(self.publish_laser_scan(websocket))
+        elif topic == "/slam/status":
+            # 立即发送当前SLAM节点状态，并启动定期发布
+            asyncio.create_task(self.publish_slam_status_periodic(websocket))
+        elif topic == "/navigation/status":
+            # 立即发送当前导航节点状态，并启动定期发布
+            asyncio.create_task(self.publish_navigation_status_periodic(websocket))
 
     async def handle_unsubscribe(self, websocket, data):
         """处理取消订阅"""
@@ -335,7 +344,6 @@ class MockROSBridge:
             print("   ⏳ 全局定位计算中 (10秒)...")
             await asyncio.sleep(10)
             # 模拟成功/失败 (50%失败率)
-            import random
             if random.random() < 0.5:
                 self.localization_status_message = "定位失败（自动）: 无法找到匹配位置"
                 response["values"] = {
@@ -448,6 +456,43 @@ class MockROSBridge:
                 if self.localization_mode == "mapping":
                     print("⚠ 警告: 建图模式仍在运行，但遥控器已停止")
             self.print_system_status()
+
+        # ========== 系统节点启动服务 (新增) ==========
+        elif service == "/system/start_slam_node":
+            print("🚀 正在启动SLAM节点...")
+            print("   ⏳ 加载SLAM算法 (定位+建图) (4秒)...")
+            await asyncio.sleep(4)  # 模拟启动过程
+
+            # 模拟成功率（90%成功）
+            if random.random() < 0.9:
+                response["values"] = {"success": True, "message": "SLAM节点启动成功"}
+                print("✓ 系统节点: SLAM节点已启动")
+
+                # 更新节点状态
+                self.slam_running = True
+                # 发布SLAM状态话题
+                asyncio.create_task(self.publish_slam_status(True))
+            else:
+                response["values"] = {"success": False, "message": "SLAM节点启动失败：激光雷达未连接"}
+                print("✗ 系统节点: SLAM节点启动失败")
+
+        elif service == "/system/start_navigation_node":
+            print("🚀 正在启动导航节点...")
+            print("   ⏳ 加载move_base/路径规划器 (5秒)...")
+            await asyncio.sleep(5)  # 模拟启动过程
+
+            # 模拟成功率（95%成功）
+            if random.random() < 0.95:
+                response["values"] = {"success": True, "message": "导航节点启动成功"}
+                print("✓ 系统节点: 导航节点已启动")
+
+                # 更新节点状态
+                self.navigation_node_running = True
+                # 发布导航状态话题
+                asyncio.create_task(self.publish_navigation_status(True))
+            else:
+                response["values"] = {"success": False, "message": "导航节点启动失败：costmap参数缺失"}
+                print("✗ 系统节点: 导航节点启动失败")
 
         # ========== 定位/地图管理服务 (新增) ==========
         elif service == "/localization/list_maps":
@@ -927,6 +972,116 @@ class MockROSBridge:
                 await websocket.send(json.dumps(message))
             except Exception as e:
                 print(f"发送初始化状态失败: {e}")
+
+    async def publish_slam_status(self, is_running: bool):
+        """发布SLAM节点状态"""
+        print(f"📢 发布SLAM状态: {'运行中' if is_running else '已停止'}")
+        # 向所有订阅了/slam/status的客户端发布状态
+        if "/slam/status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/slam/status",
+                "msg": {
+                    "data": is_running
+                }
+            }
+            # 发送给所有订阅的客户端
+            for websocket in list(self.subscriptions.get("/slam/status", [])):
+                try:
+                    await websocket.send(json.dumps(message))
+                except:
+                    pass
+
+    async def send_slam_status_to_client(self, websocket, is_running: bool):
+        """向单个客户端发送SLAM节点状态"""
+        print(f"📢 向客户端发送SLAM状态: {'运行中' if is_running else '已停止'}")
+        message = {
+            "op": "publish",
+            "topic": "/slam/status",
+            "msg": {
+                "data": is_running
+            }
+        }
+        try:
+            await websocket.send(json.dumps(message))
+        except Exception as e:
+            print(f"发送SLAM状态失败: {e}")
+
+    async def publish_navigation_status(self, is_running: bool):
+        """发布导航节点状态"""
+        print(f"📢 发布导航状态: {'运行中' if is_running else '已停止'}")
+        # 向所有订阅了/navigation/status的客户端发布状态
+        if "/navigation/status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/navigation/status",
+                "msg": {
+                    "data": is_running
+                }
+            }
+            # 发送给所有订阅的客户端
+            for websocket in list(self.subscriptions.get("/navigation/status", [])):
+                try:
+                    await websocket.send(json.dumps(message))
+                except:
+                    pass
+
+    async def send_navigation_status_to_client(self, websocket, is_running: bool):
+        """向单个客户端发送导航节点状态"""
+        print(f"📢 向客户端发送导航状态: {'运行中' if is_running else '已停止'}")
+        message = {
+            "op": "publish",
+            "topic": "/navigation/status",
+            "msg": {
+                "data": is_running
+            }
+        }
+        try:
+            await websocket.send(json.dumps(message))
+        except Exception as e:
+            print(f"发送导航状态失败: {e}")
+
+    async def publish_slam_status_periodic(self, websocket):
+        """定期向订阅客户端发布SLAM节点状态"""
+        print(f"🔄 开始定期发布SLAM状态 (当前: {'运行中' if self.slam_running else '已停止'})")
+        while websocket in self.clients and "/slam/status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/slam/status",
+                "msg": {
+                    "data": self.slam_running
+                }
+            }
+            try:
+                if websocket in self.subscriptions.get("/slam/status", set()):
+                    await websocket.send(json.dumps(message))
+                else:
+                    break
+            except:
+                break
+            await asyncio.sleep(2.0)  # 每2秒发布一次
+        print("⏹ 停止发布SLAM状态")
+
+    async def publish_navigation_status_periodic(self, websocket):
+        """定期向订阅客户端发布导航节点状态"""
+        print(f"🔄 开始定期发布导航状态 (当前: {'运行中' if self.navigation_node_running else '已停止'})")
+        while websocket in self.clients and "/navigation/status" in self.subscriptions:
+            message = {
+                "op": "publish",
+                "topic": "/navigation/status",
+                "msg": {
+                    "data": self.navigation_node_running
+                }
+            }
+            try:
+                if websocket in self.subscriptions.get("/navigation/status", set()):
+                    await websocket.send(json.dumps(message))
+                else:
+                    break
+            except:
+                break
+            await asyncio.sleep(2.0)  # 每2秒发布一次
+        print("⏹ 停止发布导航状态")
 
     async def process_localization_init(self, websocket):
         """处理定位初始化过程（模拟）"""

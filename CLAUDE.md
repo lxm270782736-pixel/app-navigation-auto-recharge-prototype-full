@@ -67,6 +67,15 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
 - Subscribes to `/localization_status` topic for mode feedback
 - Used in Dashboard for centralized mode management
 
+**Node Launcher (src/components/common/NodeLauncher.tsx)**
+- One-click system node startup control in Dashboard
+- Sequentially launches: SLAM Node → Navigation Node
+- Requires ROS backend services: `/system/start_slam_node`, `/system/start_navigation_node`
+- Nodes publish status topics after successful launch: `/slam/status`, `/navigation/status`
+- Visual status tracking with progress bar and detailed modal
+- Purple gradient design matching overall UI style
+- See docs/NODE_LAUNCHER.md for ROS service implementation details
+
 ### Navigation System
 
 **Goal Structure**
@@ -199,12 +208,18 @@ The `mock_rosbridge.py` implements:
 - Simulated navigation with linear interpolation (20 steps)
 - Task execution simulation (wait, photo, trajectory)
 - Action status/feedback/result lifecycle
+- **System node launcher services** (`/system/start_slam_node`, `/system/start_navigation_node`)
+  - Simulated startup delays (4-5 seconds)
+  - Random failure scenarios for testing retry functionality
+  - Status topic publishing (`/slam/status`, `/navigation/status`)
+  - Console logging for debugging
 
 **Key Differences from Real ROS:**
 - Direct line navigation (no obstacle avoidance)
 - Constant speed (0.5 m/s default)
 - Always succeeds (no collision detection)
 - Minimum 3-second duration regardless of distance
+- SLAM node has 10% failure rate, navigation node has 5% failure rate (for testing)
 
 ## Key Entry Points
 
@@ -233,6 +248,7 @@ The `mock_rosbridge.py` implements:
 - **docs/MAP_STORAGE_ARCHITECTURE.md** - Map storage architecture and ROS Service migration plan
 
 **Additional Documentation**
+- **docs/NODE_LAUNCHER.md** - One-click node launcher component and ROS service interface requirements
 - docs/STARTUP_SCRIPTS.md, docs/MOCK_NAVIGATION.md, docs/TASK_USAGE_GUIDE.md, docs/TASK_QUICKSTART.md, docs/VISUAL_TASK_EDITOR_RESEARCH.md
 
 ## Code Style Notes
