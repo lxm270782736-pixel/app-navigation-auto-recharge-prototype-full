@@ -209,52 +209,59 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     canvas.style.width = `${mapData.width}px`;
     canvas.style.height = `${mapData.height}px`;
 
-    // 缩放画布以匹配设备像素比
-    ctx.scale(dpr, dpr);
-
     // 启用图像平滑和高质量渲染
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
     // 清空画布
-    ctx.clearRect(0, 0, mapData.width, mapData.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 绘制地图数据（沿横向对称翻转）
-    const imageData = ctx.createImageData(mapData.width, mapData.height);
+    // 创建放大后的imageData以匹配高DPI显示
+    const imageData = ctx.createImageData(mapData.width * dpr, mapData.height * dpr);
 
     for (let y = 0; y < mapData.height; y++) {
       for (let x = 0; x < mapData.width; x++) {
         // 原始数据索引（行优先）
         const srcIndex = y * mapData.width + x;
-        // 翻转后的Y坐标
-        const flippedY = mapData.height - 1 - y;
-        // 翻转后的索引
-        const dstIndex = flippedY * mapData.width + x;
-
         const value = mapData.data[srcIndex];
-        const pixelIndex = dstIndex * 4;
 
+        // 确定像素颜色
+        let r, g, b;
         if (value === -1) {
           // 未知区域 - 灰色
-          imageData.data[pixelIndex] = 128;
-          imageData.data[pixelIndex + 1] = 128;
-          imageData.data[pixelIndex + 2] = 128;
+          r = g = b = 128;
         } else if (value === 0) {
           // 空闲区域 - 白色
-          imageData.data[pixelIndex] = 255;
-          imageData.data[pixelIndex + 1] = 255;
-          imageData.data[pixelIndex + 2] = 255;
+          r = g = b = 255;
         } else {
           // 占据区域 - 黑色
-          imageData.data[pixelIndex] = 0;
-          imageData.data[pixelIndex + 1] = 0;
-          imageData.data[pixelIndex + 2] = 0;
+          r = g = b = 0;
         }
-        imageData.data[pixelIndex + 3] = 255; // Alpha
+
+        // 翻转Y轴坐标
+        const flippedY = mapData.height - 1 - y;
+
+        // 在高DPI下，每个逻辑像素对应 dpr x dpr 个物理像素
+        for (let dy = 0; dy < dpr; dy++) {
+          for (let dx = 0; dx < dpr; dx++) {
+            const physicalX = x * dpr + dx;
+            const physicalY = flippedY * dpr + dy;
+            const pixelIndex = (physicalY * mapData.width * dpr + physicalX) * 4;
+
+            imageData.data[pixelIndex] = r;
+            imageData.data[pixelIndex + 1] = g;
+            imageData.data[pixelIndex + 2] = b;
+            imageData.data[pixelIndex + 3] = 255; // Alpha
+          }
+        }
       }
     }
 
     ctx.putImageData(imageData, 0, 0);
+
+    // 在绘制完栅格地图后，设置缩放以便后续矢量图形使用逻辑坐标
+    ctx.scale(dpr, dpr);
 
     // 绘制栅格
     if (showGrid) {
