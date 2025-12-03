@@ -134,11 +134,16 @@ class ROSService {
       throw new Error('Not connected to ROS');
     }
 
+    console.log('[ROS] 🚀 sendNavigationGoal 被调用');
+    console.log('[ROS] 导航目标:', goal);
+
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
       serverName: '/move_chassis_to_server',
       actionName: 'astribot_msgs/MoveChassisToAction',
     });
+
+    console.log('[ROS] ActionClient 已创建:', actionClient);
 
     // 构建 goal message
     const goalMessageData: any = {
@@ -199,33 +204,53 @@ class ROSService {
       console.log('[ROS] Sending tasks with navigation goal:', goal.tasks);
     }
 
+    console.log('[ROS] Goal message data:', goalMessageData);
+
     const goalMessage = new ROSLIB.Goal({
       actionClient,
-      goalMessage: goalMessageData, 
+      goalMessage: goalMessageData,
     });
 
+    console.log('[ROS] Goal 对象已创建:', goalMessage);
+
+    // 用于存储最后收到的 action status
+    let lastActionStatus: number | undefined;
+
     return new Promise((resolve, _reject) => {
+      // 监听导航状态更新（用于记录最后的 actionStatus）
+      goalMessage.on('status', (status: any) => {
+        console.log('[ROS] Navigation status:', status);
+
+        // 记录最后的 actionStatus
+        lastActionStatus = status.status;
+
+        // 发送状态事件
+        this.emit('navigation-status', {
+          status: status.status,
+          text: this.getActionStatusText(status.status),
+        });
+      });
+
       // 处理导航结果
       goalMessage.on('result', (result: any) => {
-        console.log('[ROS] Navigation result received:', {
-          status: result.status,
-          result: result.result,
-        });
+        console.log('[ROS] Navigation result received (RAW):', result);
 
-        // 检查导航是否成功
-        // 1. actionlib 状态码检查 (3 = SUCCEEDED, 4 = ABORTED, 5 = PREEMPTED)
-        const actionStatus = result.status?.status;
+        // ROSLIB 的 result 回调只接收 msg.result 字段的内容
+        // status 信息需要从之前的 status 消息中获取
+        const actionStatus = lastActionStatus;
         const actionSucceeded = actionStatus === 3;
         const actionAborted = actionStatus === 4;
-        const actionPreempted = actionStatus === 5;
+        const actionPreempted = actionStatus === 2;
 
-        // 2. result.result 中的实际结果检查
-        const resultData = result.result || {};
-        const resultSuccess = resultData == true; // 如果明确为 false，则失败
-        const errorMessage = resultData.error_message || resultData.message;
+        // result 就是实际的结果数据
+        // 兼容两种格式：
+        // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
+        // 2. Mock: {success: true, message: "..."}
+        const resultSuccess = result.result === true || result.success === true;
+        const errorMessage = result.result_text || result.message || '';
 
-        // 3. 综合判断
-        const success = resultSuccess;
+        // 综合判断：需要 actionStatus 为 SUCCEEDED 且 result 字段为 true
+        const success = actionSucceeded && resultSuccess;
 
         // 构建详细的结果信息
         const resultInfo = {
@@ -234,9 +259,9 @@ class ROSService {
           actionSucceeded,
           actionAborted,
           actionPreempted,
-          resultData,
+          resultData: result,
           errorMessage,
-          statusText: this.getActionStatusText(actionStatus),
+          statusText: this.getActionStatusText(actionStatus || 0),
         };
 
         console.log('[ROS] Navigation result analysis:', resultInfo);
@@ -264,18 +289,9 @@ class ROSService {
         this.emit('navigation-feedback', feedbackData);
       });
 
-      // 处理导航状态更新
-      goalMessage.on('status', (status: any) => {
-        console.log('[ROS] Navigation status:', status);
-
-        // 发送状态事件
-        this.emit('navigation-status', {
-          status: status.status,
-          text: this.getActionStatusText(status.status),
-        });
-      });
-
+      console.log('[ROS] 准备发送 goal...');
       goalMessage.send();
+      console.log('[ROS] ✅ goalMessage.send() 已调用');
     });
   }
 

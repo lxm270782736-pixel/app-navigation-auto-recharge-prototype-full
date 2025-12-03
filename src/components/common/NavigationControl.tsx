@@ -41,6 +41,9 @@ interface NavigationControlProps {
     current_task?: string;
   };
   connectionStatus?: ConnectionStatus;
+  waypointMode?: boolean; // 是否为多点巡航模式
+  waypoints?: Pose[]; // 路径点列表
+  onStartWaypointNavigation?: () => void; // 开始巡航回调
 }
 
 export const NavigationControl: React.FC<NavigationControlProps> = ({
@@ -52,6 +55,9 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   navigationStatus,
   navigationFeedback,
   connectionStatus = ConnectionStatus.DISCONNECTED,
+  waypointMode = false,
+  waypoints = [],
+  onStartWaypointNavigation,
 }) => {
 
   // 调试日志：监控 isNavigating 状态变化
@@ -208,8 +214,8 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
             </div>
           )}
 
-          {/* 导航模式选择 */}
-          {!isNavigating && (
+          {/* 导航模式选择 - 仅在单点导航模式下显示 */}
+          {!isNavigating && !waypointMode && (
             <div>
               <div style={{ fontSize: 13, marginBottom: 8, color: '#666' }}>导航模式：</div>
               <Radio.Group
@@ -236,7 +242,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
               icon={<StopOutlined />}
               onClick={handleStopNavigation}
             >
-              停止导航
+              {waypointMode ? '停止巡航' : '停止导航'}
             </Button>
           ) : (
             <>
@@ -245,15 +251,20 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 size="middle"
                 block
                 icon={<PlayCircleOutlined />}
-                onClick={handleStartNavigation}
-                disabled={!robotPose || !goalPose}
+                onClick={waypointMode ? onStartWaypointNavigation : handleStartNavigation}
+                disabled={
+                  !robotPose ||
+                  (waypointMode ? waypoints.length === 0 : !goalPose)
+                }
               >
-                开始导航
+                {waypointMode ? '开始巡航' : '开始导航'}
               </Button>
               <div style={{ fontSize: 12, color: '#666', paddingLeft: 8 }}>
-                💡 {navigationMode === NavigationMode.OBSTACLE_AVOIDANCE
-                  ? '全局路径规划，支持避障和任务'
-                  : '短距离快速导航，无避障规划'}
+                💡 {waypointMode
+                  ? `将按序导航到 ${waypoints.length} 个路径点`
+                  : navigationMode === NavigationMode.OBSTACLE_AVOIDANCE
+                    ? '全局路径规划，支持避障和任务'
+                    : '短距离快速导航，无避障规划'}
               </div>
             </>
           )}
@@ -335,12 +346,13 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
             )}
           </div>
 
-          {/* 折叠面板 - 附加任务和导航参数 */}
-          <Collapse
-            ghost
-            size="small"
-            style={{ background: 'transparent' }}
-          >
+          {/* 折叠面板 - 附加任务和导航参数（仅在单点导航模式下显示） */}
+          {!waypointMode && (
+            <Collapse
+              ghost
+              size="small"
+              style={{ background: 'transparent' }}
+            >
             <Panel
               header={<span style={{ fontSize: '12px' }}>附加任务</span>}
               key="tasks"
@@ -500,6 +512,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
               </Space>
             </Panel>
           </Collapse>
+          )}
         </Space>
       </Card>
 

@@ -186,6 +186,12 @@ class MockROSBridge:
             data = json.loads(message)
             op = data.get("op")
 
+            # 添加详细日志
+            if op in ["send_action_goal", "cancel_action_goal"]:
+                print(f"\n📨 收到消息:")
+                print(f"   op: {op}")
+                print(f"   完整数据: {data}")
+
             if op == "subscribe":
                 await self.handle_subscribe(websocket, data)
             elif op == "unsubscribe":
@@ -204,12 +210,23 @@ class MockROSBridge:
             elif op == "unadvertise_action":
                 print(f"Unadvertise Action: {data.get('action')}")
             elif op == "send_action_goal":
+                print(f"🎯 路由到 handle_action_goal")
                 await self.handle_action_goal(websocket, data)
             elif op == "cancel_action_goal":
+                print(f"🛑 路由到 handle_cancel_action")
                 await self.handle_cancel_action(websocket, data)
+            else:
+                print(f"⚠️  未知的 op: {op}")
 
-        except json.JSONDecodeError:
-            print(f"无效的JSON消息: {message}")
+        except json.JSONDecodeError as e:
+            print(f"❌ 无效的JSON消息: {message}")
+            print(f"   解析错误: {e}")
+        except Exception as e:
+            print(f"❌ 处理消息时出错:")
+            print(f"   错误类型: {type(e).__name__}")
+            print(f"   错误信息: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def handle_subscribe(self, websocket, data):
         """处理话题订阅"""
@@ -272,6 +289,42 @@ class MockROSBridge:
 
             # 异步处理定位初始化过程
             asyncio.create_task(self.process_localization_init(websocket))
+
+        elif topic == "/small_range_goal":
+            # 局部导航模式：接收小范围导航目标
+            pose = msg.get("pose", {})
+            position = pose.get("position", {})
+            orientation = pose.get("orientation", {})
+
+            goal_x = position.get("x", 0.0)
+            goal_y = position.get("y", 0.0)
+            goal_z = orientation.get("z", 0.0)
+            goal_w = orientation.get("w", 1.0)
+            goal_theta = 2.0 * math.atan2(goal_z, goal_w)
+
+            print(f"🎯 收到局部导航目标: x={goal_x:.2f}, y={goal_y:.2f}, theta={goal_theta:.2f}")
+            print(f"   当前位置: x={self.robot_pose['x']:.2f}, y={self.robot_pose['y']:.2f}")
+
+            # 异步处理局部导航（简单的直线运动，3秒完成）
+            asyncio.create_task(self.simulate_local_navigation(goal_x, goal_y, goal_theta))
+
+        elif topic == "/move_chassis_to_server/goal":
+            # Action Goal - 通过话题发布
+            print(f"🎯 收到 Action Goal (通过话题)")
+            print(f"   完整消息: {msg}")
+
+            # 从 actionlib 消息中提取 goal
+            goal_id = msg.get("goal_id", {})
+            goal = msg.get("goal", {})
+
+            # 生成 action_id
+            action_id = goal_id.get("id", str(time.time()))
+
+            print(f"   Goal ID: {action_id}")
+            print(f"   Goal 数据: {goal}")
+
+            # 调用 action goal 处理（复用现有逻辑）
+            await self.handle_action_goal_from_topic(websocket, action_id, goal)
 
     async def handle_service_call(self, websocket, data):
         """处理服务调用"""
@@ -750,16 +803,8 @@ class MockROSBridge:
     async def publish_robot_pose(self, websocket):
         """定期发布机器人位姿（使用 nav_msgs/Odometry）"""
         while websocket in self.clients and "/loc_high_freq" in self.subscriptions:
-            # 模拟机器人沿圆形轨迹移动
-            self.movement_time += 0.1
-            radius = 3.0
-            center_x = 2.0
-            center_y = 2.0
-
-            # 圆形运动
-            self.robot_pose["x"] = center_x + radius * math.cos(self.movement_time * 0.2)
-            self.robot_pose["y"] = center_y + radius * math.sin(self.movement_time * 0.2)
-            self.robot_pose["theta"] = self.movement_time * 0.2 + math.pi / 2
+            # 机器人位姿由导航过程更新，这里只负责发布当前位姿
+            # 非导航状态下机器人保持静止在当前位置
 
             message = {
                 "op": "publish",
@@ -1103,59 +1148,79 @@ class MockROSBridge:
         await self.publish_init_status(websocket, success)
 
     async def handle_action_goal(self, websocket, data):
-        """处理导航 Action Goal"""
+        """处理导航 Action Goal (通过 send_action_goal 消息)"""
         action = data.get("action")
         action_type = data.get("type")
         goal = data.get("goal", {})
         action_id = data.get("id", "")
 
-        print(f"收到 Action Goal: {action} ({action_type})")
-        print(f"目标位姿: {goal.get('target_pose', {})}")
+        print(f"📥 收到 Action Goal (send_action_goal): {action} ({action_type})")
+        print(f"   Action ID: {action_id}")
+        print(f"   完整 goal 数据: {goal}")
+        print(f"   目标位姿: {goal.get('target_pose', {})}")
 
         if action == "/move_chassis_to_server":
-            # 保存导航目标
-            target_pose = goal.get("target_pose", {}).get("pose", {})
-            position = target_pose.get("position", {})
-            orientation = target_pose.get("orientation", {})
+            await self.process_navigation_goal(websocket, action_id, goal)
 
-            # 提取目标坐标
-            goal_x = position.get("x", 0.0)
-            goal_y = position.get("y", 0.0)
-            goal_z = orientation.get("z", 0.0)
-            goal_w = orientation.get("w", 1.0)
-            goal_theta = 2.0 * math.atan2(goal_z, goal_w)
+    async def handle_action_goal_from_topic(self, websocket, action_id: str, goal: dict):
+        """处理导航 Action Goal (通过话题发布)"""
+        print(f"📥 处理 Action Goal (从话题)")
+        await self.process_navigation_goal(websocket, action_id, goal)
 
-            self.navigation_goal = {"x": goal_x, "y": goal_y, "theta": goal_theta}
-            self.navigation_start_pose = dict(self.robot_pose)
-            self.navigation_start_time = time.time()
-            self.navigation_active = True
+    async def process_navigation_goal(self, websocket, action_id: str, goal: dict):
+        """处理导航目标的核心逻辑"""
+        # 保存导航目标
+        target_pose = goal.get("target_pose", {}).get("pose", {})
+        position = target_pose.get("position", {})
+        orientation = target_pose.get("orientation", {})
 
-            # 提取任务配置和导航参数
-            use_default_config = goal.get("use_default_config", True)
-            safe_dist = goal.get("safe_dist", 0.2)
-            v_max = goal.get("v_max", 0.5)
-            w_max = goal.get("w_max", 1.0)
+        # 提取目标坐标
+        goal_x = position.get("x", 0.0)
+        goal_y = position.get("y", 0.0)
+        goal_z = orientation.get("z", 0.0)
+        goal_w = orientation.get("w", 1.0)
+        goal_theta = 2.0 * math.atan2(goal_z, goal_w)
 
-            print(f"导航参数: use_default={use_default_config}, safe_dist={safe_dist}, v_max={v_max}, w_max={w_max}")
+        self.navigation_goal = {"x": goal_x, "y": goal_y, "theta": goal_theta}
+        self.navigation_start_pose = dict(self.robot_pose)
+        self.navigation_start_time = time.time()
+        self.navigation_active = True
 
-            # 提取任务配置（如果有）
-            tasks_json = goal.get("tasks", "")
-            if tasks_json:
-                try:
-                    self.navigation_tasks = json.loads(tasks_json)
-                    print(f"收到 {len(self.navigation_tasks)} 个附加任务:")
-                    for i, task in enumerate(self.navigation_tasks):
-                        print(f"  任务 {i+1}: {task.get('type')} - {task.get('params', {})}")
-                except json.JSONDecodeError:
-                    print(f"解析任务配置失败: {tasks_json}")
-                    self.navigation_tasks = []
-            else:
+        # 提取任务配置和导航参数
+        use_default_config = goal.get("use_default_config", True)
+        safe_dist = goal.get("safe_dist", 0.2)
+        v_max = goal.get("v_max", 0.5)
+        w_max = goal.get("w_max", 1.0)
+
+        print(f"导航参数: use_default={use_default_config}, safe_dist={safe_dist}, v_max={v_max}, w_max={w_max}")
+
+        # 提取任务配置（如果有）
+        tasks_json = goal.get("tasks", "")
+        if tasks_json:
+            try:
+                self.navigation_tasks = json.loads(tasks_json)
+                print(f"收到 {len(self.navigation_tasks)} 个附加任务:")
+                for i, task in enumerate(self.navigation_tasks):
+                    print(f"  任务 {i+1}: {task.get('type')} - {task.get('params', {})}")
+            except json.JSONDecodeError:
+                print(f"解析任务配置失败: {tasks_json}")
                 self.navigation_tasks = []
+        else:
+            self.navigation_tasks = []
 
-            print(f"开始导航: 从 ({self.robot_pose['x']:.2f}, {self.robot_pose['y']:.2f}) 到 ({goal_x:.2f}, {goal_y:.2f})")
+        print(f"🚀 开始导航: 从 ({self.robot_pose['x']:.2f}, {self.robot_pose['y']:.2f}) 到 ({goal_x:.2f}, {goal_y:.2f})")
+        print(f"   导航目标已设置: {self.navigation_goal}")
+        print(f"   navigation_active: {self.navigation_active}")
 
-            # 启动导航任务
-            asyncio.create_task(self.simulate_navigation(websocket, action_id))
+        # 启动导航任务
+        print(f"   创建导航模拟任务...")
+        try:
+            task = asyncio.create_task(self.simulate_navigation(websocket, action_id))
+            print(f"   ✅ 导航任务已创建: {task}")
+        except Exception as e:
+            print(f"   ❌ 创建导航任务失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def handle_cancel_action(self, websocket, data):
         """处理取消导航"""
@@ -1164,147 +1229,257 @@ class MockROSBridge:
 
         self.navigation_active = False
 
-        # 发送取消结果
+        # 发送取消结果（通过话题发布，使用真实 ROS 格式）
         result_message = {
-            "op": "action_result",
-            "id": action_id,
-            "action": "/move_chassis_to_server",
-            "values": {
+            "op": "publish",
+            "topic": "/move_chassis_to_server/result",
+            "msg": {
+                "header": {
+                    "stamp": {"secs": int(time.time()), "nsecs": 0}
+                },
                 "status": {
                     "goal_id": {"id": action_id},
                     "status": 2  # PREEMPTED
                 },
                 "result": {
-                    "success": False,
-                    "message": "Navigation cancelled by user"
+                    "result": False,
+                    "result_text": "Navigation cancelled by user",
+                    "final_pose": {},
+                    "navigation_time": 0.0
                 }
             }
         }
 
         try:
             await websocket.send(json.dumps(result_message))
+            print(f"   ✅ 取消结果已发送到 /move_chassis_to_server/result 话题")
         except:
             pass
 
     async def simulate_navigation(self, websocket, action_id):
         """模拟导航过程"""
-        if not self.navigation_goal:
-            return
+        try:
+            print(f"\n🎯 simulate_navigation 开始执行")
+            print(f"   websocket: {websocket}")
+            print(f"   action_id: {action_id}")
+            print(f"   navigation_goal: {self.navigation_goal}")
 
-        goal_x = self.navigation_goal["x"]
-        goal_y = self.navigation_goal["y"]
-        goal_theta = self.navigation_goal["theta"]
-
-        # 计算总距离
-        start_x = self.navigation_start_pose["x"]
-        start_y = self.navigation_start_pose["y"]
-        total_distance = math.sqrt((goal_x - start_x)**2 + (goal_y - start_y)**2)
-
-        # 模拟导航时间（假设速度 0.5 m/s）
-        navigation_duration = max(total_distance / 0.5, 3.0)  # 至少3秒
-
-        print(f"模拟导航: 距离 {total_distance:.2f}m, 预计用时 {navigation_duration:.1f}s")
-
-        # 发送状态: PENDING
-        await self.send_action_status(websocket, action_id, 0)
-        await asyncio.sleep(0.5)
-
-        # 发送状态: ACTIVE
-        await self.send_action_status(websocket, action_id, 1)
-
-        # 模拟导航过程，发送反馈
-        steps = 20
-        for i in range(steps):
-            if not self.navigation_active:
-                print("导航已取消")
+            if not self.navigation_goal:
+                print(f"   ⚠️  navigation_goal 为空，退出")
                 return
 
+            goal_x = self.navigation_goal["x"]
+            goal_y = self.navigation_goal["y"]
+            goal_theta = self.navigation_goal["theta"]
+
+            # 计算总距离
+            start_x = self.navigation_start_pose["x"]
+            start_y = self.navigation_start_pose["y"]
+            total_distance = math.sqrt((goal_x - start_x)**2 + (goal_y - start_y)**2)
+
+            # 模拟导航时间（假设速度 0.5 m/s）
+            navigation_duration = max(total_distance / 0.5, 3.0)  # 至少3秒
+
+            print(f"   📏 模拟导航: 距离 {total_distance:.2f}m, 预计用时 {navigation_duration:.1f}s")
+
+            # 发送状态: PENDING
+            await self.send_action_status(websocket, action_id, 0)
+            await asyncio.sleep(0.5)
+
+            # 发送状态: ACTIVE
+            await self.send_action_status(websocket, action_id, 1)
+
+            # 模拟导航过程，发送反馈
+            steps = 20
+            for i in range(steps):
+                if not self.navigation_active:
+                    print("   导航已取消")
+                    return
+
+                # 计算当前进度
+                progress = (i + 1) / steps
+
+                # 插值计算当前位置
+                current_x = start_x + (goal_x - start_x) * progress
+                current_y = start_y + (goal_y - start_y) * progress
+                current_theta = goal_theta  # 简化处理，直接使用目标角度
+
+                # 更新机器人位姿
+                self.robot_pose["x"] = current_x
+                self.robot_pose["y"] = current_y
+                self.robot_pose["theta"] = current_theta
+
+                # 计算剩余距离
+                remaining_distance = math.sqrt((goal_x - current_x)**2 + (goal_y - current_y)**2)
+                eta = remaining_distance / 0.5
+
+                # 发送反馈（通过话题发布，符合 ROS actionlib 标准）
+                feedback_message = {
+                    "op": "publish",
+                    "topic": "/move_chassis_to_server/feedback",
+                    "msg": {
+                        "header": {
+                            "stamp": {"secs": int(time.time()), "nsecs": 0}
+                        },
+                        "status": {
+                            "goal_id": {"id": action_id},
+                            "status": 1,  # ACTIVE
+                            "text": "This goal has been accepted by the simple action server"
+                        },
+                        "feedback": {
+                            "distance_to_goal": remaining_distance,
+                            "progress": progress,
+                            "eta": eta,
+                            "current_pose": {
+                                "position": {"x": current_x, "y": current_y, "z": 0.0},
+                                "orientation": {
+                                    "x": 0.0,
+                                    "y": 0.0,
+                                    "z": math.sin(current_theta / 2),
+                                    "w": math.cos(current_theta / 2)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                try:
+                    await websocket.send(json.dumps(feedback_message))
+                    print(f"   导航进度: {progress*100:.0f}%, 剩余距离: {remaining_distance:.2f}m")
+                except:
+                    break
+
+                await asyncio.sleep(navigation_duration / steps)
+
+            # 检查是否被取消
+            if not self.navigation_active:
+                return
+
+            # 确保机器人到达目标位置
+            self.robot_pose["x"] = goal_x
+            self.robot_pose["y"] = goal_y
+            self.robot_pose["theta"] = goal_theta
+
+            print(f"   ✅ 导航完成: 到达目标点 ({goal_x:.2f}, {goal_y:.2f})")
+
+            # 执行附加任务（如果有）
+            if self.navigation_tasks:
+                print(f"\n开始执行 {len(self.navigation_tasks)} 个附加任务...")
+                await self.execute_tasks(websocket, action_id, self.navigation_tasks)
+
+            # 导航成功
+            self.navigation_active = False
+
+            # 发送成功结果（通过话题发布，使用真实 ROS 格式）
+            result_message = {
+                "op": "publish",
+                "topic": "/move_chassis_to_server/result",
+                "msg": {
+                    "header": {
+                        "stamp": {"secs": int(time.time()), "nsecs": 0}
+                    },
+                    "status": {
+                        "goal_id": {"id": action_id},
+                        "status": 3,  # SUCCEEDED
+                        "text": "The goal has been successfully achieved by the SimpleActionServer"
+                    },
+                    "result": {
+                        # 使用真实 ROS 格式
+                        "result": True,  # 真实 ROS 使用 'result' 而不是 'success'
+                        "result_text": "Successfully reached the goal",
+                        "final_pose": {
+                            "position": {"x": goal_x, "y": goal_y, "z": 0.0},
+                            "orientation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": math.sin(goal_theta / 2),
+                                "w": math.cos(goal_theta / 2)
+                            }
+                        },
+                        "navigation_time": time.time() - self.navigation_start_time
+                    }
+                }
+            }
+
+            try:
+                await websocket.send(json.dumps(result_message))
+                print(f"   ✅ 导航结果已发送: status={result_message['msg']['status']['status']}, result={result_message['msg']['result']['result']}")
+            except Exception as e:
+                print(f"   ❌ 发送导航结果失败: {e}")
+
+        except Exception as e:
+            print(f"\n❌ simulate_navigation 执行出错:")
+            print(f"   错误类型: {type(e).__name__}")
+            print(f"   错误信息: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # 发送失败结果（通过话题发布，使用真实 ROS 格式）
+            try:
+                result_message = {
+                    "op": "publish",
+                    "topic": "/move_chassis_to_server/result",
+                    "msg": {
+                        "header": {
+                            "stamp": {"secs": int(time.time()), "nsecs": 0}
+                        },
+                        "status": {
+                            "goal_id": {"id": action_id},
+                            "status": 4  # ABORTED
+                        },
+                        "result": {
+                            "result": False,
+                            "result_text": f"Navigation failed: {str(e)}",
+                            "final_pose": {},
+                            "navigation_time": 0.0
+                        }
+                    }
+                }
+                await websocket.send(json.dumps(result_message))
+                print(f"   ✅ 导航失败结果已发送到 /move_chassis_to_server/result 话题")
+            except:
+                pass
+
+    async def simulate_local_navigation(self, goal_x, goal_y, goal_theta):
+        """模拟局部导航（小范围快速移动，固定3秒）"""
+        # 记录起始位置
+        start_x = self.robot_pose["x"]
+        start_y = self.robot_pose["y"]
+        start_theta = self.robot_pose["theta"]
+
+        # 计算距离
+        total_distance = math.sqrt((goal_x - start_x)**2 + (goal_y - start_y)**2)
+
+        print(f"🚀 开始局部导航: 距离 {total_distance:.2f}m, 用时 3.0s")
+
+        # 固定3秒，分20步完成
+        duration = 3.0
+        steps = 20
+        step_delay = duration / steps
+
+        for i in range(steps):
             # 计算当前进度
             progress = (i + 1) / steps
 
-            # 插值计算当前位置
+            # 线性插值计算当前位置
             current_x = start_x + (goal_x - start_x) * progress
             current_y = start_y + (goal_y - start_y) * progress
-            current_theta = goal_theta  # 简化处理，直接使用目标角度
+            current_theta = start_theta + (goal_theta - start_theta) * progress
 
             # 更新机器人位姿
             self.robot_pose["x"] = current_x
             self.robot_pose["y"] = current_y
             self.robot_pose["theta"] = current_theta
 
-            # 计算剩余距离
-            remaining_distance = math.sqrt((goal_x - current_x)**2 + (goal_y - current_y)**2)
-            eta = remaining_distance / 0.5
+            # 等待
+            await asyncio.sleep(step_delay)
 
-            # 发送反馈
-            feedback_message = {
-                "op": "action_feedback",
-                "id": action_id,
-                "action": "/move_chassis_to_server",
-                "values": {
-                    "distance_to_goal": remaining_distance,
-                    "progress": progress,
-                    "eta": eta,
-                    "current_pose": {
-                        "position": {"x": current_x, "y": current_y, "z": 0.0},
-                        "orientation": {
-                            "x": 0.0,
-                            "y": 0.0,
-                            "z": math.sin(current_theta / 2),
-                            "w": math.cos(current_theta / 2)
-                        }
-                    }
-                }
-            }
-
-            try:
-                await websocket.send(json.dumps(feedback_message))
-                print(f"导航进度: {progress*100:.0f}%, 剩余距离: {remaining_distance:.2f}m")
-            except:
-                break
-
-            await asyncio.sleep(navigation_duration / steps)
-
-        # 检查是否被取消
-        if not self.navigation_active:
-            return
-
-        # 确保机器人到达目标位置
+        # 确保到达精确位置
         self.robot_pose["x"] = goal_x
         self.robot_pose["y"] = goal_y
         self.robot_pose["theta"] = goal_theta
 
-        print(f"导航完成: 到达目标点 ({goal_x:.2f}, {goal_y:.2f})")
-
-        # 执行附加任务（如果有）
-        if self.navigation_tasks:
-            print(f"\n开始执行 {len(self.navigation_tasks)} 个附加任务...")
-            await self.execute_tasks(websocket, action_id, self.navigation_tasks)
-
-        # 导航成功
-        self.navigation_active = False
-
-        # 发送成功结果
-        result_message = {
-            "op": "action_result",
-            "id": action_id,
-            "action": "/move_chassis_to_server",
-            "values": {
-                "status": {
-                    "goal_id": {"id": action_id},
-                    "status": 3  # SUCCEEDED
-                },
-                "result": {
-                    "success": True,
-                    "message": "Navigation completed successfully"
-                }
-            }
-        }
-
-        try:
-            await websocket.send(json.dumps(result_message))
-        except:
-            pass
+        print(f"✓ 局部导航完成: 到达目标点 ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
 
     async def execute_tasks(self, websocket, action_id, tasks):
         """执行附加任务列表"""
@@ -1473,7 +1648,7 @@ class MockROSBridge:
         print(f"\n所有任务执行完成！")
 
     async def send_action_status(self, websocket, action_id, status):
-        """发送 Action 状态"""
+        """发送 Action 状态（通过话题）"""
         status_names = {
             0: "PENDING",
             1: "ACTIVE",
@@ -1482,22 +1657,27 @@ class MockROSBridge:
             4: "ABORTED"
         }
 
+        # 发布到 /move_chassis_to_server/status 话题
         status_message = {
-            "op": "action_status",
-            "id": action_id,
-            "action": "/move_chassis_to_server",
-            "values": {
-                "status": status,
-                "text": status_names.get(status, "UNKNOWN")
+            "op": "publish",
+            "topic": "/move_chassis_to_server/status",
+            "msg": {
+                "header": {
+                    "stamp": {"secs": int(time.time()), "nsecs": 0}
+                },
+                "status_list": [{
+                    "goal_id": {"id": action_id},
+                    "status": status,
+                    "text": status_names.get(status, "UNKNOWN")
+                }]
             }
         }
 
         try:
             await websocket.send(json.dumps(status_message))
-            print(f"发送状态: {status_names.get(status, 'UNKNOWN')}")
-        except:
-            pass
-
+            print(f"   📊 发送状态: {status_names.get(status, 'UNKNOWN')}")
+        except Exception as e:
+            print(f"   ❌ 发送状态失败: {e}")
 
 # 地图存储目录
 MAPS_DIR = Path(__file__).parent / "saved_maps"

@@ -22,6 +22,13 @@ interface MapCanvasProps {
   showLaserScan?: boolean; // 是否显示雷达点
   showGrid?: boolean; // 是否显示栅格
   gridSize?: number; // 栅格大小（米），默认1.0
+  waypoints?: Pose[]; // 路径点列表（多目标点导航）
+  currentWaypointIndex?: number; // 当前正在导航的路径点索引
+  completedWaypoints?: number[]; // 已完成的路径点索引列表
+  selectedWaypointIndex?: number; // 选中的路径点索引
+  onWaypointClick?: (index: number) => void; // 点击路径点回调
+  onWaypointDrag?: (index: number, newPose: Pose) => void; // 拖动路径点回调
+  onWaypointDelete?: (index: number) => void; // 删除路径点回调
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -42,6 +49,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   showLaserScan = false,
   showGrid = false,
   gridSize = 1.0,
+  waypoints = [],
+  currentWaypointIndex = -1,
+  completedWaypoints = [],
+  selectedWaypointIndex = -1,
+  onWaypointClick,
+  onWaypointDrag,
+  onWaypointDelete,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +78,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 连续编辑状态（用于地图编辑模式）
   const [isContinuousEditing, setIsContinuousEditing] = useState(false);
+
+  // 路径点交互状态
+  const [draggingWaypointIndex, setDraggingWaypointIndex] = useState(-1);
+  const [hoveredWaypointIndex, setHoveredWaypointIndex] = useState(-1);
 
   // 画笔预览位置（画布坐标）
   const [brushPreviewPos, setBrushPreviewPos] = useState<{ x: number; y: number } | null>(null);
@@ -344,6 +362,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       drawGoal(ctx, goalPos.x, goalPos.y, goalPose.theta, mapData);
     }
 
+    // 绘制路径点（多目标点模式）
+    if (waypoints && waypoints.length > 0) {
+      // 先绘制路径连线
+      drawWaypointPath(ctx, waypoints, mapData, currentWaypointIndex);
+
+      // 再绘制路径点标记
+      waypoints.forEach((waypoint, index) => {
+        const waypointPos = worldToMap(waypoint.x, waypoint.y, mapData);
+        const isCurrent = index === currentWaypointIndex;
+        const isCompleted = completedWaypoints.includes(index);
+        const isSelected = index === selectedWaypointIndex;
+        const isHovered = index === hoveredWaypointIndex;
+
+        drawWaypoint(
+          ctx,
+          waypointPos.x,
+          waypointPos.y,
+          waypoint.theta,
+          index,
+          mapData,
+          isCurrent,
+          isCompleted,
+          isSelected,
+          isHovered
+        );
+      });
+    }
+
     // 绘制方向设置指示线
     if (isSettingDirection && directionStart && directionEnd) {
       drawDirectionLine(ctx, directionStart.x, directionStart.y, directionEnd.x, directionEnd.y);
@@ -353,7 +399,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (brushPreviewPos && brushSize > 0 && disableDirectionSetting) {
       drawBrushPreview(ctx, brushPreviewPos.x, brushPreviewPos.y, brushSize);
     }
-  }, [mapData, robotPose, goalPose, initialPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting, laserScan, showLaserScan]);
+  }, [mapData, robotPose, goalPose, initialPose, path, robotTrail, showRobotTrail, showCoordinateSystem, isSettingDirection, directionStart, directionEnd, brushPreviewPos, brushSize, disableDirectionSetting, laserScan, showLaserScan, waypoints, currentWaypointIndex, completedWaypoints, selectedWaypointIndex, hoveredWaypointIndex]);
 
   // 处理鼠标滚轮缩放
   useEffect(() => {
@@ -418,18 +464,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    // 左键开始设置方向或连续编辑
-    if (event.button === 0 && onMapClick) {
-      if (disableDirectionSetting) {
-        // 连续编辑模式：立即调用onMapClick并开始跟踪
-        const worldPos = mapToWorld(canvasX, canvasY, mapData);
-        onMapClick(worldPos.x, worldPos.y);
-        setIsContinuousEditing(true);
-      } else {
-        // 方向设置模式：记录起点和终点
-        setIsSettingDirection(true);
-        setDirectionStart({ x: canvasX, y: canvasY });
-        setDirectionEnd({ x: canvasX, y: canvasY });
+    // 左键操作
+    if (event.button === 0) {
+      // 检查是否点击了路径点
+      if (waypoints && waypoints.length > 0) {
+        const clickedIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+        if (clickedIndex >= 0) {
+          // 点击了路径点
+          event.preventDefault();
+          setDraggingWaypointIndex(clickedIndex);
+
+          // 通知父组件路径点被选中
+          if (onWaypointClick) {
+            onWaypointClick(clickedIndex);
+          }
+          return;
+        }
+      }
+
+      // 没有点击路径点，执行原有逻辑
+      if (onMapClick) {
+        if (disableDirectionSetting) {
+          // 连续编辑模式：立即调用onMapClick并开始跟踪
+          const worldPos = mapToWorld(canvasX, canvasY, mapData);
+          onMapClick(worldPos.x, worldPos.y);
+          setIsContinuousEditing(true);
+        } else {
+          // 方向设置模式：记录起点和终点
+          setIsSettingDirection(true);
+          setDirectionStart({ x: canvasX, y: canvasY });
+          setDirectionEnd({ x: canvasX, y: canvasY });
+        }
       }
     }
   };
@@ -446,9 +511,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const canvasX = (mouseX - offset.x) / scale;
     const canvasY = (mouseY - offset.y) / scale;
 
+    // 拖动路径点
+    if (draggingWaypointIndex >= 0 && onWaypointDrag) {
+      const worldPos = mapToWorld(canvasX, canvasY, mapData);
+      onWaypointDrag(draggingWaypointIndex, {
+        x: worldPos.x,
+        y: worldPos.y,
+        theta: waypoints[draggingWaypointIndex].theta, // 保持原有角度
+      });
+      return;
+    }
+
     // 更新画笔预览位置（当处于编辑模式时）
     if (disableDirectionSetting && brushSize > 0) {
       setBrushPreviewPos({ x: canvasX, y: canvasY });
+    }
+
+    // 检测悬停的路径点（用于鼠标样式变化）
+    if (waypoints && waypoints.length > 0 && !isDragging && !isSettingDirection) {
+      const hoveredIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+      setHoveredWaypointIndex(hoveredIndex);
     }
 
     if (isDragging) {
@@ -468,6 +550,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 处理鼠标松开（结束拖动或完成方向设置）
   const handleMouseUp = () => {
+    // 结束路径点拖动
+    if (draggingWaypointIndex >= 0) {
+      setDraggingWaypointIndex(-1);
+      return;
+    }
+
     if (isContinuousEditing) {
       // 结束连续编辑
       setIsContinuousEditing(false);
@@ -506,8 +594,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // 处理右键菜单
-  const handleContextMenu = (event: React.MouseEvent) => {
+  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
+
+    // 如果没有路径点或没有删除回调，直接返回
+    if (!waypoints || waypoints.length === 0 || !onWaypointDelete) {
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    // 转换为画布坐标
+    const canvasX = (mouseX - offset.x) / scale;
+    const canvasY = (mouseY - offset.y) / scale;
+
+    // 检查是否右键点击了路径点
+    const clickedIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+    if (clickedIndex >= 0) {
+      // 右键点击了路径点，触发删除
+      onWaypointDelete(clickedIndex);
+    }
   };
 
   // 重置视图 - 自适应地图大小
@@ -679,7 +790,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            cursor: onMapClick ? 'crosshair' : 'default',
+            cursor: draggingWaypointIndex >= 0 ? 'grabbing'
+                  : hoveredWaypointIndex >= 0 ? 'grab'
+                  : onMapClick ? 'crosshair'
+                  : 'default',
             border: '2px solid #000',
             boxSizing: 'border-box',
           }}
@@ -766,6 +880,32 @@ function mapToWorld(
     x: x * mapData.resolution + mapData.origin.x,
     y: originalY * mapData.resolution + mapData.origin.y,
   };
+}
+
+// 检测鼠标是否点击在路径点上
+function getClickedWaypointIndex(
+  canvasX: number,
+  canvasY: number,
+  waypoints: Pose[],
+  mapData: MapData
+): number {
+  // 计算路径点的像素大小（与drawWaypoint保持一致）
+  const waypointSize = Math.max(4, 0.2 / mapData.resolution);
+
+  // 从后往前遍历（后绘制的在上层，优先检测）
+  for (let i = waypoints.length - 1; i >= 0; i--) {
+    const waypointPos = worldToMap(waypoints[i].x, waypoints[i].y, mapData);
+    const dx = canvasX - waypointPos.x;
+    const dy = canvasY - waypointPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // 扩大点击区域，提升用户体验
+    if (distance <= waypointSize + 5) {
+      return i;
+    }
+  }
+
+  return -1; // 没有点击到任何路径点
 }
 
 // 绘制栅格
@@ -1066,6 +1206,148 @@ function drawRobot(
   // 绘制标签文字（使用系统字体获得更好的渲染）
   // ctx.fillStyle = '#ffffff';
   // ctx.fillText(label, centerX, labelY + 4);
+
+  ctx.restore();
+}
+
+// 绘制路径点（带序号的圆形标记）
+function drawWaypoint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  theta: number,
+  index: number,
+  mapData: MapData,
+  isCurrent: boolean,
+  isCompleted: boolean,
+  isSelected: boolean = false,
+  isHovered: boolean = false
+) {
+  ctx.save();
+
+  // 启用抗锯齿
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // 根据状态确定颜色和大小
+  let color: string;
+  let size: number;
+
+  if (isCompleted) {
+    color = '#999999'; // 灰色 - 已完成
+    size = Math.max(4, 0.2 / mapData.resolution);
+  } else if (isCurrent) {
+    color = '#52c41a'; // 绿色 - 当前目标
+    size = Math.max(5, 0.25 / mapData.resolution);
+  } else {
+    color = '#1890ff'; // 蓝色 - 待导航
+    size = Math.max(4, 0.2 / mapData.resolution);
+  }
+
+  // 选中或悬停时放大
+  if (isSelected || isHovered) {
+    size = size * 1.2;
+  }
+
+  const centerX = Math.round(x) + 0.5;
+  const centerY = Math.round(y) + 0.5;
+
+  // 绘制外发光效果（当前目标点或选中/悬停）
+  if (isCurrent || isSelected || isHovered) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = isSelected ? 20 : 15;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, size + (isSelected ? 8 : 6), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // 绘制圆形背景
+  ctx.fillStyle = color;
+  ctx.strokeStyle = isSelected ? '#faad14' : '#ffffff'; // 选中时用橙色边框
+  ctx.lineWidth = isSelected ? 3 : 2;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 绘制序号文字
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${Math.max(size * 1.2, 12)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(index + 1), centerX, centerY);
+
+  // 如果是当前目标，绘制方向指示箭头
+  if (isCurrent) {
+    const arrowLength = size * 1.5;
+    const arrowAngle = -theta; // Canvas Y轴向下，需要取反
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 箭头主线
+    const endX = centerX + Math.cos(arrowAngle) * arrowLength;
+    const endY = centerY + Math.sin(arrowAngle) * arrowLength;
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+
+    // 箭头头部
+    const headSize = size * 0.5;
+    const angle1 = arrowAngle + Math.PI * 0.75;
+    const angle2 = arrowAngle - Math.PI * 0.75;
+
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX + Math.cos(angle1) * headSize, endY + Math.sin(angle1) * headSize);
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX + Math.cos(angle2) * headSize, endY + Math.sin(angle2) * headSize);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// 绘制路径点之间的连线
+function drawWaypointPath(
+  ctx: CanvasRenderingContext2D,
+  waypoints: Pose[],
+  mapData: MapData,
+  currentIndex: number
+) {
+  if (waypoints.length < 2) return;
+
+  ctx.save();
+  ctx.strokeStyle = '#1890ff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.globalAlpha = 0.6;
+
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const start = worldToMap(waypoints[i].x, waypoints[i].y, mapData);
+    const end = worldToMap(waypoints[i + 1].x, waypoints[i + 1].y, mapData);
+
+    // 已完成的路径段用灰色
+    if (i < currentIndex) {
+      ctx.strokeStyle = '#999999';
+    } else {
+      ctx.strokeStyle = '#1890ff';
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+  }
 
   ctx.restore();
 }

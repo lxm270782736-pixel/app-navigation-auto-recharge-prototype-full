@@ -107,6 +107,14 @@ export interface Pose {
   theta: number; // 朝向角度（弧度）
 }
 
+// 导航路径点（支持独立配置）
+export interface Waypoint {
+  pose: Pose; // 位姿
+  tasks?: TaskConfig[]; // 到达该点后执行的任务
+  navigationMode?: 'obstacle_avoidance' | 'local_navigation'; // 导航模式
+  actionConfig?: NavigationActionConfig; // 导航参数配置
+}
+
 // 路径点
 export interface PathPoint {
   x: number;

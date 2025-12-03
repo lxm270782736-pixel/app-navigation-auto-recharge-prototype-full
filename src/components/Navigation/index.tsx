@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, message, Modal, List, Card, Empty, Spin, Switch, Select } from 'antd';
 import {
@@ -10,11 +10,13 @@ import {
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { NavigationControl } from '@/components/common/NavigationControl';
 import { SimpleLocalizationControl } from '@/components/common/SimpleLocalizationControl';
+import { WaypointControl } from '@/components/common/WaypointControl';
+import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose } from '@/types';
+import type { MapData, Pose, Waypoint } from '@/types';
 import dayjs from 'dayjs';
 
 export const Navigation: React.FC = () => {
@@ -37,6 +39,25 @@ export const Navigation: React.FC = () => {
     current_task?: string;
   }>({});
 
+  // 多路径点导航状态
+  const [waypointMode, setWaypointMode] = useState(false); // 是否为多点巡航模式
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]); // 路径点列表
+  const [currentWaypointIndex, setCurrentWaypointIndex] = useState(-1); // 当前导航的路径点索引
+  const [completedWaypoints, setCompletedWaypoints] = useState<number[]>([]); // 已完成的路径点索引
+
+  // 使用 ref 存储最新的状态值，解决事件处理器中的闭包问题
+  const waypointModeRef = useRef(waypointMode);
+  const waypointsRef = useRef(waypoints);
+  const currentWaypointIndexRef = useRef(currentWaypointIndex);
+  const completedWaypointsRef = useRef(completedWaypoints);
+
+  // 路径点配置Modal
+  const [waypointConfigModalVisible, setWaypointConfigModalVisible] = useState(false);
+  const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);
+
+  // 路径点交互状态
+  const [selectedWaypointIndex, setSelectedWaypointIndex] = useState(-1);
+
   // 应用地图相关状态
   const [applyMapModalVisible, setApplyMapModalVisible] = useState(false);
   const [availableMaps, setAvailableMaps] = useState<MapData[]>([]);
@@ -48,6 +69,14 @@ export const Navigation: React.FC = () => {
   // 栅格显示状态
   const [showGrid, setShowGrid] = useState(false);
   const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
+
+  // 同步更新 ref 值（确保事件处理器能访问最新状态）
+  useEffect(() => {
+    waypointModeRef.current = waypointMode;
+    waypointsRef.current = waypoints;
+    currentWaypointIndexRef.current = currentWaypointIndex;
+    completedWaypointsRef.current = completedWaypoints;
+  }, [waypointMode, waypoints, currentWaypointIndex, completedWaypoints]);
 
   // 订阅实时地图数据
   useEffect(() => {
@@ -132,23 +161,56 @@ export const Navigation: React.FC = () => {
   // 监听导航事件（始终监听，但只在必要时处理）
   useEffect(() => {
     const handleNavigationResult = (data: any) => {
-      // console.log('[Navigation] 导航结果:', data);
-      // console.log('[Navigation] 当前 isNavigating 状态:', isNavigating);
+      console.log('[Navigation] 导航结果:', data);
+
+      // 使用 ref.current 获取最新状态值
+      const currentWaypointMode = waypointModeRef.current;
+      const currentWaypoints = waypointsRef.current;
+      const currentIndex = currentWaypointIndexRef.current;
+      const currentCompleted = completedWaypointsRef.current;
+
+      console.log('[Navigation] 当前状态:', {
+        waypointMode: currentWaypointMode,
+        currentWaypointIndex: currentIndex,
+        waypointsLength: currentWaypoints.length,
+        completedCount: currentCompleted.length
+      });
 
       if (data.success) {
         // 导航成功
-        message.success({
-          content: '导航成功！机器人已到达目标位置',
-          duration: 3,
-        });
-        // console.log('[Navigation] 设置 isNavigating = false (成功)');
-        setIsNavigating(false);
-        // 清除导航状态信息
-        setNavigationStatus('');
-        setNavigationFeedback({});
-        // 保留目标点供参考，用户可以继续导航到相同位置
-        // 如果想清除目标点，取消注释下一行
-        // setGoalPose(undefined);
+        if (currentWaypointMode && currentIndex >= 0 && currentIndex < currentWaypoints.length) {
+          // 多点巡航模式：标记当前路径点为已完成
+          setCompletedWaypoints([...currentCompleted, currentIndex]);
+
+          // 检查是否还有下一个路径点
+          const nextIndex = currentIndex + 1;
+          if (nextIndex < currentWaypoints.length) {
+            // 还有下一个路径点，延迟1秒后导航到下一个
+            message.success(`路径点 ${currentIndex + 1} 已到达，准备前往路径点 ${nextIndex + 1}...`);
+            setTimeout(() => {
+              navigateToWaypoint(nextIndex);
+            }, 1000);
+          } else {
+            // 所有路径点已完成
+            message.success({
+              content: `🎉 巡航完成！已到达所有 ${currentWaypoints.length} 个路径点`,
+              duration: 5,
+            });
+            setIsNavigating(false);
+            setCurrentWaypointIndex(-1);
+            setNavigationStatus('');
+            setNavigationFeedback({});
+          }
+        } else {
+          // 单点导航模式
+          message.success({
+            content: '导航成功！机器人已到达目标位置',
+            duration: 3,
+          });
+          setIsNavigating(false);
+          setNavigationStatus('');
+          setNavigationFeedback({});
+        }
       } else {
         // 导航失败
         let errorMsg = '导航失败';
@@ -164,23 +226,28 @@ export const Navigation: React.FC = () => {
           errorMsg = `导航失败: ${data.errorMessage}`;
         }
 
-        message.error({
-          content: errorMsg,
-          duration: 5,
-        });
-        // console.log('[Navigation] 设置 isNavigating = false (失败/取消)');
+        // 多点模式失败处理
+        if (currentWaypointMode && currentIndex >= 0) {
+          errorMsg += ` (路径点 ${currentIndex + 1})`;
+          message.error({
+            content: errorMsg + '\n巡航已停止',
+            duration: 5,
+          });
+        } else {
+          message.error({
+            content: errorMsg,
+            duration: 5,
+          });
+        }
+
         setIsNavigating(false);
-        // 清除导航状态信息
         setNavigationStatus('');
         setNavigationFeedback({});
+        // 多点模式失败时重置状态
+        if (currentWaypointMode) {
+          setCurrentWaypointIndex(-1);
+        }
       }
-
-      // 打印详细状态信息供调试
-      // console.log('[Navigation] 状态详情:', {
-      //   statusText: data.statusText,
-      //   actionStatus: data.actionStatus,
-      //   resultData: data.resultData,
-      // });
     };
 
     // 监听导航反馈（进度信息）
@@ -316,10 +383,187 @@ export const Navigation: React.FC = () => {
       setInitialPose(pose); // 保存初始位姿以便显示标记
       message.success(`初始位置已发送，等待确认...`);
       setIsRelocalizationMode(false); // 退出重定位模式
+    } else if (waypointMode) {
+      // 多点巡航模式：添加路径点到列表（默认配置）
+      const newWaypoint: Waypoint = {
+        pose,
+        tasks: [],
+        navigationMode: 'obstacle_avoidance',
+        actionConfig: { use_default_config: true },
+      };
+      setWaypoints([...waypoints, newWaypoint]);
+      message.success(`已添加路径点 ${waypoints.length + 1}`);
     } else {
-      // 导航模式：设置目标点
+      // 单点导航模式：设置目标点
       setGoalPose(pose);
       message.info(`目标点已设置，方向: ${((theta || 0) * 180 / Math.PI).toFixed(1)}°`);
+    }
+  };
+
+  // 删除路径点
+  const handleDeleteWaypoint = (index: number) => {
+    setWaypoints(waypoints.filter((_, i) => i !== index));
+    message.info(`已删除路径点 ${index + 1}`);
+
+    // 如果删除的是选中的路径点，取消选中
+    if (selectedWaypointIndex === index) {
+      setSelectedWaypointIndex(-1);
+    } else if (selectedWaypointIndex > index) {
+      // 如果删除的路径点在选中点之前，调整选中索引
+      setSelectedWaypointIndex(selectedWaypointIndex - 1);
+    }
+  };
+
+  // 点击路径点（选中）
+  const handleWaypointClick = (index: number) => {
+    setSelectedWaypointIndex(index);
+  };
+
+  // 拖动路径点修改位置
+  const handleWaypointDrag = (index: number, newPose: Pose) => {
+    const newWaypoints = [...waypoints];
+    newWaypoints[index] = {
+      ...newWaypoints[index],
+      pose: newPose,
+    };
+    setWaypoints(newWaypoints);
+  };
+
+  // 键盘事件：Delete键删除选中的路径点
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Delete' && selectedWaypointIndex >= 0 && !isNavigating) {
+        handleDeleteWaypoint(selectedWaypointIndex);
+      } else if (event.key === 'Escape' && selectedWaypointIndex >= 0) {
+        // Escape键取消选中
+        setSelectedWaypointIndex(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedWaypointIndex, isNavigating, waypoints]);
+
+  // 编辑路径点配置
+  const handleEditWaypoint = (index: number) => {
+    setEditingWaypointIndex(index);
+    setWaypointConfigModalVisible(true);
+  };
+
+  // 保存路径点配置
+  const handleSaveWaypointConfig = (updatedWaypoint: Waypoint) => {
+    if (editingWaypointIndex >= 0 && editingWaypointIndex < waypoints.length) {
+      const newWaypoints = [...waypoints];
+      newWaypoints[editingWaypointIndex] = updatedWaypoint;
+      setWaypoints(newWaypoints);
+      setWaypointConfigModalVisible(false);
+    }
+  };
+
+  // 清空所有路径点
+  const handleClearWaypoints = () => {
+    setWaypoints([]);
+    setCurrentWaypointIndex(-1);
+    setCompletedWaypoints([]);
+    message.info('已清空所有路径点');
+  };
+
+  // 移动路径点顺序（用于拖拽排序）
+  const handleMoveWaypoint = (fromIndex: number, toIndex: number) => {
+    if (fromIndex < 0 || fromIndex >= waypoints.length || toIndex < 0 || toIndex >= waypoints.length) {
+      return;
+    }
+
+    const newWaypoints = [...waypoints];
+    // 移除fromIndex位置的元素
+    const [movedItem] = newWaypoints.splice(fromIndex, 1);
+    // 插入到toIndex位置
+    newWaypoints.splice(toIndex, 0, movedItem);
+
+    setWaypoints(newWaypoints);
+  };
+
+  // 切换导航模式
+  const handleModeChange = (mode: boolean) => {
+    if (isNavigating) {
+      message.warning('请先停止当前导航');
+      return;
+    }
+    setWaypointMode(mode);
+    if (mode) {
+      // 切换到多点模式，清空单点目标
+      setGoalPose(undefined);
+    } else {
+      // 切换到单点模式，清空路径点
+      setWaypoints([]);
+      setCurrentWaypointIndex(-1);
+      setCompletedWaypoints([]);
+    }
+  };
+
+  // 导航到指定的路径点
+  const navigateToWaypoint = async (index: number) => {
+    // 使用 ref 获取最新的 waypoints 列表
+    const currentWaypoints = waypointsRef.current;
+    const currentCompleted = completedWaypointsRef.current;
+
+    if (index < 0 || index >= currentWaypoints.length) {
+      console.error('[导航] 无效的路径点索引:', index);
+      return;
+    }
+
+    const waypoint = currentWaypoints[index];
+    console.log(`[导航] 开始导航到路径点 ${index + 1}/${currentWaypoints.length}:`, waypoint);
+
+    // 设置当前目标点（用于地图显示）
+    setGoalPose(waypoint.pose);
+    setCurrentWaypointIndex(index);
+    setIsNavigating(true);
+
+    try {
+      // 根据导航模式选择发送方式
+      if (waypoint.navigationMode === 'local_navigation') {
+        // 局部导航模式：发送到 /small_range_goal 话题
+        rosService.sendLocalNavigationGoal(waypoint.pose);
+        message.success(`路径点 ${index + 1}: 局部导航目标已发送`);
+
+        // 局部导航模式没有反馈，模拟3秒后完成
+        setTimeout(() => {
+          // 标记完成并导航到下一个
+          setCompletedWaypoints([...currentCompleted, index]);
+
+          const nextIndex = index + 1;
+          // 重新获取最新的 waypoints（因为可能在这3秒内被修改）
+          const latestWaypoints = waypointsRef.current;
+          if (nextIndex < latestWaypoints.length) {
+            message.success(`路径点 ${index + 1} 已到达，准备前往路径点 ${nextIndex + 1}...`);
+            setTimeout(() => {
+              navigateToWaypoint(nextIndex);
+            }, 1000);
+          } else {
+            message.success({
+              content: `🎉 巡航完成！已到达所有 ${latestWaypoints.length} 个路径点`,
+              duration: 5,
+            });
+            setIsNavigating(false);
+            setCurrentWaypointIndex(-1);
+          }
+        }, 3000);
+      } else {
+        // 避障导航模式：使用Action接口
+        await rosService.sendNavigationGoal({
+          pose: waypoint.pose,
+          tasks: waypoint.tasks || [],
+          actionConfig: waypoint.actionConfig || { use_default_config: true },
+        });
+      }
+    } catch (error) {
+      console.error('[导航] 发送路径点目标失败:', error);
+      message.error(`导航到路径点 ${index + 1} 失败`);
+      setIsNavigating(false);
+      setCurrentWaypointIndex(-1);
     }
   };
 
@@ -575,6 +819,13 @@ export const Navigation: React.FC = () => {
           showCoordinateSystem={true}
           showGrid={showGrid}
           gridSize={gridSize}
+          waypoints={waypointMode ? waypoints.map(w => w.pose) : []}
+          currentWaypointIndex={currentWaypointIndex}
+          completedWaypoints={completedWaypoints}
+          selectedWaypointIndex={selectedWaypointIndex}
+          onWaypointClick={handleWaypointClick}
+          onWaypointDrag={handleWaypointDrag}
+          onWaypointDelete={handleDeleteWaypoint}
         />
 
         {/* 浮动控制面板 */}
@@ -601,6 +852,22 @@ export const Navigation: React.FC = () => {
             robotPose={robotPose}
           />
 
+          {/* 导航模式切换和路径点管理 */}
+          <WaypointControl
+            waypointMode={waypointMode}
+            onModeChange={handleModeChange}
+            waypoints={waypoints}
+            currentWaypointIndex={currentWaypointIndex}
+            completedWaypoints={completedWaypoints}
+            selectedWaypointIndex={selectedWaypointIndex}
+            onEditWaypoint={handleEditWaypoint}
+            onDeleteWaypoint={handleDeleteWaypoint}
+            onClearWaypoints={handleClearWaypoints}
+            onMoveWaypoint={handleMoveWaypoint}
+            isNavigating={isNavigating}
+          />
+
+          {/* 导航控制 */}
           <NavigationControl
             robotPose={robotPose || null}
             goalPose={goalPose}
@@ -610,6 +877,9 @@ export const Navigation: React.FC = () => {
             navigationStatus={navigationStatus}
             navigationFeedback={navigationFeedback}
             connectionStatus={connectionStatus}
+            waypointMode={waypointMode}
+            waypoints={waypoints.map(w => w.pose)}
+            onStartWaypointNavigation={() => navigateToWaypoint(0)}
           />
         </div>
 
@@ -623,17 +893,35 @@ export const Navigation: React.FC = () => {
             color: 'white',
             padding: '12px 16px',
             borderRadius: '4px',
-            fontSize: '13px',
-            maxWidth: '300px',
+            fontSize: '12px',
+            maxWidth: '320px',
             zIndex: 100,
             fontWeight: '500',
+            lineHeight: '1.8',
           }}
         >
-          <div>
-            <EnvironmentOutlined /> 点击地图选择导航目标点
-          </div>
+          {waypointMode ? (
+            <>
+              <div><EnvironmentOutlined /> 点击地图添加路径点</div>
+              <div>🖱️ 点击路径点选中，拖动修改位置</div>
+              <div>⌨️ Delete键删除选中路径点</div>
+            </>
+          ) : (
+            <div>
+              <EnvironmentOutlined /> 点击地图选择导航目标点
+            </div>
+          )}
         </div>
       </div>
+
+      {/* 路径点配置Modal */}
+      <WaypointConfigModal
+        visible={waypointConfigModalVisible}
+        waypoint={editingWaypointIndex >= 0 ? waypoints[editingWaypointIndex] : null}
+        waypointIndex={editingWaypointIndex}
+        onSave={handleSaveWaypointConfig}
+        onCancel={() => setWaypointConfigModalVisible(false)}
+      />
     </div>
   );
 };
