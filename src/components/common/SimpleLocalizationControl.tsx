@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus, Pose } from '@/types';
 import { Card, Button, Space, message, Modal, Tag, Descriptions, Radio } from 'antd';
@@ -28,135 +28,105 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('auto'); // 默认自动
   const [selectedRelocMode, setSelectedRelocMode] = useState<'auto' | 'manual'>('auto'); // 默认选中自动
-  const [waitingForInitStatus, setWaitingForInitStatus] = useState(false);
-  const initStatusUnsubscribeRef = useRef<(() => void) | null>(null);
+  const [switchingModalVisible, setSwitchingModalVisible] = useState(false); // 模式切换中Modal
 
-  // 订阅初始化状态话题
+  // 订阅后端定位模式状态 /localization/mode (std_msgs/Int32)
+  // 0: obstacle, 1: mapping, 2: localization, 3: idle
   useEffect(() => {
-    // 清理旧订阅
-    if (initStatusUnsubscribeRef.current) {
-      // console.log('[重定位] 清理旧订阅');
-      initStatusUnsubscribeRef.current();
-      initStatusUnsubscribeRef.current = null;
-    }
-
-    if (connectionStatus !== ConnectionStatus.CONNECTED || !waitingForInitStatus) {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
       return;
     }
 
-    // console.log('[重定位] 开始订阅初始化状态话题');
-    const unsubscribe = rosService.subscribeTopic<{ data: boolean }>(
-      '/localization/init_status',
-      'std_msgs/Bool',
+    const unsubscribe = rosService.subscribeTopic<{ data: number }>(
+      '/localization/mode',
+      'std_msgs/Int32',
       (msg) => {
-        // console.log('[重定位] 收到初始化状态:', msg.data);
-        setWaitingForInitStatus(false);
+        const modeValue = msg.data;
+        console.log('[定位控制] 收到后端模式状态:', modeValue);
 
-        if (msg.data === true) {
-          // 初始化成功
-          setCurrentMode('localization');
-          setStatusMessage('定位成功（手动）');
-          setSuccessModalVisible(true);
-          onModeChange?.('localization');
-          message.success('机器人初始位置设置成功！');
-        } else {
-          // 初始化失败
+        // 映射后端模式值到前端状态
+        // 0: obstacle -> idle (暂时映射，前端没有obstacle模式显示)
+        // 1: mapping -> 不处理（由建图界面管理）
+        // 2: localization -> localization 或 localization_auto
+        // 3: idle -> idle
+        if (modeValue === 3) {
           setCurrentMode('idle');
-          setStatusMessage('定位失败（手动）');
-          setFailureMessage('初始位置设置失败，请重试');
-          setFailureModalVisible(true);
+          setStatusMessage('未启动');
+        } else if (modeValue === 2) {
+          // 收到定位模式状态，关闭"模式切换中"Modal
+          if (switchingModalVisible) {
+            console.log('[定位控制] 定位模式已启动，关闭切换中Modal');
+            setSwitchingModalVisible(false);
+          }
+
+          // 定位模式 - 根据上次选择的类型设置状态
+          if (lastLocalizationType === 'manual') {
+            setCurrentMode('localization');
+            setStatusMessage('定位模式（手动）');
+          } else {
+            setCurrentMode('localization_auto');
+            setStatusMessage('定位模式（自动）');
+          }
+        } else if (modeValue === 1) {
+          // 建图模式 - 不在此组件处理
+          console.log('[定位控制] 后端处于建图模式');
+        } else if (modeValue === 0) {
+          // 避障模式 - 暂时映射到 idle
+          setCurrentMode('idle');
+          setStatusMessage('避障模式');
         }
       }
     );
 
-    initStatusUnsubscribeRef.current = unsubscribe;
-
-    // 确保总是返回清理函数
     return () => {
-      // console.log('[重定位] useEffect 清理，取消订阅');
-      if (initStatusUnsubscribeRef.current) {
-        initStatusUnsubscribeRef.current();
-        initStatusUnsubscribeRef.current = null;
-      }
+      unsubscribe();
     };
-  }, [connectionStatus, waitingForInitStatus, onModeChange]);
+  }, [connectionStatus, switchingModalVisible, lastLocalizationType]);
 
   const handleLocalizationManual = async () => {
     setLoading('localization');
     setLastLocalizationType('manual');
     setStatusMessage('启动定位模式...');
 
-    // 显示切换中弹窗
-    const switchingModal = Modal.info({
-      title: '定位模式切换中',
-      content: (
-        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <Space direction="vertical" size="middle">
-            <SyncOutlined spin style={{ fontSize: '48px', color: '#1890ff' }} />
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              正在切换到手动定位模式，请稍候...
-            </div>
-          </Space>
-        </div>
-      ),
-      icon: null,
-      okButtonProps: { style: { display: 'none' } },
-      centered: true,
-    });
-
     try {
-      // 1. 启动手动定位模式
-      const result = await rosService.startLocalization();
-
-      // 关闭切换中弹窗
-      switchingModal.destroy();
-
-      if (!result.success) {
-        setCurrentMode('idle');
-        setStatusMessage('启动定位模式失败');
-        setFailureMessage(result.message || '启动定位模式失败，请重试');
-        setFailureModalVisible(true);
-        setLoading(null);
-        return;
-      }
-
-      // 2. 通知父组件进入重定位模式（让地图可以点击设置初始位置）
+      // 1. 通知父组件进入重定位模式（让地图可以点击设置初始位置）
       onRelocalizationStart?.();
 
-      // 3. 开始等待初始化状态
-      setWaitingForInitStatus(true);
+      // 2. 显示"定位模式切换中"Modal（等待后端发布 mode = 2）
+      setSwitchingModalVisible(true);
 
-      // 4. 显示提示信息 - 使用Modal让用户更清楚
-      Modal.info({
-        title: '请设置初始位姿',
-        content: (
-          <div>
-            <p style={{ fontSize: '14px', marginBottom: '12px' }}>
-              已进入手动重定位模式，请在地图上点击机器人的当前位置：
-            </p>
-            <ul style={{ paddingLeft: '20px', fontSize: '14px', color: '#666' }}>
-              <li>在地图上找到机器人当前所在位置</li>
-              <li>点击地图设置初始位置</li>
-              <li>拖拽调整机器人朝向</li>
-              <li>系统将自动确认初始化结果</li>
-            </ul>
-          </div>
-        ),
-        okText: '我知道了',
-        centered: true,
-      });
+      console.log('[重定位] 调用 startLocalization 服务，等待用户点击地图...');
 
-      setStatusMessage('请在地图上点击初始位置');
-      setLoading(null);
+      // 3. 调用 startLocalization 服务（会阻塞等待 /initialpose 话题）
+      // 这个调用会等待用户在地图上点击并发布 /initialpose 后，后端完成重定位才返回
+      const result = await rosService.startLocalization();
 
+      console.log('[重定位] 服务返回结果:', result);
+
+      // 4. 服务返回后，根据结果显示成功/失败Modal
+      // 注意：switchingModal已经通过订阅 /localization/mode = 2 自动关闭了
+      if (result.success) {
+        // 定位成功
+        setSuccessModalVisible(true);
+        onModeChange?.('localization');
+        message.success('机器人初始位置设置成功！');
+      } else {
+        // 定位失败
+        setCurrentMode('idle');
+        setStatusMessage('定位失败（手动）');
+        setFailureMessage(result.message || '初始位置设置失败，请重试');
+        setFailureModalVisible(true);
+        // 如果失败，确保关闭切换中Modal
+        setSwitchingModalVisible(false);
+      }
     } catch (error) {
-      // 关闭切换中弹窗
-      switchingModal.destroy();
-
       message.error('启动重定位模式失败');
       console.error(error);
       setCurrentMode('idle');
       setStatusMessage('启动失败');
+      // 确保关闭切换中Modal
+      setSwitchingModalVisible(false);
+    } finally {
       setLoading(null);
     }
   };
@@ -166,34 +136,16 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     setLastLocalizationType('auto');
     setStatusMessage('定位中（自动）...');
 
-    // 显示切换中弹窗
-    const switchingModal = Modal.info({
-      title: '定位模式切换中',
-      content: (
-        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <Space direction="vertical" size="middle">
-            <SyncOutlined spin style={{ fontSize: '48px', color: '#1890ff' }} />
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              正在切换到自动定位模式，请稍候...
-            </div>
-          </Space>
-        </div>
-      ),
-      icon: null,
-      okButtonProps: { style: { display: 'none' } },
-      centered: true,
-    });
+    // 显示切换中弹窗（等待后端发布 mode = 2）
+    setSwitchingModalVisible(true);
 
     try {
       const result = await rosService.startLocalizationAuto();
 
-      // 关闭切换中弹窗
-      switchingModal.destroy();
-
+      // 服务返回后，根据结果显示成功/失败Modal
+      // 注意：switchingModal已经通过订阅 /localization/mode = 2 自动关闭了
       if (result.success) {
         // 定位成功
-        setCurrentMode('localization_auto');
-        setStatusMessage('定位成功（自动）');
         setSuccessModalVisible(true);
         onModeChange?.('localization_auto');
       } else {
@@ -202,15 +154,16 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
         setStatusMessage('定位失败（自动）');
         setFailureMessage(result.message || '定位失败，请重试');
         setFailureModalVisible(true);
+        // 如果失败，确保关闭切换中Modal
+        setSwitchingModalVisible(false);
       }
     } catch (error) {
-      // 关闭切换中弹窗
-      switchingModal.destroy();
-
       message.error('启动自动定位模式失败');
       console.error(error);
       setCurrentMode('idle');
       setStatusMessage('定位失败');
+      // 确保关闭切换中Modal
+      setSwitchingModalVisible(false);
     } finally {
       setLoading(null);
     }
@@ -310,6 +263,70 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
               : '手动模式：需在地图点击初始位置'}
         </div>
       </Space>
+
+      {/* 定位模式切换中Modal */}
+      <Modal
+        title="定位模式切换中"
+        open={switchingModalVisible}
+        centered
+        closable={false}
+        footer={null}
+        width={420}
+      >
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <SyncOutlined spin style={{ fontSize: '48px', color: '#1890ff' }} />
+            <div style={{ fontSize: '16px', fontWeight: 500 }}>
+              {lastLocalizationType === 'manual'
+                ? '正在切换到手动定位模式'
+                : '正在切换到自动定位模式'}
+            </div>
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              {lastLocalizationType === 'manual'
+                ? '请在地图上点击机器人的当前位置'
+                : '系统正在自动搜索机器人位置，请稍候...'}
+            </div>
+
+            {/* 手动模式显示操作步骤 */}
+            {lastLocalizationType === 'manual' && (
+              <div style={{
+                marginTop: '16px',
+                padding: '16px',
+                background: '#f0f5ff',
+                borderRadius: '4px',
+                textAlign: 'left'
+              }}>
+                <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.8' }}>
+                  <div style={{ marginBottom: 8, fontWeight: 500 }}>📍 操作步骤：</div>
+                  <div>1. 在地图上找到机器人当前位置</div>
+                  <div>2. 点击地图设置初始位置</div>
+                  <div>3. 拖拽调整机器人朝向</div>
+                  <div>4. 系统将自动完成初始化</div>
+                </div>
+              </div>
+            )}
+
+            {/* 自动模式显示提示 */}
+            {lastLocalizationType === 'auto' && (
+              <div style={{
+                marginTop: '16px',
+                padding: '16px',
+                background: '#f0f5ff',
+                borderRadius: '4px',
+                textAlign: 'left'
+              }}>
+                <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.8' }}>
+                  <div style={{ marginBottom: 8, fontWeight: 500 }}>⏳ 正在进行：</div>
+                  <div>• 全局定位算法运行中</div>
+                  <div>• 分析激光雷达数据</div>
+                  <div>• 匹配地图特征点</div>
+                  <div>• 预计耗时：10-15秒</div>
+                </div>
+              </div>
+            )}
+          </Space>
+        </div>
+      </Modal>
 
       {/* 定位成功Modal */}
       <Modal

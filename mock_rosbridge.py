@@ -46,6 +46,10 @@ class MockROSBridge:
         self.joystick_active = False
         # 地图存储（模拟数据库）
         self.saved_maps = {}  # {map_id: map_metadata}
+        # 手动重定位状态
+        self.waiting_for_initialpose = False  # 是否正在等待初始位姿
+        self.localization_event = None  # 用于等待初始位姿的事件
+        self.localization_result = None  # 重定位结果
 
         # 从文件加载已保存的地图
         self.load_maps_from_disk()
@@ -246,8 +250,8 @@ class MockROSBridge:
             asyncio.create_task(self.publish_robot_pose(websocket))
         elif topic == "/amcl_pose":
             asyncio.create_task(self.publish_amcl_pose(websocket))
-        elif topic == "/localization/status":
-            asyncio.create_task(self.publish_localization_status(websocket))
+        elif topic == "/localization/mode":
+            asyncio.create_task(self.publish_localization_mode(websocket))
         elif topic == "/scan":
             asyncio.create_task(self.publish_laser_scan(websocket))
         elif topic == "/slam/status":
@@ -285,10 +289,15 @@ class MockROSBridge:
             self.robot_pose["theta"] = 2.0 * math.atan2(z, w)
 
             print(f"📍 收到初始位姿: x={self.robot_pose['x']:.2f}, y={self.robot_pose['y']:.2f}, theta={self.robot_pose['theta']:.2f}")
-            print("   ⏳ 粒子滤波初始化中...")
 
-            # 异步处理定位初始化过程
-            asyncio.create_task(self.process_localization_init(websocket))
+            # 如果正在等待初始位姿（手动重定位模式）
+            if self.waiting_for_initialpose and self.localization_event:
+                print("   ⏳ 开始粒子滤波初始化...")
+
+                # 异步处理重定位初始化，不阻塞当前消息处理
+                asyncio.create_task(self.process_manual_localization())
+            else:
+                print("   ℹ️  不在重定位等待状态，仅更新位姿")
 
         elif topic == "/small_range_goal":
             # 局部导航模式：接收小范围导航目标
@@ -376,17 +385,48 @@ class MockROSBridge:
 
         elif service == "/localization/start_localization":
             print("📍 启动定位模式（手动）...")
-            print("   等待用户设置初始位置...")
+            print("   ⏳ 等待用户在地图上点击设置初始位置...")
+
+            # 进入等待状态
             self.localization_mode = "localization"
             self.localization_status_message = "等待初始位置设置..."
-            await asyncio.sleep(10)  # 模拟等待过程
-            # 手动定位模式立即返回成功，等待用户设置初始位置
-            response["values"] = {
-                "success": True,
-                "message": "已进入手动定位模式，请设置初始位置"
-            }
+            self.waiting_for_initialpose = True
+            self.localization_event = asyncio.Event()
+            self.localization_result = None
 
-            print("✓ 定位服务: 已进入手动定位模式")
+            # 阻塞等待用户点击地图发布 /initialpose 话题
+            # 设置超时时间为60秒
+            try:
+                await asyncio.wait_for(self.localization_event.wait(), timeout=60.0)
+
+                # 获取重定位结果
+                if self.localization_result:
+                    response["values"] = self.localization_result
+                    if self.localization_result["success"]:
+                        print("✓ 定位服务: 手动重定位成功")
+                    else:
+                        print("✗ 定位服务: 手动重定位失败")
+                else:
+                    # 不应该发生
+                    response["values"] = {
+                        "success": False,
+                        "message": "重定位过程异常"
+                    }
+                    print("✗ 定位服务: 重定位结果为空")
+
+            except asyncio.TimeoutError:
+                # 超时 - 用户60秒内没有点击地图
+                self.waiting_for_initialpose = False
+                self.localization_mode = "idle"
+                response["values"] = {
+                    "success": False,
+                    "message": "等待初始位置设置超时（60秒）"
+                }
+                print("✗ 定位服务: 等待初始位置超时")
+            finally:
+                # 清理状态
+                self.waiting_for_initialpose = False
+                self.localization_event = None
 
         elif service == "/localization/start_localization_auto":
             print("📍 正在启动定位模式（自动）...")
@@ -399,6 +439,8 @@ class MockROSBridge:
             # 模拟成功/失败 (50%失败率)
             if random.random() < 0.5:
                 self.localization_status_message = "定位失败（自动）: 无法找到匹配位置"
+                # 失败时回到 idle 模式
+                self.localization_mode = "idle"
                 response["values"] = {
                     "success": False,
                     "message": "定位失败: 无法找到匹配位置"
@@ -406,6 +448,8 @@ class MockROSBridge:
                 print("✗ 定位服务: 定位失败（自动）- 无法找到匹配位置")
             else:
                 self.localization_status_message = "定位成功（自动）"
+                # 成功时保持 localization_auto 模式
+                # self.localization_mode 已经设置为 "localization_auto"
                 response["values"] = {
                     "success": True,
                     "message": "定位成功"
@@ -881,22 +925,31 @@ class MockROSBridge:
                 break
             await asyncio.sleep(0.1)
 
-    async def publish_localization_status(self, websocket):
-        return
-        """定期发布定位服务状态"""
-        while websocket in self.clients and "/localization/status" in self.subscriptions:
+    async def publish_localization_mode(self, websocket):
+        """定期发布定位模式状态 /localization/mode (std_msgs/Int32)"""
+        # 映射模式字符串到后端模式值
+        mode_map = {
+            "obstacle_avoidance": 0,
+            "mapping": 1,
+            "localization": 2,
+            "localization_auto": 2,  # 自动定位也是2
+            "idle": 3
+        }
+
+        while websocket in self.clients and "/localization/mode" in self.subscriptions:
+            mode_value = mode_map.get(self.localization_mode, 3)
             message = {
                 "op": "publish",
-                "topic": "/localization/status",
+                "topic": "/localization/mode",
                 "msg": {
-                    "data": self.localization_status_message
+                    "data": mode_value
                 }
             }
             try:
                 await websocket.send(json.dumps(message))
             except:
                 break
-            await asyncio.sleep(1.0)  # 每秒更新一次状态
+            await asyncio.sleep(1.0)  # 每秒发布一次
 
     async def publish_laser_scan(self, websocket):
         """定期发布雷达扫描数据（sensor_msgs/LaserScan）"""
@@ -1129,7 +1182,7 @@ class MockROSBridge:
         print("⏹ 停止发布导航状态")
 
     async def process_localization_init(self, websocket):
-        """处理定位初始化过程（模拟）"""
+        """处理定位初始化过程（模拟）- 旧方法，已废弃"""
         # 模拟定位初始化过程（2-3秒）
         import random
         await asyncio.sleep(2 + random.random())  # 2-3秒随机延迟
@@ -1146,6 +1199,49 @@ class MockROSBridge:
 
         # 发送初始化状态
         await self.publish_init_status(websocket, success)
+
+    async def process_manual_localization(self):
+        """处理手动重定位过程（新方法）"""
+        try:
+            # 模拟粒子滤波初始化过程（2-3秒）
+            import random
+            await asyncio.sleep(2 + random.random())
+
+            # 模拟成功/失败（20%失败率，手动定位比自动定位更可靠）
+            success = random.random() > 0.2
+
+            if success:
+                print("   ✓ 粒子滤波初始化成功")
+                self.localization_status_message = "定位成功（手动）"
+                # 设置为定位模式
+                self.localization_mode = "localization"
+                self.localization_result = {
+                    "success": True,
+                    "message": "机器人位置初始化成功"
+                }
+            else:
+                print("   ✗ 粒子滤波初始化失败")
+                self.localization_status_message = "定位失败（手动）"
+                # 失败时回到 idle 模式
+                self.localization_mode = "idle"
+                self.localization_result = {
+                    "success": False,
+                    "message": "粒子滤波收敛失败，无法确定机器人位置"
+                }
+
+            # 通知等待的服务调用
+            if self.localization_event:
+                self.localization_event.set()
+
+        except Exception as e:
+            print(f"   ✗ 手动重定位过程出错: {e}")
+            self.localization_mode = "idle"
+            self.localization_result = {
+                "success": False,
+                "message": f"重定位过程异常: {str(e)}"
+            }
+            if self.localization_event:
+                self.localization_event.set()
 
     async def handle_action_goal(self, websocket, data):
         """处理导航 Action Goal (通过 send_action_goal 消息)"""
@@ -1819,7 +1915,8 @@ async def main():
     print("  ✓ 纯避障模式 (/localization/start_obstacle_avoidance)")
     print("  ✓ 停止服务 (/localization/stop)")
     print("  ✓ 关闭服务 (/localization/shutdown)")
-    print("  ✓ 状态发布 (/localization/status)")
+    print("  ✓ 模式状态发布 (/localization/mode - std_msgs/Int32)")
+    print("    - 0: obstacle avoidance, 1: mapping, 2: localization, 3: idle")
     print()
     print("地图管理服务 (Localization Map Management):")
     print("  ✓ 列出地图 (/localization/list_maps)")
