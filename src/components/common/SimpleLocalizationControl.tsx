@@ -29,6 +29,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [lastLocalizationType, setLastLocalizationType] = useState<'manual' | 'auto'>('auto'); // 默认自动
   const [selectedRelocMode, setSelectedRelocMode] = useState<'auto' | 'manual'>('auto'); // 默认选中自动
   const [switchingModalVisible, setSwitchingModalVisible] = useState(false); // 模式切换中Modal
+  const [waitingForInitialPoseModalVisible, setWaitingForInitialPoseModalVisible] = useState(false); // 等待用户点击地图Modal
 
   // 订阅后端定位模式状态 /localization/mode (std_msgs/Int32)
   // 0: obstacle, 1: mapping, 2: localization, 3: idle
@@ -53,11 +54,8 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
           setCurrentMode('idle');
           setStatusMessage('未启动');
         } else if (modeValue === 2) {
-          // 收到定位模式状态，关闭"模式切换中"Modal
-          if (switchingModalVisible) {
-            console.log('[定位控制] 定位模式已启动，关闭切换中Modal');
-            setSwitchingModalVisible(false);
-          }
+          // 收到定位模式状态
+          console.log('[定位控制] 定位模式已启动');
 
           // 定位模式 - 根据上次选择的类型设置状态
           if (lastLocalizationType === 'manual') {
@@ -81,7 +79,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     return () => {
       unsubscribe();
     };
-  }, [connectionStatus, switchingModalVisible, lastLocalizationType]);
+  }, [connectionStatus, lastLocalizationType]);
 
   const handleLocalizationManual = async () => {
     setLoading('localization');
@@ -92,8 +90,13 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       // 1. 通知父组件进入重定位模式（让地图可以点击设置初始位置）
       onRelocalizationStart?.();
 
-      // 2. 显示"定位模式切换中"Modal（等待后端发布 mode = 2）
+      // 2. 显示"定位模式切换中"Modal，2秒后自动关闭并显示操作提示Modal
       setSwitchingModalVisible(true);
+      setTimeout(() => {
+        setSwitchingModalVisible(false);
+        // Modal关闭后，显示等待用户操作的确认弹窗
+        setWaitingForInitialPoseModalVisible(true);
+      }, 2000);
 
       console.log('[重定位] 调用 startLocalization 服务，等待用户点击地图...');
 
@@ -103,29 +106,26 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
 
       console.log('[重定位] 服务返回结果:', result);
 
-      // 4. 服务返回后，根据结果显示成功/失败Modal
-      // 注意：switchingModal已经通过订阅 /localization/mode = 2 自动关闭了
+      // 4. 关闭等待操作的Modal（如果还在显示）
+      setWaitingForInitialPoseModalVisible(false);
+
+      // 5. 服务返回后，根据结果处理
       if (result.success) {
         // 定位成功
-        setSuccessModalVisible(true);
         onModeChange?.('localization');
-        message.success('机器人初始位置设置成功！');
       } else {
-        // 定位失败
+        // 定位失败 - 显示失败Modal
         setCurrentMode('idle');
         setStatusMessage('定位失败（手动）');
         setFailureMessage(result.message || '初始位置设置失败，请重试');
         setFailureModalVisible(true);
-        // 如果失败，确保关闭切换中Modal
-        setSwitchingModalVisible(false);
       }
     } catch (error) {
       message.error('启动重定位模式失败');
       console.error(error);
       setCurrentMode('idle');
       setStatusMessage('启动失败');
-      // 确保关闭切换中Modal
-      setSwitchingModalVisible(false);
+      setWaitingForInitialPoseModalVisible(false);
     } finally {
       setLoading(null);
     }
@@ -136,14 +136,16 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     setLastLocalizationType('auto');
     setStatusMessage('定位中（自动）...');
 
-    // 显示切换中弹窗（等待后端发布 mode = 2）
+    // 显示切换中弹窗，2秒后自动关闭
     setSwitchingModalVisible(true);
+    setTimeout(() => {
+      setSwitchingModalVisible(false);
+    }, 2000);
 
     try {
       const result = await rosService.startLocalizationAuto();
 
       // 服务返回后，根据结果显示成功/失败Modal
-      // 注意：switchingModal已经通过订阅 /localization/mode = 2 自动关闭了
       if (result.success) {
         // 定位成功
         setSuccessModalVisible(true);
@@ -154,16 +156,12 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
         setStatusMessage('定位失败（自动）');
         setFailureMessage(result.message || '定位失败，请重试');
         setFailureModalVisible(true);
-        // 如果失败，确保关闭切换中Modal
-        setSwitchingModalVisible(false);
       }
     } catch (error) {
       message.error('启动自动定位模式失败');
       console.error(error);
       setCurrentMode('idle');
       setStatusMessage('定位失败');
-      // 确保关闭切换中Modal
-      setSwitchingModalVisible(false);
     } finally {
       setLoading(null);
     }
@@ -436,6 +434,134 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
               {lastLocalizationType === 'manual' && <li>尝试切换到自动定位模式</li>}
               <li>点击"重试"按钮再次尝试定位</li>
             </ul>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 等待用户设置初始位置Modal */}
+      <Modal
+        title={
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff' }}>
+            <AimOutlined style={{ marginRight: 8 }} />
+            请设置机器人初始位置
+          </div>
+        }
+        open={waitingForInitialPoseModalVisible}
+        centered
+        closable={false}
+        footer={
+          <Button
+            type="primary"
+            size="large"
+            onClick={() => setWaitingForInitialPoseModalVisible(false)}
+            style={{ width: '100%' }}
+          >
+            我知道了，开始设置
+          </Button>
+        }
+        width={500}
+      >
+        <div style={{ padding: '24px 0' }}>
+          <div style={{
+            marginBottom: 24,
+            padding: 20,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: 8,
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🗺️</div>
+            <div style={{ fontSize: 16, fontWeight: 500 }}>
+              定位模式已就绪，等待您的操作
+            </div>
+          </div>
+
+          <div style={{
+            padding: 20,
+            background: '#f0f5ff',
+            borderRadius: 8,
+            marginBottom: 20
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: '#1890ff' }}>
+              📍 操作步骤：
+            </div>
+            <div style={{ fontSize: 14, color: '#666', lineHeight: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 24,
+                  height: 24,
+                  lineHeight: '24px',
+                  textAlign: 'center',
+                  background: '#1890ff',
+                  color: 'white',
+                  borderRadius: '50%',
+                  marginRight: 12,
+                  flexShrink: 0,
+                  fontWeight: 600
+                }}>1</span>
+                <span>在地图上找到机器人当前所在位置</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 24,
+                  height: 24,
+                  lineHeight: '24px',
+                  textAlign: 'center',
+                  background: '#1890ff',
+                  color: 'white',
+                  borderRadius: '50%',
+                  marginRight: 12,
+                  flexShrink: 0,
+                  fontWeight: 600
+                }}>2</span>
+                <span>点击该位置设置初始位置</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 24,
+                  height: 24,
+                  lineHeight: '24px',
+                  textAlign: 'center',
+                  background: '#1890ff',
+                  color: 'white',
+                  borderRadius: '50%',
+                  marginRight: 12,
+                  flexShrink: 0,
+                  fontWeight: 600
+                }}>3</span>
+                <span>拖拽方向箭头调整机器人朝向</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 24,
+                  height: 24,
+                  lineHeight: '24px',
+                  textAlign: 'center',
+                  background: '#1890ff',
+                  color: 'white',
+                  borderRadius: '50%',
+                  marginRight: 12,
+                  flexShrink: 0,
+                  fontWeight: 600
+                }}>4</span>
+                <span>系统将自动完成粒子滤波初始化</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            padding: 16,
+            background: '#fffbe6',
+            borderRadius: 8,
+            border: '1px solid #ffe58f'
+          }}>
+            <div style={{ fontSize: 14, color: '#d48806' }}>
+              💡 <strong>提示：</strong>初始位置设置越准确，定位成功率越高
+            </div>
           </div>
         </div>
       </Modal>
