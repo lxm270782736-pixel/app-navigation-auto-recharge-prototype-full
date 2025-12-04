@@ -764,7 +764,7 @@ class MockROSBridge:
                 }
                 print(f"✓ 定位服务: 地图名称已设置为 '{map_name}'（将用于新建地图）")
 
-        elif service == "/localization/get_current_map":
+        elif service == "/localization/get_current_map_name":
             # 服务类型: localization_msgs/GetCurrentMap
             # 获取当前应用的地图名称
             if self.current_map_name:
@@ -1827,7 +1827,7 @@ async def main():
     print("  ✓ 保存地图 (/localization/save_map)")
     print("  ✓ 删除地图 (/localization/delete_map)")
     print("  ✓ 应用地图 (/localization/apply_map)")
-    print("  ✓ 获取当前地图 (/localization/get_current_map)")
+    print("  ✓ 获取当前地图 (/localization/get_current_map_name)")
     print()
     print("建图服务 (旧接口, 兼容性保留):")
     print("  ✓ 启动建图 (/start_mapping)")

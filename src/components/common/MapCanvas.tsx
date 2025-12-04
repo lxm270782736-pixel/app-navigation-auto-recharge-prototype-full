@@ -95,6 +95,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // 使用内部订阅的位姿或外部传入的位姿
   const robotPose = showRobotPose ? internalRobotPose : externalRobotPose;
 
+  // ========== 坐标转换辅助函数 ==========
+  // 这些函数确保在浏览器缩放时也能正确处理坐标
+
+  /**
+   * 获取鼠标相对于容器的坐标
+   * getBoundingClientRect() 自动处理浏览器缩放
+   */
+  const getMousePosition = (event: MouseEvent | React.MouseEvent): { x: number; y: number } | null => {
+    const container = containerRef.current;
+    if (!container) return null;
+
+    const rect = container.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
+
+  /**
+   * 将容器坐标转换为画布坐标（地图像素坐标）
+   */
+  const containerToCanvas = (containerX: number, containerY: number): { x: number; y: number } => {
+    return {
+      x: (containerX - offset.x) / scale,
+      y: (containerY - offset.y) / scale,
+    };
+  };
+
+  // ========== 订阅和数据处理 ==========
+
   // 订阅机器人位姿（当showRobotPose为true时）
   useEffect(() => {
     if (!showRobotPose || connectionStatus !== ConnectionStatus.CONNECTED) {
@@ -409,9 +439,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
 
-      const rect = container.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
+      const mousePos = getMousePosition(event);
+      if (!mousePos) return;
 
       // 计算缩放因子（更平滑的缩放）
       const delta = -event.deltaY;
@@ -420,8 +449,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       // 计算缩放后的偏移，使缩放中心在鼠标位置
       const scaleRatio = newScale / scale;
-      const newOffsetX = mouseX - (mouseX - offset.x) * scaleRatio;
-      const newOffsetY = mouseY - (mouseY - offset.y) * scaleRatio;
+      const newOffsetX = mousePos.x - (mousePos.x - offset.x) * scaleRatio;
+      const newOffsetY = mousePos.y - (mousePos.y - offset.y) * scaleRatio;
 
       setScale(newScale);
       setOffset({ x: newOffsetX, y: newOffsetY });
@@ -437,16 +466,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 处理鼠标按下（开始拖动或设置方向）
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
+    const mousePos = getMousePosition(event);
+    if (!mousePos) return;
 
     // 转换为画布坐标
-    const canvasX = (mouseX - offset.x) / scale;
-    const canvasY = (mouseY - offset.y) / scale;
+    const canvasPos = containerToCanvas(mousePos.x, mousePos.y);
 
     // 中键拖动
     if (event.button === 1) {
@@ -468,7 +492,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (event.button === 0) {
       // 检查是否点击了路径点
       if (waypoints && waypoints.length > 0) {
-        const clickedIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+        const clickedIndex = getClickedWaypointIndex(canvasPos.x, canvasPos.y, waypoints, mapData);
         if (clickedIndex >= 0) {
           // 点击了路径点
           event.preventDefault();
@@ -486,14 +510,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (onMapClick) {
         if (disableDirectionSetting) {
           // 连续编辑模式：立即调用onMapClick并开始跟踪
-          const worldPos = mapToWorld(canvasX, canvasY, mapData);
+          const worldPos = mapToWorld(canvasPos.x, canvasPos.y, mapData);
           onMapClick(worldPos.x, worldPos.y);
           setIsContinuousEditing(true);
         } else {
           // 方向设置模式：记录起点和终点
           setIsSettingDirection(true);
-          setDirectionStart({ x: canvasX, y: canvasY });
-          setDirectionEnd({ x: canvasX, y: canvasY });
+          setDirectionStart({ x: canvasPos.x, y: canvasPos.y });
+          setDirectionEnd({ x: canvasPos.x, y: canvasPos.y });
         }
       }
     }
@@ -501,19 +525,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 处理鼠标移动
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const container = containerRef.current;
-    if (!container) return;
+    const mousePos = getMousePosition(event);
+    if (!mousePos) return;
 
-    const rect = container.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
-    const canvasX = (mouseX - offset.x) / scale;
-    const canvasY = (mouseY - offset.y) / scale;
+    const canvasPos = containerToCanvas(mousePos.x, mousePos.y);
 
     // 拖动路径点
     if (draggingWaypointIndex >= 0 && onWaypointDrag) {
-      const worldPos = mapToWorld(canvasX, canvasY, mapData);
+      const worldPos = mapToWorld(canvasPos.x, canvasPos.y, mapData);
       onWaypointDrag(draggingWaypointIndex, {
         x: worldPos.x,
         y: worldPos.y,
@@ -524,12 +543,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     // 更新画笔预览位置（当处于编辑模式时）
     if (disableDirectionSetting && brushSize > 0) {
-      setBrushPreviewPos({ x: canvasX, y: canvasY });
+      setBrushPreviewPos({ x: canvasPos.x, y: canvasPos.y });
     }
 
     // 检测悬停的路径点（用于鼠标样式变化）
     if (waypoints && waypoints.length > 0 && !isDragging && !isSettingDirection) {
-      const hoveredIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+      const hoveredIndex = getClickedWaypointIndex(canvasPos.x, canvasPos.y, waypoints, mapData);
       setHoveredWaypointIndex(hoveredIndex);
     }
 
@@ -540,11 +559,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       });
     } else if (isContinuousEditing && onMapClick && disableDirectionSetting) {
       // 连续编辑模式：持续调用onMapClick
-      const worldPos = mapToWorld(canvasX, canvasY, mapData);
+      const worldPos = mapToWorld(canvasPos.x, canvasPos.y, mapData);
       onMapClick(worldPos.x, worldPos.y);
     } else if (isSettingDirection && directionStart) {
       // 更新方向终点
-      setDirectionEnd({ x: canvasX, y: canvasY });
+      setDirectionEnd({ x: canvasPos.x, y: canvasPos.y });
     }
   };
 
@@ -602,19 +621,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const container = containerRef.current;
-    if (!container) return;
+    const mousePos = getMousePosition(event);
+    if (!mousePos) return;
 
-    const rect = container.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
-    // 转换为画布坐标
-    const canvasX = (mouseX - offset.x) / scale;
-    const canvasY = (mouseY - offset.y) / scale;
+    const canvasPos = containerToCanvas(mousePos.x, mousePos.y);
 
     // 检查是否右键点击了路径点
-    const clickedIndex = getClickedWaypointIndex(canvasX, canvasY, waypoints, mapData);
+    const clickedIndex = getClickedWaypointIndex(canvasPos.x, canvasPos.y, waypoints, mapData);
     if (clickedIndex >= 0) {
       // 右键点击了路径点，触发删除
       onWaypointDelete(clickedIndex);

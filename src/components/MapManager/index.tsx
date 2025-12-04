@@ -444,18 +444,25 @@ export const MapManager: React.FC = () => {
           style={{ marginTop: '60px' }}
         />
       ) : (
-        <List
-          grid={{
-            gutter: 16,
-            xs: 1,
-            sm: 2,
-            md: 3,
-            lg: 3,
-            xl: 4,
-            xxl: 4,
+        <div
+          style={{
+            maxHeight: 'calc(100vh - 280px)', // 动态计算最大高度，留出顶部空间
+            overflowY: 'auto', // 垂直滚动
+            paddingRight: '8px', // 为滚动条留出空间
           }}
-          dataSource={maps}
-          renderItem={(map) => {
+        >
+          <List
+            grid={{
+              gutter: 16,
+              xs: 1,
+              sm: 2,
+              md: 3,
+              lg: 3,
+              xl: 4,
+              xxl: 4,
+            }}
+            dataSource={maps}
+            renderItem={(map) => {
             const isCurrentMap = currentMapId === map.id;
             return (
               <List.Item>
@@ -570,6 +577,7 @@ export const MapManager: React.FC = () => {
             );
           }}
         />
+        </div>
       )}
 
       <Modal

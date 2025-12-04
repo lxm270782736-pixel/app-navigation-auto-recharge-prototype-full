@@ -523,8 +523,8 @@ class ROSService {
   async getCurrentMapName(): Promise<string | null> {
     try {
       const response = await this.callService<{}, { success: boolean; message: string; map_name: string }>(
-        '/localization/get_current_map',
-        'localization_msgs/GetCurrentMap',
+        '/localization/get_current_map_name',
+        'std_srvs/Trigger',
         {}
       );
 
