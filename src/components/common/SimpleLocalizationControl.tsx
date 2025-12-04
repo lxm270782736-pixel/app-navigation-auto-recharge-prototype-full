@@ -111,7 +111,8 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
 
       // 5. 服务返回后，根据结果处理
       if (result.success) {
-        // 定位成功
+        // 定位成功 - 显示成功Modal
+        setSuccessModalVisible(true);
         onModeChange?.('localization');
       } else {
         // 定位失败 - 显示失败Modal
