@@ -522,15 +522,15 @@ class ROSService {
   // 获取当前应用的地图名称
   async getCurrentMapName(): Promise<string | null> {
     try {
-      const response = await this.callService<{}, { success: boolean; message: string; map_name: string }>(
+      const response = await this.callService<{}, { success: boolean; message: string }>(
         '/localization/get_current_map_name',
         'std_srvs/Trigger',
         {}
       );
 
-      if (response.success && response.map_name) {
-        console.log('[ROS Service] 当前地图:', response.map_name);
-        return response.map_name;
+      if (response.success && response.message) {
+        console.log('[ROS Service] 当前地图:', response.message);
+        return response.message;
       }
 
       console.log('[ROS Service] 未设置当前地图');

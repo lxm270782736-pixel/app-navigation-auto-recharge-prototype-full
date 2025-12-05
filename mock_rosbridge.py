@@ -97,6 +97,40 @@ class MockROSBridge:
                     print(f"✗ 加载地图文件 {map_file} 失败: {e}")
 
             print(f"📂 从磁盘加载了 {len(self.saved_maps)} 个地图")
+
+            # 如果加载了地图且当前没有设置地图，自动设置最新的地图为当前地图
+            if self.saved_maps and not self.current_map_name:
+                # 按创建时间排序，选择最新的地图
+                latest_map = max(self.saved_maps.values(), key=lambda m: m.get('created_at', 0))
+                self.current_map_name = latest_map['id']
+                # 设置当前地图数据
+                self.map_data = {
+                    "header": {
+                        "frame_id": "map",
+                        "stamp": {"secs": int(time.time()), "nsecs": 0}
+                    },
+                    "info": {
+                        "width": latest_map["width"],
+                        "height": latest_map["height"],
+                        "resolution": latest_map["resolution"],
+                        "origin": {
+                            "position": {
+                                "x": latest_map["origin_x"],
+                                "y": latest_map["origin_y"],
+                                "z": 0.0
+                            },
+                            "orientation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": latest_map["origin_orientation"],
+                                "w": 1.0
+                            }
+                        }
+                    },
+                    "data": latest_map.get("data", [])
+                }
+                self.current_map_set = True
+                print(f"✓ 自动设置当前地图: {self.current_map_name}")
         except Exception as e:
             print(f"✗ 加载地图目录失败: {e}")
 
@@ -809,20 +843,19 @@ class MockROSBridge:
                 print(f"✓ 定位服务: 地图名称已设置为 '{map_name}'（将用于新建地图）")
 
         elif service == "/localization/get_current_map_name":
-            # 服务类型: localization_msgs/GetCurrentMap
-            # 获取当前应用的地图名称
+            # 服务类型: std_srvs/Trigger
+            # 获取当前应用的地图名称（模仿真实ROS行为）
             if self.current_map_name:
+                # 地图名称直接放在 message 字段中（std_srvs/Trigger 标准格式）
                 response["values"] = {
                     "success": True,
-                    "message": f"当前地图: {self.current_map_name}",
-                    "map_name": self.current_map_name
+                    "message": self.current_map_name
                 }
                 print(f"✓ 定位服务: 查询当前地图 - '{self.current_map_name}'")
             else:
                 response["values"] = {
-                    "success": True,
-                    "message": "未设置当前地图",
-                    "map_name": ""
+                    "success": False,
+                    "message": "未设置当前地图"
                 }
                 print(f"✓ 定位服务: 查询当前地图 - 未设置")
 
