@@ -51,6 +51,7 @@ class MockROSBridge:
         self.localization_event = None  # 用于等待初始位姿的事件
         self.localization_result = None  # 重定位结果
 
+        self.control_type = "twist"
         # 从文件加载已保存的地图
         self.load_maps_from_disk()
 
@@ -471,7 +472,7 @@ class MockROSBridge:
             print("   ⏳ 全局定位计算中 (10秒)...")
             await asyncio.sleep(10)
             # 模拟成功/失败 (50%失败率)
-            if random.random() < 0.5:
+            if random.random() < 0.1:
                 self.localization_status_message = "定位失败（自动）: 无法找到匹配位置"
                 # 失败时回到 idle 模式
                 self.localization_mode = "idle"
@@ -624,6 +625,17 @@ class MockROSBridge:
             else:
                 response["values"] = {"success": False, "message": "导航节点启动失败：costmap参数缺失"}
                 print("✗ 系统节点: 导航节点启动失败")
+        elif service == "/astribot_chassis/control_type":
+            if args["request"] in ["twist", "joy"]:
+                self.control_type = args["request"]
+                response_msg = self.control_type
+                print(f"✓ 控制方式切换: {args['request']}")
+            elif args["request"] == "get":
+                pass
+            else:
+                response_msg = f"Invalid control type: {args['request']}. Use 'twist', 'joy', or 'get'"
+                print(f"✗ 无效的控制方式请求: {args['request']}")
+            response["values"] = {"response": self.control_type}
 
         # ========== 定位/地图管理服务 (新增) ==========
         elif service == "/localization/list_maps":

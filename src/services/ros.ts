@@ -798,6 +798,56 @@ class ROSService {
     return statusMap[status] || `UNKNOWN(${status})`;
   }
 
+  // 设置底盘控制类型
+  async setChassisControlType(controlType: 'twist' | 'joy'): Promise<string> {
+    try {
+      const response = await this.callService<
+        { request: string },
+        { response: string }
+      >(
+        '/astribot_chassis/control_type',
+        'astribot_msgs/RawRequest',
+        { request: controlType }
+      );
+
+      console.log('[ROS Service] Chassis control type switched:', controlType);
+      // 发出底盘控制类型变化事件
+      this.emit('chassis-control-type-changed', { controlType });
+      return response.response;
+    } catch (error) {
+      console.error('[ROS Service] Failed to set chassis control type:', error);
+      throw error;
+    }
+  }
+
+  // 获取当前底盘控制类型
+  async getChassisControlType(): Promise<'twist' | 'joy' | null> {
+    try {
+      const response = await this.callService<
+        { request: string },
+        { response: string }
+      >(
+        '/astribot_chassis/control_type',
+        'astribot_msgs/RawRequest',
+        { request: 'get' }
+      );
+
+      // 解析响应，提取控制类型
+      // 预期响应格式为 "Current control type: twist" 或 "Current control type: joy"
+      if (response.response.includes('twist')) {
+        return 'twist';
+      } else if (response.response.includes('joy')) {
+        return 'joy';
+      }
+
+      console.warn('[ROS Service] Unknown chassis control type response:', response.response);
+      return null;
+    } catch (error) {
+      console.error('[ROS Service] Failed to get chassis control type:', error);
+      return null;
+    }
+  }
+
   // 事件系统
   on(event: string, callback: (data: any) => void) {
     if (!this.listeners.has(event)) {

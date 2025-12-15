@@ -12,6 +12,7 @@ import { NavigationControl } from '@/components/common/NavigationControl';
 import { SimpleLocalizationControl } from '@/components/common/SimpleLocalizationControl';
 import { WaypointControl } from '@/components/common/WaypointControl';
 import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
+import { ChassisControl } from '@/components/common/ChassisControl';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
@@ -851,6 +852,14 @@ export const Navigation: React.FC = () => {
             onRelocalizationStart={handleRelocalizationStart}
             robotPose={robotPose}
           />
+
+          {/* 底盘控制 */}
+          <ChassisControl
+            isNavigating={isNavigating}
+            onControlTypeChange={(type) => {
+              console.log('Chassis control type changed:', type);
+            }}
+            />
 
           {/* 导航模式切换和路径点管理 */}
           <WaypointControl
