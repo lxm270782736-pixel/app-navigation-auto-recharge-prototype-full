@@ -102,7 +102,7 @@
 ### ROS通信
 - **通信库**: roslib 1.3.0
 - **协议**: WebSocket
-- **后端**: ROS 1 (Melodic/Noetic)
+- **后端**: ROS 2 Humble (LTS)
 - **任务系统**: 可扩展的附加任务架构（支持15+任务类型）
 
 ## 系统架构
@@ -133,11 +133,11 @@
 ┌──────────────▼──────────────────────┐
 │    ROS Bridge (rosbridge_suite)     │
 └──────────────┬──────────────────────┘
-               │ ROS协议
+               │ ROS 2协议
 ┌──────────────▼──────────────────────┐
-│   ROS 1 后端                        │
-│  - SLAM节点 (gmapping/cartographer) │
-│  - move_base 导航                  │
+│   ROS 2 Humble 后端                 │
+│  - SLAM节点 (slam_toolbox/cartographer) │
+│  - Nav2 导航                        │
 │  - AMCL 定位                        │
 │  - 硬件驱动                         │
 └──────────────────────────────────────┘
@@ -177,13 +177,13 @@
 
 - Node.js >= 16
 - npm 或 yarn
-- ROS 1 (Melodic/Noetic) - 用于真实机器人
+- ROS 2 Humble - 用于真实机器人
 - rosbridge_suite 已安装
 ```bash
 sudo apt update
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
-sudo apt install ros-noetic-rosbridge-suite
+sudo apt install ros-humble-rosbridge-suite
 ```
 ### 安装依赖
 
@@ -237,23 +237,24 @@ npm run preview  # 预览构建结果（端口4173）
 
 1. **rosbridge_suite** - WebSocket通信
 ```bash
-sudo apt-get install ros-noetic-rosbridge-suite
+sudo apt-get install ros-humble-rosbridge-suite
 ```
 
-2. **SLAM包** (例如 gmapping, cartographer, 或 slam_toolbox)
+2. **SLAM包** (例如 slam_toolbox, cartographer)
 ```bash
-sudo apt-get install ros-noetic-gmapping
+sudo apt-get install ros-humble-slam-toolbox
 ```
 
-3. **导航包** (navigation stack)
+3. **导航包** (Nav2 stack)
 ```bash
-sudo apt-get install ros-noetic-navigation
+sudo apt-get install ros-humble-navigation2
+sudo apt-get install ros-humble-nav2-bringup
 ```
 
 ### 启动ROS Bridge
 
 ```bash
-roslaunch rosbridge_server rosbridge_websocket.launch
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 ```
 
 默认端口: 9090
@@ -270,31 +271,31 @@ roslaunch rosbridge_server rosbridge_websocket.launch
 
 | 话题名 | 消息类型 | 描述 |
 |--------|----------|------|
-| `/map` | `nav_msgs/OccupancyGrid` | 地图数据 |
-| `/odom` | `nav_msgs/Odometry` | 里程计/机器人位置 |
-| `/cmd_vel` | `geometry_msgs/Twist` | 速度信息 |
+| `/map` | `nav_msgs/msg/OccupancyGrid` | 地图数据 |
+| `/loc_high_freq` | `nav_msgs/msg/Odometry` | 里程计/机器人位置 |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | 速度信息 |
 
 #### 发布的话题
 
 | 话题名 | 消息类型 | 描述 |
 |--------|----------|------|
-| `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 设置初始位姿 |
+| `/initialpose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | 设置初始位姿 |
 
 #### 调用的服务
 
 | 服务名 | 服务类型 | 描述 |
 |--------|----------|------|
-| `/start_mapping` | `std_srvs/Trigger` | 启动建图 |
-| `/stop_mapping` | `std_srvs/Trigger` | 停止建图 |
-| `/save_map` | `nav_msgs/SaveMap` | 保存地图 |
-| `/load_map` | `nav_msgs/LoadMap` | 加载地图 |
-| `/get_map_list` | `astribot_msgs/GetMapList` | 获取地图列表 |
+| `/localization/start_mapping` | `std_srvs/srv/Trigger` | 启动建图 |
+| `/localization/stop` | `std_srvs/srv/Trigger` | 停止建图 |
+| `/localization/save_map` | `localization_msgs/srv/SaveMap` | 保存地图 |
+| `/localization/load_map` | `localization_msgs/srv/LoadMap` | 加载地图 |
+| `/localization/list_maps` | `localization_msgs/srv/ListMaps` | 获取地图列表 |
 
 #### 使用的Action
 
 | Action名 | Action类型 | 描述 |
 |----------|------------|------|
-| `/move_chassis_to_server` | `astribot_msgs/MoveChassisToAction` | 导航到目标点 |
+| `/move_chassis_to_server` | `astribot_msgs/action/MoveChassis` | 导航到目标点 |
 
 详细的ROS后端配置请参考 [ROS_INTEGRATION.md](./ROS_INTEGRATION.md)
 

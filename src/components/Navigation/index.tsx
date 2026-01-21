@@ -14,6 +14,7 @@ import { WaypointControl } from '@/components/common/WaypointControl';
 import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
 import { ChassisControl } from '@/components/common/ChassisControl';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { mapStorageService } from '@/services/storage';
 import { navigationStorageService } from '@/services/navigationStorage';
 import { useROS } from '@/contexts/ROSContext';
@@ -276,7 +277,7 @@ export const Navigation: React.FC = () => {
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/loc_high_freq',
-      'nav_msgs/Odometry',
+      ROS2_MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;

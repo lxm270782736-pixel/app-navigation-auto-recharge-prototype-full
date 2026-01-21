@@ -12,6 +12,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
@@ -70,7 +71,7 @@ export const Mapping: React.FC = () => {
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/map',
-      'nav_msgs/OccupancyGrid',
+      ROS2_MESSAGE_TYPES.OCCUPANCY_GRID,
       (mapMsg) => {
         setCurrentMapData({
           width: mapMsg.info.width,
@@ -110,7 +111,7 @@ export const Mapping: React.FC = () => {
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/scan',
-      'sensor_msgs/LaserScan',
+      ROS2_MESSAGE_TYPES.LASER_SCAN,
       (scanMsg) => {
         // 接收到雷达数据
         setHasLaserData(true);

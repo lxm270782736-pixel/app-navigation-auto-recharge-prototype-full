@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 
 interface SimpleLocalizationControlProps {
   onModeChange?: (mode: string) => void;
@@ -40,7 +41,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
 
     const unsubscribe = rosService.subscribeTopic<{ data: number }>(
       '/localization/mode',
-      'std_msgs/Int32',
+      ROS2_MESSAGE_TYPES.INT32,
       (msg) => {
         const modeValue = msg.data;
         console.debug('[定位控制] 收到后端模式状态:', modeValue);

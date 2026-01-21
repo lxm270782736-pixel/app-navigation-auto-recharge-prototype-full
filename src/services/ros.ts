@@ -1,5 +1,6 @@
 import ROSLIB from 'roslib';
 import type { MapData, Pose, NavigationGoal } from '@/types';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 
 class ROSService {
   private ros: ROSLIB.Ros | null = null;
@@ -140,7 +141,7 @@ class ROSService {
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
       serverName: '/move_chassis_to_server',
-      actionName: 'astribot_msgs/MoveChassisToAction',
+      actionName: ROS2_MESSAGE_TYPES.MOVE_CHASSIS,
     });
 
     console.log('[ROS] ActionClient 已创建:', actionClient);
@@ -320,7 +321,7 @@ class ROSService {
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
       serverName: '/move_chassis_to_server',
-      actionName: 'astribot_msgs/MoveChassisToAction',
+      actionName: ROS2_MESSAGE_TYPES.MOVE_CHASSIS,
     });
 
     actionClient.cancel();
@@ -335,8 +336,8 @@ class ROSService {
     const poseMessage = {
       header: {
         stamp: {
-          secs: Math.floor(Date.now() / 1000),
-          nsecs: (Date.now() % 1000) * 1000000,
+          sec: Math.floor(Date.now() / 1000),
+          nanosec: (Date.now() % 1000) * 1000000,
         },
         frame_id: 'map',
       },
@@ -355,7 +356,7 @@ class ROSService {
       },
     };
 
-    this.publishMessage('/small_range_goal', 'geometry_msgs/PoseStamped', poseMessage);
+    this.publishMessage('/small_range_goal', ROS2_MESSAGE_TYPES.POSE_STAMPED, poseMessage);
   }
 
   // ========== 定位服务 (Localization Service) ==========
@@ -365,7 +366,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/joystick/start',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -383,7 +384,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/joystick/stop',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -401,7 +402,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/start_mapping',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -419,7 +420,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/start_localization',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -437,7 +438,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/start_localization_auto',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -455,7 +456,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/start_obstacle_avoidance',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -473,7 +474,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/stop',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -491,7 +492,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, any>(
         '/localization/shutdown',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
       return {
@@ -508,7 +509,7 @@ class ROSService {
   subscribeLocalizationStatus(callback: (status: any) => void): () => void {
     return this.subscribeTopic<any>(
       '/localization/status',
-      'std_msgs/String',
+      ROS2_MESSAGE_TYPES.STRING,
       callback
     );
   }
@@ -526,7 +527,7 @@ class ROSService {
     // 调用 ROS 定位服务应用地图
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/apply_map',
-      'localization_msgs/ApplyMap',
+      ROS2_MESSAGE_TYPES.APPLY_MAP,
       {
         map_name: mapData.name,
       }
@@ -542,7 +543,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, { success: boolean; message: string }>(
         '/localization/get_current_map_name',
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
 
@@ -564,7 +565,7 @@ class ROSService {
     // 使用 apply_map 服务设置地图名称（地图可以不存在）
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/apply_map',
-      'localization_msgs/ApplyMap',
+      ROS2_MESSAGE_TYPES.APPLY_MAP,
       {
         map_name: mapName,
       }
@@ -579,7 +580,7 @@ class ROSService {
   async getMapList(): Promise<string[]> {
     const response = await this.callService<{}, { maps: string[] }>(
       '/get_map_list',
-      'astribot_msgs/GetMapList',
+      ROS2_MESSAGE_TYPES.GET_MAP_LIST,
       {}
     );
 
@@ -591,7 +592,7 @@ class ROSService {
     try {
       const response = await this.callService<{}, { success: boolean; message: string; maps: any[] }>(
         '/localization/list_maps',
-        'localization_msgs/ListMaps',
+        ROS2_MESSAGE_TYPES.LIST_MAPS,
         {}
       );
 
@@ -639,7 +640,7 @@ class ROSService {
   async deleteMapFromROS(mapId: string): Promise<void> {
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
       '/localization/delete_map',
-      'localization_msgs/DeleteMap',
+      ROS2_MESSAGE_TYPES.DELETE_MAP,
       { map_name: mapId }
     );
 
@@ -683,7 +684,7 @@ class ROSService {
 
     const response = await this.callService<any, { success: boolean; message: string }>(
       '/localization/save_map',
-      'localization_msgs/SaveMap',
+      ROS2_MESSAGE_TYPES.SAVE_MAP,
       {
         map_name: mapData.name,
         map_data: rosMapData,
@@ -706,7 +707,7 @@ class ROSService {
 
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string; map_data: any }>(
       '/localization/load_map',
-      'localization_msgs/LoadMap',
+      ROS2_MESSAGE_TYPES.LOAD_MAP,
       { map_name: mapName }
     );
 
@@ -735,7 +736,7 @@ class ROSService {
 
   // 设置初始位姿
   setInitialPose(pose: Pose) {
-    this.publishMessage('/initialpose', 'geometry_msgs/PoseWithCovarianceStamped', {
+    this.publishMessage('/initialpose', ROS2_MESSAGE_TYPES.POSE_WITH_COVARIANCE_STAMPED, {
       header: {
         frame_id: 'world',
       },
@@ -758,7 +759,7 @@ class ROSService {
   subscribeMap(callback: (mapData: MapData) => void): () => void {
     return this.subscribeTopic<any>(
       '/map',
-      'nav_msgs/OccupancyGrid',
+      ROS2_MESSAGE_TYPES.OCCUPANCY_GRID,
       (rosMap) => {
         const mapData = this.convertROSMapToMapData(rosMap);
         callback(mapData);
@@ -773,10 +774,13 @@ class ROSService {
     if (rosMap.info.map_load_time) {
       if (typeof rosMap.info.map_load_time === 'string') {
         mapName = rosMap.info.map_load_time;
-      } else if (typeof rosMap.info.map_load_time === 'object' && rosMap.info.map_load_time.secs !== undefined) {
-        // ROS 时间戳对象，转换为可读的日期时间字符串
-        const date = new Date(rosMap.info.map_load_time.secs * 1000);
-        mapName = date.toLocaleString('zh-CN');
+      } else if (typeof rosMap.info.map_load_time === 'object') {
+        // ROS2 时间戳对象 (sec, nanosec) 或 ROS1 (secs, nsecs)
+        const sec = rosMap.info.map_load_time.sec ?? rosMap.info.map_load_time.secs;
+        if (sec !== undefined) {
+          const date = new Date(sec * 1000);
+          mapName = date.toLocaleString('zh-CN');
+        }
       }
     }
 
@@ -824,7 +828,7 @@ class ROSService {
         { response: string }
       >(
         '/astribot_chassis/control_type',
-        'astribot_msgs/RawRequest',
+        ROS2_MESSAGE_TYPES.RAW_REQUEST,
         { request: controlType }
       );
 
@@ -846,7 +850,7 @@ class ROSService {
         { response: string }
       >(
         '/astribot_chassis/control_type',
-        'astribot_msgs/RawRequest',
+        ROS2_MESSAGE_TYPES.RAW_REQUEST,
         { request: 'get' }
       );
 

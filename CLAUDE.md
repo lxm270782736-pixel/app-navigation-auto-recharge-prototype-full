@@ -4,13 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Astribot Navigation UI is a React + TypeScript web interface for ROS robot SLAM mapping and autonomous navigation. It communicates with ROS backend via WebSocket (rosbridge) and supports both simulation and real robot modes.
+Astribot Navigation UI is a React + TypeScript web interface for ROS robot SLAM mapping and autonomous navigation. It communicates with ROS 2 Humble backend via WebSocket (rosbridge) and supports both simulation and real robot modes.
+
+**ROS Version**: ROS 2 Humble (LTS)
+**Message Type Format**: ROS2 style (e.g., `nav_msgs/msg/OccupancyGrid` for topics, `std_srvs/srv/Trigger` for services)
 
 ## Common Commands
 
 ### Development
 ```bash
-npm run dev          # Start dev server on port 3000
+npm run dev          # Start dev server on port 3500
 npm run build        # TypeScript compile + Vite build to dist/
 npm run preview      # Preview production build on port 4173
 npm run lint         # ESLint check
@@ -18,7 +21,7 @@ npm run lint         # ESLint check
 
 ### Quick Start Scripts
 ```bash
-./start-sim.sh       # Simulation mode: mock ROS Bridge (9090) + HTTP API (8080) + frontend (4173)
+./start-sim.sh       # Simulation mode: mock ROS Bridge (9090) + HTTP API (8080) + frontend (3500)
 ./start-real.sh      # Real robot mode: requires actual ROS environment
 ```
 
@@ -38,7 +41,22 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
            ↓
     ROSLIB (WebSocket to rosbridge_server on port 9090)
            ↓
-    ROS Backend (SLAM, move_base, AMCL, hardware drivers)
+    ROS 2 Humble Backend (SLAM, Nav2, AMCL, hardware drivers)
+```
+
+### ROS2 Message Type Configuration
+
+**Config file**: `src/config/ros2MessageTypes.ts`
+
+Centralizes all ROS2 message type strings:
+- Topics: `nav_msgs/msg/OccupancyGrid`, `nav_msgs/msg/Odometry`, etc.
+- Services: `std_srvs/srv/Trigger`, `localization_msgs/srv/ApplyMap`, etc.
+- Actions: `astribot_msgs/action/MoveChassis`
+
+**Usage pattern**:
+```typescript
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
+rosService.subscribeTopic('/map', ROS2_MESSAGE_TYPES.OCCUPANCY_GRID, callback);
 ```
 
 ### Key Service Layers
@@ -227,6 +245,9 @@ The `mock_rosbridge.py` implements:
 - `src/services/ros.ts` - ROS communication singleton with event emitter pattern
 - `src/services/storage.ts` - Map storage with HTTP + localStorage fallback
 - `src/contexts/ROSContext.tsx` - Connection state management provider
+
+**ROS2 Configuration**
+- `src/config/ros2MessageTypes.ts` - Centralized ROS2 message type constants
 
 **Task System Core**
 - `src/types/task.ts` - 400+ lines defining 15+ extensible task types

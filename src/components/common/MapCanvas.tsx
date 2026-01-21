@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 
@@ -133,7 +134,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/loc_high_freq',
-      'nav_msgs/Odometry',
+      ROS2_MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;

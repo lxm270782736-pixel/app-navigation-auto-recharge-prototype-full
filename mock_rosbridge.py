@@ -14,6 +14,18 @@ import os
 from pathlib import Path
 from aiohttp import web
 
+
+def normalize_message_type(msg_type: str) -> str:
+    """
+    Normalize ROS2 message types to internal format.
+    ROS2: 'nav_msgs/msg/OccupancyGrid' -> 'nav_msgs/OccupancyGrid'
+    ROS2: 'std_srvs/srv/Trigger' -> 'std_srvs/Trigger'
+    ROS2: 'astribot_msgs/action/MoveChassis' -> 'astribot_msgs/MoveChassis'
+    """
+    if msg_type is None:
+        return None
+    return msg_type.replace('/msg/', '/').replace('/srv/', '/').replace('/action/', '/')
+
 # 地图存储目录
 MAPS_STORAGE_DIR = Path(__file__).parent / "mock_saved_maps"
 MAPS_STORAGE_DIR.mkdir(exist_ok=True)
@@ -271,8 +283,10 @@ class MockROSBridge:
         """处理话题订阅"""
         topic = data.get("topic")
         msg_type = data.get("type")
+        # Normalize ROS2 message types to internal format
+        msg_type_normalized = normalize_message_type(msg_type)
 
-        print(f"订阅话题: {topic} ({msg_type})")
+        print(f"订阅话题: {topic} ({msg_type} -> {msg_type_normalized})")
 
         if topic not in self.subscriptions:
             self.subscriptions[topic] = set()
@@ -374,10 +388,12 @@ class MockROSBridge:
         """处理服务调用"""
         service = data.get("service")
         service_type = data.get("type")
+        # Normalize ROS2 service types to internal format
+        service_type_normalized = normalize_message_type(service_type)
         args = data.get("args", {})
         call_id = data.get("id")
 
-        print(f"服务调用: {service} ({service_type})")
+        print(f"服务调用: {service} ({service_type} -> {service_type_normalized})")
 
         response = {"op": "service_response", "id": call_id, "values": {}}
 
@@ -1294,10 +1310,12 @@ class MockROSBridge:
         """处理导航 Action Goal (通过 send_action_goal 消息)"""
         action = data.get("action")
         action_type = data.get("type")
+        # Normalize ROS2 action types to internal format
+        action_type_normalized = normalize_message_type(action_type)
         goal = data.get("goal", {})
         action_id = data.get("id", "")
 
-        print(f"📥 收到 Action Goal (send_action_goal): {action} ({action_type})")
+        print(f"📥 收到 Action Goal (send_action_goal): {action} ({action_type} -> {action_type_normalized})")
         print(f"   Action ID: {action_id}")
         print(f"   完整 goal 数据: {goal}")
         print(f"   目标位姿: {goal.get('target_pose', {})}")

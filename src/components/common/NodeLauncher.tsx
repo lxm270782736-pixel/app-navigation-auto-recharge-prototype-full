@@ -9,6 +9,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 
@@ -38,7 +39,7 @@ export const NodeLauncher: React.FC = () => {
     // 订阅SLAM状态
     const unsubscribeSlam = rosService.subscribeTopic<{ data: boolean }>(
       '/slam/status',
-      'std_msgs/Bool',
+      ROS2_MESSAGE_TYPES.BOOL,
       (msg) => {
         setNodes((prevNodes) =>
           prevNodes.map((node) =>
@@ -51,7 +52,7 @@ export const NodeLauncher: React.FC = () => {
     // 订阅导航状态
     const unsubscribeNav = rosService.subscribeTopic<{ data: boolean }>(
       '/navigation/status',
-      'std_msgs/Bool',
+      ROS2_MESSAGE_TYPES.BOOL,
       (msg) => {
         setNodes((prevNodes) =>
           prevNodes.map((node) =>
@@ -87,7 +88,7 @@ export const NodeLauncher: React.FC = () => {
 
       const result = await rosService.callService<{}, { success: boolean; message: string }>(
         serviceMap[nodeName],
-        'std_srvs/Trigger',
+        ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
 
@@ -124,7 +125,7 @@ export const NodeLauncher: React.FC = () => {
       try {
         const slamResult = await rosService.callService<{}, { success: boolean; message: string }>(
           '/system/start_slam_node',
-          'std_srvs/Trigger',
+          ROS2_MESSAGE_TYPES.TRIGGER,
           {}
         );
 
@@ -145,7 +146,7 @@ export const NodeLauncher: React.FC = () => {
       try {
         const navResult = await rosService.callService<{}, { success: boolean; message: string }>(
           '/system/start_navigation_node',
-          'std_srvs/Trigger',
+          ROS2_MESSAGE_TYPES.TRIGGER,
           {}
         );
 

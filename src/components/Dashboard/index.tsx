@@ -13,6 +13,7 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
+import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose } from '@/types';
@@ -34,7 +35,7 @@ export const Dashboard: React.FC = () => {
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/loc_high_freq',
-      'nav_msgs/Odometry',
+      ROS2_MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
@@ -85,7 +86,7 @@ export const Dashboard: React.FC = () => {
 
     const unsubscribe = rosService.subscribeTopic<any>(
       '/cmd_vel',
-      'geometry_msgs/Twist',
+      ROS2_MESSAGE_TYPES.TWIST,
       (twistMsg) => {
         setVelocity({
           linear: twistMsg.linear.x,

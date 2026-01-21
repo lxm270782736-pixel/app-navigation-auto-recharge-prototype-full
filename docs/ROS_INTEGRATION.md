@@ -1,6 +1,6 @@
-# ROS后端集成指南
+# ROS 2后端集成指南
 
-本文档详细说明如何配置ROS 1后端与导航UI系统集成。
+本文档详细说明如何配置ROS 2 Humble后端与导航UI系统集成。
 
 ## 目录
 
@@ -13,9 +13,9 @@
 
 ## 系统要求
 
-- **ROS版本**: ROS 1 Melodic/Noetic
-- **操作系统**: Ubuntu 18.04/20.04
-- **Python**: 2.7 (Melodic) 或 3.8+ (Noetic)
+- **ROS版本**: ROS 2 Humble (LTS)
+- **操作系统**: Ubuntu 22.04
+- **Python**: 3.10+
 
 ## ROS包依赖
 
@@ -23,25 +23,24 @@
 
 ```bash
 # ROS Bridge - WebSocket通信
-sudo apt-get install ros-$ROS_DISTRO-rosbridge-suite
+sudo apt-get install ros-humble-rosbridge-suite
 
 # SLAM (选择其一)
-sudo apt-get install ros-$ROS_DISTRO-gmapping           # GMapping
-sudo apt-get install ros-$ROS_DISTRO-cartographer-ros   # Cartographer
-sudo apt-get install ros-$ROS_DISTRO-slam-toolbox       # SLAM Toolbox
+sudo apt-get install ros-humble-slam-toolbox       # SLAM Toolbox (推荐)
+sudo apt-get install ros-humble-cartographer-ros   # Cartographer
 
-# 导航
-sudo apt-get install ros-$ROS_DISTRO-navigation
-sudo apt-get install ros-$ROS_DISTRO-amcl
+# 导航 (Nav2)
+sudo apt-get install ros-humble-navigation2
+sudo apt-get install ros-humble-nav2-bringup
 
 # 地图服务器
-sudo apt-get install ros-$ROS_DISTRO-map-server
+sudo apt-get install ros-humble-nav2-map-server
 
 # TF变换
-sudo apt-get install ros-$ROS_DISTRO-tf2-ros
+sudo apt-get install ros-humble-tf2-ros
 
 # 其他工具
-sudo apt-get install ros-$ROS_DISTRO-robot-state-publisher
+sudo apt-get install ros-humble-robot-state-publisher
 ```
 
 ## ROS话题和服务
@@ -52,7 +51,7 @@ sudo apt-get install ros-$ROS_DISTRO-robot-state-publisher
 
 ```yaml
 话题名: /map
-消息类型: nav_msgs/OccupancyGrid
+消息类型: nav_msgs/msg/OccupancyGrid
 频率: ~1Hz
 用途: 实时显示建图进度或已加载的地图
 ```
@@ -74,17 +73,17 @@ data: [...]  # -1=未知, 0=空闲, 100=占据
 #### 2. 机器人里程计位姿
 
 ```yaml
-话题名: /odom
-消息类型: nav_msgs/Odometry
+话题名: /loc_high_freq
+消息类型: nav_msgs/msg/Odometry
 频率: ~10Hz
-用途: 显示机器人当前位置（未校准）
+用途: 显示机器人当前位置
 ```
 
 #### 3. 机器人定位位姿
 
 ```yaml
 话题名: /amcl_pose
-消息类型: geometry_msgs/PoseWithCovarianceStamped
+消息类型: geometry_msgs/msg/PoseWithCovarianceStamped
 频率: ~10Hz
 用途: 显示机器人当前位置（AMCL校准后）
 ```
@@ -93,7 +92,7 @@ data: [...]  # -1=未知, 0=空闲, 100=占据
 
 ```yaml
 话题名: /localization/status
-消息类型: std_msgs/String
+消息类型: std_msgs/msg/String
 频率: ~1Hz
 用途: 实时显示定位服务状态信息
 ```
@@ -104,7 +103,7 @@ data: [...]  # -1=未知, 0=空闲, 100=占据
 
 ```yaml
 话题名: /initialpose
-消息类型: geometry_msgs/PoseWithCovarianceStamped
+消息类型: geometry_msgs/msg/PoseWithCovarianceStamped
 用途: 设置机器人初始位姿（用于AMCL定位）
 ```
 
@@ -112,7 +111,7 @@ data: [...]  # -1=未知, 0=空闲, 100=占据
 
 #### 定位模式控制服务
 
-所有服务使用 `std_srvs/Trigger` 类型，返回格式：
+所有服务使用 `std_srvs/srv/Trigger` 类型，返回格式：
 ```
 success: bool
 message: string
@@ -152,7 +151,7 @@ message: string
 
 ```yaml
 Action名: /move_chassis_to_server
-Action类型: move_base_msgs/MoveBaseAction (或自定义Action)
+Action类型: astribot_msgs/action/MoveChassis
 用途: 发送导航目标（支持附加任务）
 ```
 
@@ -610,73 +609,120 @@ if __name__ == '__main__':
 
 ## 启动文件配置
 
-### 1. 主启动文件 (astribot_navigation.launch)
+### 1. 主启动文件 (astribot_navigation.launch.py)
 
-```xml
-<?xml version="1.0"?>
-<launch>
-  <!-- ROS Bridge WebSocket -->
-  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
-    <arg name="port" value="9090"/>
-  </include>
+ROS 2使用Python格式的launch文件:
 
-  <!-- 定位控制节点 -->
-  <node name="localization_controller" pkg="your_package" type="localization_controller.py" output="screen">
-    <param name="maps_directory" value="$(env HOME)/astribot_maps"/>
-  </node>
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
+import os
 
-  <!-- 遥控器控制节点 -->
-  <node name="joystick_controller" pkg="your_package" type="joystick_controller.py" output="screen"/>
+def generate_launch_description():
+    # ROS Bridge
+    rosbridge_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            os.path.join(get_package_share_directory('rosbridge_server'),
+                        'launch', 'rosbridge_websocket_launch.xml')
+        ]),
+        launch_arguments={'port': '9090'}.items()
+    )
 
-  <!-- 任务执行节点 -->
-  <node name="navigation_task_executor" pkg="your_package" type="task_executor.py" output="screen"/>
+    # 定位控制节点
+    localization_controller = Node(
+        package='your_package',
+        executable='localization_controller.py',
+        name='localization_controller',
+        output='screen',
+        parameters=[{'maps_directory': os.path.expanduser('~/astribot_maps')}]
+    )
 
-  <!-- 导航栈 (move_base) -->
-  <include file="$(find your_robot_navigation)/launch/move_base.launch"/>
+    # 任务执行节点
+    navigation_task_executor = Node(
+        package='your_package',
+        executable='task_executor.py',
+        name='navigation_task_executor',
+        output='screen'
+    )
 
-</launch>
+    # Nav2 (如果需要)
+    nav2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            os.path.join(get_package_share_directory('nav2_bringup'),
+                        'launch', 'navigation_launch.py')
+        ])
+    )
+
+    return LaunchDescription([
+        rosbridge_launch,
+        localization_controller,
+        navigation_task_executor,
+        nav2_launch
+    ])
 ```
 
-### 2. SLAM启动文件 (gmapping.launch)
+### 2. SLAM启动文件 (slam_toolbox.launch.py)
 
-```xml
-<?xml version="1.0"?>
-<launch>
-  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
-    <param name="base_frame" value="base_link"/>
-    <param name="odom_frame" value="odom"/>
-    <param name="map_frame" value="map"/>
-    <param name="map_update_interval" value="1.0"/>
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
 
-    <param name="maxUrange" value="5.0"/>
-    <param name="maxRange" value="6.0"/>
-    <param name="delta" value="0.05"/>
-  </node>
-</launch>
+def generate_launch_description():
+    slam_params_file = os.path.join(
+        get_package_share_directory('your_package'),
+        'config',
+        'mapper_params_online_async.yaml'
+    )
+
+    return LaunchDescription([
+        Node(
+            package='slam_toolbox',
+            executable='async_slam_toolbox_node',
+            name='slam_toolbox',
+            output='screen',
+            parameters=[slam_params_file, {'use_sim_time': False}]
+        )
+    ])
 ```
 
-### 3. AMCL定位启动文件 (amcl.launch)
+### 3. AMCL定位启动文件 (amcl.launch.py)
 
-```xml
-<?xml version="1.0"?>
-<launch>
-  <arg name="global_localization" default="false"/>
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 
-  <node pkg="amcl" type="amcl" name="amcl" output="screen">
-    <param name="odom_frame_id" value="odom"/>
-    <param name="base_frame_id" value="base_link"/>
-    <param name="global_frame_id" value="map"/>
+def generate_launch_description():
+    global_localization = LaunchConfiguration('global_localization', default='false')
 
-    <!-- 粒子滤波参数 -->
-    <param name="min_particles" value="500"/>
-    <param name="max_particles" value="2000"/>
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'global_localization',
+            default_value='false',
+            description='Whether to use global localization'
+        ),
 
-    <!-- 全局定位 -->
-    <param name="initial_pose_x" value="0.0" unless="$(arg global_localization)"/>
-    <param name="initial_pose_y" value="0.0" unless="$(arg global_localization)"/>
-    <param name="global_localization" value="$(arg global_localization)"/>
-  </node>
-</launch>
+        Node(
+            package='nav2_amcl',
+            executable='amcl',
+            name='amcl',
+            output='screen',
+            parameters=[{
+                'odom_frame_id': 'odom',
+                'base_frame_id': 'base_link',
+                'global_frame_id': 'map',
+                'min_particles': 500,
+                'max_particles': 2000,
+                'global_localization': global_localization
+            }]
+        )
+    ])
 ```
 
 ## 测试和调试
@@ -685,7 +731,7 @@ if __name__ == '__main__':
 
 ```bash
 # 启动rosbridge
-roslaunch rosbridge_server rosbridge_websocket.launch
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 
 # 测试WebSocket连接
 wscat -c ws://localhost:9090
@@ -695,52 +741,52 @@ wscat -c ws://localhost:9090
 
 ```bash
 # 启动建图
-rosservice call /localization/start_mapping "{}"
+ros2 service call /localization/start_mapping std_srvs/srv/Trigger "{}"
 
 # 查看状态
-rostopic echo /localization/status
+ros2 topic echo /localization/status
 
 # 停止建图
-rosservice call /localization/stop "{}"
+ros2 service call /localization/stop std_srvs/srv/Trigger "{}"
 
 # 列出地图
-rosservice call /localization/list_maps "{}"
+ros2 service call /localization/list_maps localization_msgs/srv/ListMaps "{}"
 ```
 
 ### 3. 测试遥控器
 
 ```bash
 # 启动遥控器
-rosservice call /joystick/start "{}"
+ros2 service call /joystick/start std_srvs/srv/Trigger "{}"
 
 # 停止遥控器
-rosservice call /joystick/stop "{}"
+ros2 service call /joystick/stop std_srvs/srv/Trigger "{}"
 ```
 
 ### 4. 测试导航Action
 
 ```bash
-# 使用rostopic发送导航目标
-rostopic pub /move_chassis_to_server/goal move_base_msgs/MoveBaseActionGoal ...
+# 使用ros2 action发送导航目标
+ros2 action send_goal /move_chassis_to_server astribot_msgs/action/MoveChassis "{target_pose: {...}}"
 
 # 查看导航反馈
-rostopic echo /move_chassis_to_server/feedback
+ros2 topic echo /move_chassis_to_server/_action/feedback
 
 # 查看导航结果
-rostopic echo /move_chassis_to_server/result
+ros2 topic echo /move_chassis_to_server/_action/status
 ```
 
 ### 5. 调试工具
 
 ```bash
 # 查看话题列表
-rostopic list
+ros2 topic list
 
 # 查看节点列表
-rosnode list
+ros2 node list
 
 # 查看TF树
-rosrun rqt_tf_tree rqt_tf_tree
+ros2 run tf2_tools view_frames
 
 # 图形化调试
 rqt
@@ -751,45 +797,42 @@ rqt
 ### 1. rosbridge连接失败
 
 - 检查防火墙: `sudo ufw allow 9090`
-- 检查rosbridge是否运行: `rosnode list | grep rosbridge`
+- 检查rosbridge是否运行: `ros2 node list | grep rosbridge`
 - 检查端口占用: `netstat -tlnp | grep 9090`
 
 ### 2. 地图数据不更新
 
-- 确认SLAM节点发布 `/map` 话题: `rostopic list | grep map`
-- 检查话题频率: `rostopic hz /map`
-- 检查地图数据: `rostopic echo /map -n 1`
+- 确认SLAM节点发布 `/map` 话题: `ros2 topic list | grep map`
+- 检查话题频率: `ros2 topic hz /map`
+- 检查地图数据: `ros2 topic echo /map --once`
 
 ### 3. 定位服务调用失败
 
-- 确认服务存在: `rosservice list | grep localization`
-- 测试服务调用: `rosservice call /localization/list_maps "{}"`
-- 查看节点日志: `rosnode info /localization_controller`
+- 确认服务存在: `ros2 service list | grep localization`
+- 测试服务调用: `ros2 service call /localization/list_maps localization_msgs/srv/ListMaps "{}"`
+- 查看节点日志: `ros2 node info /localization_controller`
 
 ### 4. 导航无法启动
 
-- 确认move_base节点运行: `rosnode info /move_base`
-- 检查TF树完整性: `rosrun tf view_frames`
-- 查看costmap: `rostopic echo /move_base/global_costmap/costmap`
+- 确认Nav2节点运行: `ros2 node list | grep nav2`
+- 检查TF树完整性: `ros2 run tf2_tools view_frames`
+- 查看costmap: `ros2 topic echo /global_costmap/costmap`
 
 ### 5. 定位不准确
 
 - 调整AMCL参数（粒子数、初始协方差等）
-- 确保激光雷达数据正常: `rostopic echo /scan`
-- 检查里程计数据: `rostopic echo /odom`
+- 确保激光雷达数据正常: `ros2 topic echo /scan`
+- 检查里程计数据: `ros2 topic echo /odom`
 
 ## 架构说明
 
-### 服务架构变更
+### 服务架构
 
-**旧版架构** (已废弃):
-- `/start_mapping`, `/stop_mapping`, `/save_map`
-- 地图存储在本地文件系统
-
-**新版架构** (当前):
+**当前架构** (ROS 2):
 - `/localization/*` 系列服务统一管理
 - 地图通过ROS服务存储和加载
 - 支持远程地图管理
+- 使用Nav2进行导航
 
 ### 地图存储策略
 
@@ -801,9 +844,9 @@ rqt
 
 ## 参考资料
 
-- [ROS Navigation Stack](http://wiki.ros.org/navigation)
-- [rosbridge_suite](http://wiki.ros.org/rosbridge_suite)
-- [gmapping](http://wiki.ros.org/gmapping)
-- [move_base](http://wiki.ros.org/move_base)
+- [ROS 2 Humble Documentation](https://docs.ros.org/en/humble/)
+- [Nav2 (Navigation2)](https://navigation.ros.org/)
+- [rosbridge_suite](https://github.com/RobotWebTools/rosbridge_suite)
+- [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox)
 - [Localization Services API](./LOCALIZATION_SERVICES.md)
 - [Navigation Events](./NAVIGATION_EVENTS.md)
