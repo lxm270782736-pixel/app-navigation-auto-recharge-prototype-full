@@ -1220,8 +1220,10 @@ class MockROSBridge:
                 if websocket in self.subscriptions.get("/navigation/status", set()):
                     await websocket.send(json.dumps(message))
                 else:
+                    print("🔄 导航状态订阅已取消，停止发布")
                     break
             except:
+                print("🔄 导航状态发布异常")
                 break
             await asyncio.sleep(2.0)  # 每2秒发布一次
         print("⏹ 停止发布导航状态")
@@ -1390,12 +1392,14 @@ class MockROSBridge:
                 }
             }
         }
+        await self._send_message_to_all_clients(result_message)
 
-        try:
-            await websocket.send(json.dumps(result_message))
-            print(f"   ✅ 取消结果已发送到 /move_chassis_to_server/result 话题")
-        except:
-            pass
+    async def _send_message_to_all_clients(self, message: dict):
+        for websocket in self.clients:
+            try:
+                await websocket.send(json.dumps(message))
+            except:
+                continue
 
     async def simulate_navigation(self, websocket, action_id):
         """模拟导航过程"""
@@ -1484,12 +1488,7 @@ class MockROSBridge:
                     }
                 }
 
-                try:
-                    await websocket.send(json.dumps(feedback_message))
-                    print(f"   导航进度: {progress*100:.0f}%, 剩余距离: {remaining_distance:.2f}m")
-                except:
-                    break
-
+                await self._send_message_to_all_clients(feedback_message)
                 await asyncio.sleep(navigation_duration / steps)
 
             # 检查是否被取消
@@ -1510,6 +1509,7 @@ class MockROSBridge:
 
             # 导航成功
             self.navigation_active = False
+            print(f"   🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉 导航任务成功完成!  ({goal_x:.2f}, {goal_y:.2f})")
 
             # 发送成功结果（通过话题发布，使用真实 ROS 格式）
             result_message = {
@@ -1543,7 +1543,7 @@ class MockROSBridge:
             }
 
             try:
-                await websocket.send(json.dumps(result_message))
+                await self._send_message_to_all_clients(result_message)
                 print(f"   ✅ 导航结果已发送: status={result_message['msg']['status']['status']}, result={result_message['msg']['result']['result']}")
             except Exception as e:
                 print(f"   ❌ 发送导航结果失败: {e}")
@@ -1576,7 +1576,7 @@ class MockROSBridge:
                         }
                     }
                 }
-                await websocket.send(json.dumps(result_message))
+                await self._send_message_to_all_clients(result_message)
                 print(f"   ✅ 导航失败结果已发送到 /move_chassis_to_server/result 话题")
             except:
                 pass
@@ -1648,7 +1648,7 @@ class MockROSBridge:
             }
 
             try:
-                await websocket.send(json.dumps(feedback_message))
+                await self._send_message_to_all_clients(feedback_message)
             except:
                 pass
 
@@ -1815,7 +1815,7 @@ class MockROSBridge:
         }
 
         try:
-            await websocket.send(json.dumps(status_message))
+            await self._send_message_to_all_clients(status_message)
             print(f"   📊 发送状态: {status_names.get(status, 'UNKNOWN')}")
         except Exception as e:
             print(f"   ❌ 发送状态失败: {e}")
@@ -1823,6 +1823,11 @@ class MockROSBridge:
 # 地图存储目录
 MAPS_DIR = Path(__file__).parent / "saved_maps"
 MAPS_DIR.mkdir(exist_ok=True)
+
+# 导航配置存储目录
+NAV_CONFIG_DIR = Path(__file__).parent / "saved_nav_configs"
+NAV_CONFIG_DIR.mkdir(exist_ok=True)
+NAV_CONFIG_FILE = NAV_CONFIG_DIR / "navigation_config.json"
 
 
 class MapStorageHandler:
@@ -1898,16 +1903,69 @@ class MapStorageHandler:
             return web.json_response({'error': str(e)}, status=500)
 
 
+class NavigationConfigHandler:
+    """HTTP API 处理导航配置存储"""
+
+    async def get_config(self, request):
+        """获取导航配置"""
+        try:
+            if not NAV_CONFIG_FILE.exists():
+                return web.json_response({'success': False, 'message': '配置不存在'}, status=404)
+
+            with open(NAV_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return web.json_response({'success': True, 'data': config})
+        except Exception as e:
+            print(f"✗ 读取导航配置失败: {e}")
+            return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+    async def save_config(self, request):
+        """保存导航配置"""
+        try:
+            data = await request.json()
+            config = data.get('config', {})
+
+            # 保存配置到文件
+            with open(NAV_CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+
+            print(f"✓ 导航配置已保存到: {NAV_CONFIG_FILE}")
+            return web.json_response({'success': True, 'message': '导航配置已保存'})
+        except Exception as e:
+            print(f"✗ 保存导航配置失败: {e}")
+            return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+    async def delete_config(self, request):
+        """删除导航配置"""
+        try:
+            if NAV_CONFIG_FILE.exists():
+                os.remove(NAV_CONFIG_FILE)
+                print(f"✓ 导航配置已删除")
+                return web.json_response({'success': True, 'message': '导航配置已删除'})
+            else:
+                return web.json_response({'success': False, 'message': '配置不存在'}, status=404)
+        except Exception as e:
+            print(f"✗ 删除导航配置失败: {e}")
+            return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
+
 async def create_http_server():
     """创建 HTTP API 服务器"""
     app = web.Application()
-    handler = MapStorageHandler()
+    map_handler = MapStorageHandler()
+    nav_config_handler = NavigationConfigHandler()
 
-    # 配置路由
-    app.router.add_get('/api/maps', handler.get_all_maps)
-    app.router.add_get('/api/maps/{map_id}', handler.get_map)
-    app.router.add_post('/api/maps', handler.save_map)
-    app.router.add_delete('/api/maps/{map_id}', handler.delete_map)
+    # 配置地图存储路由
+    app.router.add_get('/api/maps', map_handler.get_all_maps)
+    app.router.add_get('/api/maps/{map_id}', map_handler.get_map)
+    app.router.add_post('/api/maps', map_handler.save_map)
+    app.router.add_delete('/api/maps/{map_id}', map_handler.delete_map)
+
+    # 配置导航配置存储路由
+    app.router.add_get('/api/navigation-config', nav_config_handler.get_config)
+    app.router.add_post('/api/navigation-config', nav_config_handler.save_config)
+    app.router.add_delete('/api/navigation-config', nav_config_handler.delete_config)
 
     # 启用 CORS
     async def cors_middleware(app, handler):
@@ -1988,9 +2046,13 @@ async def main():
     print("  GET    /api/maps/{id}     - 获取单个地图")
     print("  POST   /api/maps          - 保存地图")
     print("  DELETE /api/maps/{id}     - 删除地图")
+    print("  GET    /api/navigation-config     - 获取导航配置")
+    print("  POST   /api/navigation-config    - 保存导航配置")
+    print("  DELETE /api/navigation-config    - 删除导航配置")
     print()
     print(f"Mock地图存储位置: {MAPS_STORAGE_DIR.absolute()}")
     print(f"HTTP地图存储位置: {MAPS_DIR.absolute()}")
+    print(f"导航配置存储位置: {NAV_CONFIG_DIR.absolute()}")
     print("=" * 60)
     print("按 Ctrl+C 停止服务器")
     print()

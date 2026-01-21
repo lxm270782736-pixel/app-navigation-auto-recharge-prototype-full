@@ -164,7 +164,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     deaccelaration_ratio: 0.5,
   });
 
-  // 初始化时加载保存的导航配置并监听反馈话题
+  // 初始化时加载保存的导航配置并监听导航事件
   useEffect(() => {
     let isMounted = true;
 
@@ -197,58 +197,37 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     };
 
     initializeConfig();
-
-    // 2. 订阅 /move_chassis_to_server/feedback 话题，检测是否有正在执行的action
-    let unsubscribe: (() => void) | null = null;
-    try {
-      unsubscribe = rosService.subscribeTopic<any>(
-        "/move_chassis_to_server/feedback",
-        "astribot_msgs/MoveChassisToFeedback",
-        (feedback: any) => {
-          console.debug("[NavigationControl] 收到action反馈:", feedback);
-          // 只要有反馈消息，说明正在有action在执行
-          setHasActiveAction(true);
-
-          // 通过 rosService 转发 feedback 事件，这样刷新后的反馈也能被 Navigation 组件接收
-          // 提取有用的反馈信息
-          const feedbackData = {
-            distance_to_goal: feedback.feedback.distance_to_goal,
-            current_pose: feedback.feedback.current_pose,
-            current_task: feedback.feedback.current_task,
-            progress: feedback.feedback.progress,
-            eta: feedback.feedback.eta,
-            raw: feedback,
-          };
-          rosService.emit('navigation-feedback', feedbackData);
-          console.debug("[NavigationControl] 转发feedback事件到rosService:", feedbackData);
-        }
-      );
-    } catch (error) {
-      console.warn(
-        "[NavigationControl] 订阅feedback话题失败，可能ROS未连接:",
-        error
-      );
-    }
-
-    return () => {
-      isMounted = false;
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
   }, []);
 
 
-  // 监听导航完成事件，清除action执行标记
+  // 监听导航事件（feedback、status、result），追踪action执行状态
   useEffect(() => {
+    // 监听导航反馈（feedback），说明有action在执行
+    const handleNavigationFeedback = (feedback: any) => {
+      console.debug("[NavigationControl] 收到导航反馈，标记action正在执行:", feedback);
+      // 只要有反馈消息，说明正在有action在执行
+      setHasActiveAction(true);
+    };
+
+    // 监听导航状态（status）
+    const handleNavigationStatus = (status: any) => {
+      console.debug("[NavigationControl] 导航状态:", status);
+      // 状态更新，可以在需要时使用
+    };
+
+    // 监听导航完成事件（result），清除action执行标记
     const handleNavigationResult = (result: any) => {
       console.log("[NavigationControl] 导航完成，清除action标记:", result);
       setHasActiveAction(false);
     };
 
+    rosService.on("navigation-feedback", handleNavigationFeedback);
+    rosService.on("navigation-status", handleNavigationStatus);
     rosService.on("navigation-result", handleNavigationResult);
 
     return () => {
+      rosService.off("navigation-feedback", handleNavigationFeedback);
+      rosService.off("navigation-status", handleNavigationStatus);
       rosService.off("navigation-result", handleNavigationResult);
     };
   }, []);

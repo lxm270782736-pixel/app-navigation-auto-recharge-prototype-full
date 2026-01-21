@@ -132,14 +132,13 @@ export const Navigation: React.FC = () => {
                 });
 
                 // 标记已恢复，并设置为等待模式
-                // 先不更新 currentWaypointIndex，等待判断是否需要发送目标点
                 if (!navigationResumedRef.current) {
                   navigationResumedRef.current = true;
                   hasReceivedFeedbackRef.current = false; // 重置 feedback 标记
                   waitingForCurrentActionRef.current = true; // 设置等待模式
                   console.log('[Navigation] 多点巡航恢复模式：等待2秒判断是否有action执行...');
 
-                  // 设置超时：如果2秒内没有收到feedback，说明没有action执行，发送目标点
+                  // 设置超时：判断是否需要重新发送导航指令
                   const waitTimer = setTimeout(() => {
                     console.log('[Navigation] 2秒超时，feedback更新情况:', {
                       hasReceivedFeedback: hasReceivedFeedbackRef.current,
@@ -147,24 +146,18 @@ export const Navigation: React.FC = () => {
                       waitingForCurrentAction: waitingForCurrentActionRef.current
                     });
 
-                    if (!hasReceivedFeedbackRef.current && navigationResumedRef.current) {
-                      // 2秒内没有feedback更新，说明没有action在执行，需要发送目标点
-                      console.log('[Navigation] 2秒内未收到feedback，没有action在执行，发送目标点');
-                      // 先更新当前路径点索引
-                      setCurrentWaypointIndex(restoredIndex);
-                      setGoalPose(restoredWaypoints[restoredIndex].pose);
+                    // 无论是否收到过 feedback，都需要重新发送目标点
+                    // 原因：如果 action 已经完成，result 事件可能在刷新前已发送，不会再有新的 result
+                    // 因此需要主动重新发送，以确保有活跃的 action
+                    console.log('[Navigation] 重新发送导航指令，确保有活跃的 action');
+                    setCurrentWaypointIndex(restoredIndex);
+                    setGoalPose(restoredWaypoints[restoredIndex].pose);
 
-                      // 延迟100ms后发送导航指令，确保状态已更新
-                      const sendTimer = setTimeout(() => {
-                        navigateToWaypoint(restoredIndex);
-                      }, 100);
-                      activeTimersRef.current.push(sendTimer);
-                    } else if (hasReceivedFeedbackRef.current) {
-                      // 2秒内有feedback更新，说明已经有action在执行
-                      console.log('[Navigation] 检测到有action在执行，使用当前状态继续');
-                      setCurrentWaypointIndex(restoredIndex);
-                      setGoalPose(restoredWaypoints[restoredIndex].pose);
-                    }
+                    // 延迟100ms后发送导航指令，确保状态已更新
+                    const sendTimer = setTimeout(() => {
+                      navigateToWaypoint(restoredIndex);
+                    }, 100);
+                    activeTimersRef.current.push(sendTimer);
 
                     waitingForCurrentActionRef.current = false; // 退出等待模式
                   }, 2000);
