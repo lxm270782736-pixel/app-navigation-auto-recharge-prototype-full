@@ -43,7 +43,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       'std_msgs/Int32',
       (msg) => {
         const modeValue = msg.data;
-        console.log('[定位控制] 收到后端模式状态:', modeValue);
+        console.debug('[定位控制] 收到后端模式状态:', modeValue);
 
         // 映射后端模式值到前端状态
         // 0: obstacle -> idle (暂时映射，前端没有obstacle模式显示)
@@ -55,7 +55,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
           setStatusMessage('未启动');
         } else if (modeValue === 2) {
           // 收到定位模式状态
-          console.log('[定位控制] 定位模式已启动');
+          console.debug('[定位控制] 定位模式已启动');
 
           // 定位模式 - 根据上次选择的类型设置状态
           if (lastLocalizationType === 'manual') {
@@ -67,7 +67,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
           }
         } else if (modeValue === 1) {
           // 建图模式 - 不在此组件处理
-          console.log('[定位控制] 后端处于建图模式');
+          console.debug('[定位控制] 后端处于建图模式');
         } else if (modeValue === 0) {
           // 避障模式 - 暂时映射到 idle
           setCurrentMode('idle');

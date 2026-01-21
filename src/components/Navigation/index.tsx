@@ -15,6 +15,7 @@ import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
 import { ChassisControl } from '@/components/common/ChassisControl';
 import { rosService } from '@/services/ros';
 import { mapStorageService } from '@/services/storage';
+import { navigationStorageService } from '@/services/navigationStorage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, Waypoint } from '@/types';
@@ -52,6 +53,19 @@ export const Navigation: React.FC = () => {
   const currentWaypointIndexRef = useRef(currentWaypointIndex);
   const completedWaypointsRef = useRef(completedWaypoints);
 
+  // 标记是否已经恢复了导航，防止重复恢复
+  const navigationResumedRef = useRef(false);
+
+  // 存储所有活跃的定时器，用于停止导航时清除
+  const activeTimersRef = useRef<NodeJS.Timeout[]>([]);
+
+  // 追踪是否收到过 feedback（用于判断是否有 action 在执行）
+  const hasReceivedFeedbackRef = useRef(false);
+
+  // Ref标记：是否正在等待当前 action 完成再继续下一个
+  // 使用 Ref 而不是 State，确保闭包中能获取最新值
+  const waitingForCurrentActionRef = useRef(false);
+
   // 路径点配置Modal
   const [waypointConfigModalVisible, setWaypointConfigModalVisible] = useState(false);
   const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);
@@ -71,6 +85,124 @@ export const Navigation: React.FC = () => {
   const [showGrid, setShowGrid] = useState(false);
   const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
 
+  // 页面加载时，恢复保存的导航配置（目标点、任务和路径点）
+  const [savedNavConfig, setSavedNavConfig] = useState<any>(null);
+
+  useEffect(() => {
+    const loadSavedNavConfig = async () => {
+      try {
+        const savedConfig = await navigationStorageService.loadNavigationConfig();
+        if (savedConfig) {
+          console.log('[Navigation] 加载保存的导航配置:', savedConfig);
+          setSavedNavConfig(savedConfig);
+
+          if (savedConfig.navigationType === 'waypoint') {
+            // 多点导航：恢复路径点和当前路径点索引
+            if (savedConfig.waypoints && savedConfig.waypoints.length > 0) {
+              const restoredWaypoints = savedConfig.waypoints.map(w => ({
+                pose: w.pose,
+                tasks: w.tasks || [],
+                navigationMode: w.navigationMode || 'obstacle_avoidance',
+                actionConfig: w.actionConfig || { use_default_config: true },
+              }));
+              setWaypoints(restoredWaypoints);
+              setWaypointMode(true); // 进入多点导航模式
+
+              // 恢复当前路径点索引
+              const restoredIndex = savedConfig.currentWaypointIndex ?? -1;
+              if (restoredIndex >= 0 && restoredIndex < restoredWaypoints.length) {
+                // 先设置UI状态，但不立即发送导航指令
+                // 等待2秒判断是否已有action在执行
+                setCurrentWaypointIndex(restoredIndex);
+                setGoalPose(restoredWaypoints[restoredIndex].pose);
+                // 立即设置正在导航，确保按钮显示"停止导航"而不是灰色"开始导航"
+                setIsNavigating(true);
+                console.log(
+                  '[Navigation] 恢复多点导航配置，路径点数:',
+                  restoredWaypoints.length,
+                  '当前路径点索引:',
+                  restoredIndex,
+                  '(等待2秒判断是否需要发送目标点)'
+                );
+
+                // 显示通知
+                message.info({
+                  content: `已恢复多点巡航配置，共 ${restoredWaypoints.length} 个路径点，当前停在路径点 ${restoredIndex + 1}`,
+                  duration: 3,
+                });
+
+                // 标记已恢复，并设置为等待模式
+                // 先不更新 currentWaypointIndex，等待判断是否需要发送目标点
+                if (!navigationResumedRef.current) {
+                  navigationResumedRef.current = true;
+                  hasReceivedFeedbackRef.current = false; // 重置 feedback 标记
+                  waitingForCurrentActionRef.current = true; // 设置等待模式
+                  console.log('[Navigation] 多点巡航恢复模式：等待2秒判断是否有action执行...');
+
+                  // 设置超时：如果2秒内没有收到feedback，说明没有action执行，发送目标点
+                  const waitTimer = setTimeout(() => {
+                    console.log('[Navigation] 2秒超时，feedback更新情况:', {
+                      hasReceivedFeedback: hasReceivedFeedbackRef.current,
+                      navigationResumed: navigationResumedRef.current,
+                      waitingForCurrentAction: waitingForCurrentActionRef.current
+                    });
+
+                    if (!hasReceivedFeedbackRef.current && navigationResumedRef.current) {
+                      // 2秒内没有feedback更新，说明没有action在执行，需要发送目标点
+                      console.log('[Navigation] 2秒内未收到feedback，没有action在执行，发送目标点');
+                      // 先更新当前路径点索引
+                      setCurrentWaypointIndex(restoredIndex);
+                      setGoalPose(restoredWaypoints[restoredIndex].pose);
+
+                      // 延迟100ms后发送导航指令，确保状态已更新
+                      const sendTimer = setTimeout(() => {
+                        navigateToWaypoint(restoredIndex);
+                      }, 100);
+                      activeTimersRef.current.push(sendTimer);
+                    } else if (hasReceivedFeedbackRef.current) {
+                      // 2秒内有feedback更新，说明已经有action在执行
+                      console.log('[Navigation] 检测到有action在执行，使用当前状态继续');
+                      setCurrentWaypointIndex(restoredIndex);
+                      setGoalPose(restoredWaypoints[restoredIndex].pose);
+                    }
+
+                    waitingForCurrentActionRef.current = false; // 退出等待模式
+                  }, 2000);
+
+                  activeTimersRef.current.push(waitTimer);
+                }
+              } else {
+                console.log('[Navigation] 恢复多点导航配置，路径点数:', restoredWaypoints.length);
+
+                // 显示通知
+                message.info({
+                  content: `已恢复多点巡航配置，共 ${restoredWaypoints.length} 个路径点`,
+                  duration: 3,
+                });
+              }
+            }
+          } else if (savedConfig.navigationType === 'single') {
+            // 单点导航：恢复目标点
+            if (savedConfig.goalPose) {
+              setGoalPose(savedConfig.goalPose);
+              console.log('[Navigation] 恢复单点导航目标点:', savedConfig.goalPose);
+
+              // 显示通知
+              message.info({
+                content: '已恢复单点导航配置',
+                duration: 3,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[Navigation] 加载保存的导航配置失败:', error);
+      }
+    };
+
+    loadSavedNavConfig();
+  }, []);
+
   // 同步更新 ref 值（确保事件处理器能访问最新状态）
   useEffect(() => {
     waypointModeRef.current = waypointMode;
@@ -78,6 +210,22 @@ export const Navigation: React.FC = () => {
     currentWaypointIndexRef.current = currentWaypointIndex;
     completedWaypointsRef.current = completedWaypoints;
   }, [waypointMode, waypoints, currentWaypointIndex, completedWaypoints]);
+
+  // 自动恢复多点导航（刷新网页后继续导航）
+  // 注：该 useEffect 已在配置加载时处理，此处仅用于日志记录
+  useEffect(() => {
+    if (!savedNavConfig || navigationResumedRef.current) {
+      return;
+    }
+
+    console.log('[Navigation] 检查恢复条件:', {
+      navigationType: savedNavConfig.navigationType,
+      currentWaypointIndex: savedNavConfig.currentWaypointIndex,
+      waypointsLength: waypoints.length,
+      currentWaypointIndexState: currentWaypointIndex,
+      navigationResumed: navigationResumedRef.current,
+    });
+  }, [savedNavConfig, waypoints, currentWaypointIndex]);
 
   // 订阅实时地图数据
   useEffect(() => {
@@ -108,7 +256,7 @@ export const Navigation: React.FC = () => {
 
     // 如果已经有地图数据，不需要等待
     if (currentMap) {
-      console.log('[导航] 已检测到地图数据，无需打开地图选择');
+      console.debug('[导航] 已检测到地图数据，无需打开地图选择');
       return;
     }
 
@@ -174,8 +322,45 @@ export const Navigation: React.FC = () => {
         waypointMode: currentWaypointMode,
         currentWaypointIndex: currentIndex,
         waypointsLength: currentWaypoints.length,
-        completedCount: currentCompleted.length
+        completedCount: currentCompleted.length,
+        waitingForCurrentAction: waitingForCurrentActionRef.current,
+        hasReceivedFeedback: hasReceivedFeedbackRef.current
       });
+
+      // 如果是恢复后的等待状态，并且收到了 feedback（说明有 action 在执行），
+      // 这个 result 就是当前 action 的完成结果，继续导航下一个路径点
+      if (waitingForCurrentActionRef.current && hasReceivedFeedbackRef.current && data.success) {
+        console.log('[Navigation] 恢复模式：当前action已完成，继续导航下一个路径点');
+        waitingForCurrentActionRef.current = false; // 退出等待模式
+
+        // 标记当前路径点为已完成
+        setCompletedWaypoints([...currentCompleted, currentIndex]);
+
+        const nextIndex = currentIndex + 1;
+        if (nextIndex < currentWaypoints.length) {
+          message.success(`路径点 ${currentIndex + 1} 已到达，准备前往路径点 ${nextIndex + 1}...`);
+          const timer = setTimeout(() => {
+            if (waypointModeRef.current && waypointsRef.current.length > nextIndex) {
+              navigateToWaypoint(nextIndex);
+            }
+          }, 1000);
+          activeTimersRef.current.push(timer);
+        } else {
+          // 所有路径点已完成
+          message.success({
+            content: `🎉 巡航完成！已到达所有 ${currentWaypoints.length} 个路径点`,
+            duration: 5,
+          });
+          setIsNavigating(false);
+          setCurrentWaypointIndex(-1);
+          setNavigationStatus('');
+          setNavigationFeedback({});
+          navigationStorageService.clearNavigationConfig().catch(err =>
+            console.warn('[Navigation] 清除导航配置失败:', err)
+          );
+        }
+        return;
+      }
 
       if (data.success) {
         // 导航成功
@@ -188,9 +373,13 @@ export const Navigation: React.FC = () => {
           if (nextIndex < currentWaypoints.length) {
             // 还有下一个路径点，延迟1秒后导航到下一个
             message.success(`路径点 ${currentIndex + 1} 已到达，准备前往路径点 ${nextIndex + 1}...`);
-            setTimeout(() => {
-              navigateToWaypoint(nextIndex);
+            const timer = setTimeout(() => {
+              // 检查是否还在导航
+              if (waypointModeRef.current && waypointsRef.current.length > nextIndex) {
+                navigateToWaypoint(nextIndex);
+              }
             }, 1000);
+            activeTimersRef.current.push(timer);
           } else {
             // 所有路径点已完成
             message.success({
@@ -201,8 +390,13 @@ export const Navigation: React.FC = () => {
             setCurrentWaypointIndex(-1);
             setNavigationStatus('');
             setNavigationFeedback({});
+            // 清除保存的导航配置
+            navigationStorageService.clearNavigationConfig().catch(err =>
+              console.warn('[Navigation] 清除导航配置失败:', err)
+            );
           }
         } else {
+          console.log('[Navigation] 单点导航成功处理', currentWaypointMode, currentIndex);
           // 单点导航模式
           message.success({
             content: '导航成功！机器人已到达目标位置',
@@ -211,6 +405,10 @@ export const Navigation: React.FC = () => {
           setIsNavigating(false);
           setNavigationStatus('');
           setNavigationFeedback({});
+          // 清除保存的导航配置
+          navigationStorageService.clearNavigationConfig().catch(err =>
+            console.warn('[Navigation] 清除导航配置失败:', err)
+          );
         }
       } else {
         // 导航失败
@@ -248,12 +446,25 @@ export const Navigation: React.FC = () => {
         if (currentWaypointMode) {
           setCurrentWaypointIndex(-1);
         }
+        // 清除保存的导航配置
+        navigationStorageService.clearNavigationConfig().catch(err =>
+          console.warn('[Navigation] 清除导航配置失败:', err)
+        );
       }
     };
 
     // 监听导航反馈（进度信息）
+    // 反馈来自两个源：
+    // 1. sendNavigationGoal 中的 goalMessage.on('feedback')（新发送的导航指令）
+    // 2. NavigationControl 订阅的 ROS 话题反馈（包括刷新后已执行的导航）
     const handleNavigationFeedback = (data: any) => {
       // console.log('[Navigation] 导航反馈:', data);
+
+      // 如果在等待状态下收到 feedback，说明有 action 在执行
+      if (waitingForCurrentActionRef.current) {
+        hasReceivedFeedbackRef.current = true;
+        console.log('[Navigation] 收到feedback，检测到有action在执行，继续等待...');
+      }
 
       // 更新导航反馈状态
       setNavigationFeedback({
@@ -287,6 +498,7 @@ export const Navigation: React.FC = () => {
     rosService.on('navigation-result', handleNavigationResult);
     rosService.on('navigation-feedback', handleNavigationFeedback);
     rosService.on('navigation-status', handleNavigationStatus);
+    console.log('[Navigation] 导航事件监听已设置feedback');
 
     // console.log('[Navigation] 导航事件监听已设置');
 
@@ -468,7 +680,43 @@ export const Navigation: React.FC = () => {
     setWaypoints([]);
     setCurrentWaypointIndex(-1);
     setCompletedWaypoints([]);
+    // 重置恢复相关的标记
+    navigationResumedRef.current = false;
+    hasReceivedFeedbackRef.current = false;
+    waitingForCurrentActionRef.current = false;
     message.info('已清空所有路径点');
+  };
+
+  // 停止巡航函数（清除定时器和状态）
+  const handleStopWaypointNavigation = async () => {
+    console.log('[Navigation] 停止巡航，清除所有定时器');
+
+    // 1. 清除所有活跃的定时器
+    activeTimersRef.current.forEach(timer => clearTimeout(timer));
+    activeTimersRef.current = [];
+
+    // 2. 重置恢复相关的标记
+    navigationResumedRef.current = false;
+    hasReceivedFeedbackRef.current = false;
+    waitingForCurrentActionRef.current = false;
+
+    // 3. 取消导航
+    rosService.cancelNavigation();
+
+    // 4. 重置导航状态
+    setIsNavigating(false);
+    setCurrentWaypointIndex(-1);
+    setNavigationStatus('');
+    setNavigationFeedback({});
+
+    // 5. 清除保存的导航配置
+    try {
+      await navigationStorageService.clearNavigationConfig();
+    } catch (error) {
+      console.warn('[Navigation] 清除导航配置失败:', error);
+    }
+
+    message.info('巡航已停止');
   };
 
   // 移动路径点顺序（用于拖拽排序）
@@ -506,12 +754,21 @@ export const Navigation: React.FC = () => {
 
   // 导航到指定的路径点
   const navigateToWaypoint = async (index: number) => {
+    console.log('[Navigation] navigateToWaypoint 被调用，索引:', index);
+    console.log('[Navigation] 调用栈:', new Error().stack);
+
     // 使用 ref 获取最新的 waypoints 列表
     const currentWaypoints = waypointsRef.current;
     const currentCompleted = completedWaypointsRef.current;
 
     if (index < 0 || index >= currentWaypoints.length) {
       console.error('[导航] 无效的路径点索引:', index);
+      return;
+    }
+
+    // **重复检查：如果已经是这个路径点，就不再发送**
+    if (currentWaypointIndexRef.current === index) {
+      console.log('[导航] 已经是路径点', index, '，跳过重复发送');
       return;
     }
 
@@ -522,6 +779,27 @@ export const Navigation: React.FC = () => {
     setGoalPose(waypoint.pose);
     setCurrentWaypointIndex(index);
     setIsNavigating(true);
+    // 重置导航反馈，清除上一个路径点的进度数据
+    setNavigationFeedback({});
+    setNavigationStatus('');
+
+    // 保存多点导航配置（包括当前路径点索引）
+    // 使用非阻塞式保存，避免 await 导致的时序问题
+    navigationStorageService.saveNavigationConfig({
+      navigationType: 'waypoint', // 多点导航
+      waypoints: currentWaypoints.map(w => ({
+        pose: w.pose,
+        tasks: w.tasks || [],
+        navigationMode: w.navigationMode || 'obstacle_avoidance',
+        actionConfig: w.actionConfig || { use_default_config: true },
+      })),
+      currentWaypointIndex: index, // 保存当前路径点索引
+      timestamp: Date.now(),
+    }).then(() => {
+      console.log(`[导航] 多点导航配置已保存，当前路径点索引: ${index}`);
+    }).catch(error => {
+      console.error('[导航] 保存多点导航配置失败:', error);
+    });
 
     try {
       // 根据导航模式选择发送方式
@@ -531,7 +809,13 @@ export const Navigation: React.FC = () => {
         message.success(`路径点 ${index + 1}: 局部导航目标已发送`);
 
         // 局部导航模式没有反馈，模拟3秒后完成
-        setTimeout(() => {
+        const timer1 = setTimeout(() => {
+          // 检查是否还在导航，防止停止后仍继续执行
+          // 当停止导航时，currentWaypointIndex 会被设置为 -1
+          if (currentWaypointIndexRef.current !== index) {
+            return;
+          }
+
           // 标记完成并导航到下一个
           setCompletedWaypoints([...currentCompleted, index]);
 
@@ -540,9 +824,14 @@ export const Navigation: React.FC = () => {
           const latestWaypoints = waypointsRef.current;
           if (nextIndex < latestWaypoints.length) {
             message.success(`路径点 ${index + 1} 已到达，准备前往路径点 ${nextIndex + 1}...`);
-            setTimeout(() => {
+            const timer2 = setTimeout(() => {
+              // 再次检查是否还在导航
+              if (currentWaypointIndexRef.current < 0) {
+                return;
+              }
               navigateToWaypoint(nextIndex);
             }, 1000);
+            activeTimersRef.current.push(timer2);
           } else {
             message.success({
               content: `🎉 巡航完成！已到达所有 ${latestWaypoints.length} 个路径点`,
@@ -552,12 +841,18 @@ export const Navigation: React.FC = () => {
             setCurrentWaypointIndex(-1);
           }
         }, 3000);
+        activeTimersRef.current.push(timer1);
       } else {
         // 避障导航模式：使用Action接口
-        await rosService.sendNavigationGoal({
+        // 在自动恢复的情况下，导航可能已经在进行中
+        // 所以不使用 await，而是在后台发送，避免 Promise 无限挂起
+        rosService.sendNavigationGoal({
           pose: waypoint.pose,
           tasks: waypoint.tasks || [],
           actionConfig: waypoint.actionConfig || { use_default_config: true },
+        }).catch(error => {
+          console.error('[导航] 发送导航目标失败:', error);
+          message.error(`发送导航目标失败: ${error.message}`);
         });
       }
     } catch (error) {
@@ -883,6 +1178,7 @@ export const Navigation: React.FC = () => {
             isNavigating={isNavigating}
             onNavigationStart={() => setIsNavigating(true)}
             onNavigationStop={() => setIsNavigating(false)}
+            onStopWaypointNavigation={handleStopWaypointNavigation}
             navigationStatus={navigationStatus}
             navigationFeedback={navigationFeedback}
             connectionStatus={connectionStatus}

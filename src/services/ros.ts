@@ -215,11 +215,22 @@ class ROSService {
 
     // 用于存储最后收到的 action status
     let lastActionStatus: number | undefined;
+    let resolved = false;
 
-    return new Promise((resolve, _reject) => {
+    return new Promise((resolve) => {
+      // 添加超时机制，防止 Promise 无限挂起
+      // 如果30秒内没有收到 result，自动 resolve（导航可能已经在进行中）
+      const timeoutId = setTimeout(() => {
+        if (!resolved) {
+          console.warn('[ROS] 导航 Promise 30秒超时，自动完成（导航可能已在进行中）');
+          resolved = true;
+          resolve();
+        }
+      }, 30000);
+
       // 监听导航状态更新（用于记录最后的 actionStatus）
       goalMessage.on('status', (status: any) => {
-        console.log('[ROS] Navigation status:', status);
+        console.debug('[ROS] Navigation status:', status);
 
         // 记录最后的 actionStatus
         lastActionStatus = status.status;
@@ -235,46 +246,51 @@ class ROSService {
       goalMessage.on('result', (result: any) => {
         console.log('[ROS] Navigation result received (RAW):', result);
 
-        // ROSLIB 的 result 回调只接收 msg.result 字段的内容
-        // status 信息需要从之前的 status 消息中获取
-        const actionStatus = lastActionStatus;
-        const actionSucceeded = actionStatus === 3;
-        const actionAborted = actionStatus === 4;
-        const actionPreempted = actionStatus === 2;
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeoutId);
 
-        // result 就是实际的结果数据
-        // 兼容两种格式：
-        // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
-        // 2. Mock: {success: true, message: "..."}
-        const resultSuccess = result.result === true || result.success === true;
-        const errorMessage = result.result_text || result.message || '';
+          // ROSLIB 的 result 回调只接收 msg.result 字段的内容
+          // status 信息需要从之前的 status 消息中获取
+          const actionStatus = lastActionStatus;
+          const actionSucceeded = actionStatus === 3;
+          const actionAborted = actionStatus === 4;
+          const actionPreempted = actionStatus === 2;
 
-        // 综合判断：需要 actionStatus 为 SUCCEEDED 且 result 字段为 true
-        const success = actionSucceeded && resultSuccess;
+          // result 就是实际的结果数据
+          // 兼容两种格式：
+          // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
+          // 2. Mock: {success: true, message: "..."}
+          const resultSuccess = result.result === true || result.success === true;
+          const errorMessage = result.result_text || result.message || '';
 
-        // 构建详细的结果信息
-        const resultInfo = {
-          success,
-          actionStatus,
-          actionSucceeded,
-          actionAborted,
-          actionPreempted,
-          resultData: result,
-          errorMessage,
-          statusText: this.getActionStatusText(actionStatus || 0),
-        };
+          // 综合判断：需要 actionStatus 为 SUCCEEDED 且 result 字段为 true
+          const success = actionSucceeded && resultSuccess;
 
-        console.log('[ROS] Navigation result analysis:', resultInfo);
+          // 构建详细的结果信息
+          const resultInfo = {
+            success,
+            actionStatus,
+            actionSucceeded,
+            actionAborted,
+            actionPreempted,
+            resultData: result,
+            errorMessage,
+            statusText: this.getActionStatusText(actionStatus || 0),
+          };
 
-        // 发送导航结果事件
-        this.emit('navigation-result', resultInfo);
+          console.log('[ROS] Navigation result analysis:', resultInfo);
 
-        resolve();
+          // 发送导航结果事件
+          this.emit('navigation-result', resultInfo);
+
+          resolve();
+        }
       });
 
       // 处理导航反馈（进度信息）
       goalMessage.on('feedback', (feedback: any) => {
-        console.log('[ROS] Navigation feedback:', feedback);
+        console.debug('[ROS] Navigation feedback:', feedback);
 
         // 提取有用的反馈信息
         const feedbackData = {
@@ -298,6 +314,8 @@ class ROSService {
   // 取消导航
   cancelNavigation() {
     if (!this.ros) return;
+
+    console.log('[ROS] 取消导航被调用', new Error().stack);
 
     const actionClient = new ROSLIB.ActionClient({
       ros: this.ros,
@@ -863,7 +881,7 @@ class ROSService {
     }
   }
 
-  private emit(event: string, data: any) {
+  public emit(event: string, data: any) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.forEach((callback) => callback(data));

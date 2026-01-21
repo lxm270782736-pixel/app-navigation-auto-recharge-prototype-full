@@ -17,6 +17,7 @@ import {
   LoadingOutlined,
   ThunderboltOutlined,
   AimOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { rosService } from "@/services/ros";
 import { ConnectionStatus } from "@/types";
@@ -27,6 +28,7 @@ import type {
   NavigationActionConfig,
 } from "@/types";
 import { TaskConfigurationModal, TaskListView } from "./TaskConfigurationModal";
+import { navigationStorageService } from "@/services/navigationStorage";
 
 const { Panel } = Collapse;
 
@@ -48,6 +50,7 @@ interface NavigationControlProps {
   isNavigating: boolean;
   onNavigationStart: () => void;
   onNavigationStop: () => void;
+  onStopWaypointNavigation?: () => void; // 停止多点巡航回调
   navigationStatus?: string;
   navigationFeedback?: {
     distance_to_goal?: number;
@@ -67,6 +70,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   isNavigating,
   onNavigationStart,
   onNavigationStop,
+  onStopWaypointNavigation,
   navigationStatus,
   navigationFeedback,
   connectionStatus = ConnectionStatus.DISCONNECTED,
@@ -75,24 +79,24 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   onStartWaypointNavigation,
 }) => {
   // 调试日志：监控开始导航按钮的disable条件
-  useEffect(() => {
-    const isDisabled = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose);
+  // useEffect(() => {
+  //   const isDisabled = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose);
 
-    console.log('[NavigationControl] 开始导航按钮状态检查:');
-    console.log('  robotPose:', robotPose);
-    console.log('  !robotPose:', !robotPose);
-    console.log('  waypointMode:', waypointMode);
-    if (waypointMode) {
-      console.log('  waypoints.length:', waypoints.length);
-      console.log('  waypoints.length === 0:', waypoints.length === 0);
-    } else {
-      console.log('  goalPose:', goalPose);
-      console.log('  !goalPose:', !goalPose);
-    }
-    console.log('  isDisabled (按钮灰色):', isDisabled);
-  }, [robotPose, waypointMode, waypoints, goalPose]);
+  //   console.log('[NavigationControl] 开始导航按钮状态检查:');
+  //   console.log('  robotPose:', robotPose);
+  //   console.log('  !robotPose:', !robotPose);
+  //   console.log('  waypointMode:', waypointMode);
+  //   if (waypointMode) {
+  //     console.log('  waypoints.length:', waypoints.length);
+  //     console.log('  waypoints.length === 0:', waypoints.length === 0);
+  //   } else {
+  //     console.log('  goalPose:', goalPose);
+  //     console.log('  !goalPose:', !goalPose);
+  //   }
+  //   console.log('  isDisabled (按钮灰色):', isDisabled);
+  // }, [robotPose, waypointMode, waypoints, goalPose]);
 
-  // 导航模式选择
+  // 导航模式选择已保存导航配置
   const [navigationMode, setNavigationMode] = useState<NavigationMode>(
     NavigationMode.OBSTACLE_AVOIDANCE
   );
@@ -101,19 +105,15 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   const [chassisControlType, setChassisControlType] = useState<
     "twist" | "joy" | null
   >(null);
-  const [loadingChassisType, setLoadingChassisType] = useState(true);
 
   // 初始化时获取底盘控制模式
   useEffect(() => {
     const initChassisControlType = async () => {
       try {
-        setLoadingChassisType(true);
         const currentType = await rosService.getChassisControlType();
         setChassisControlType(currentType);
       } catch (error) {
         console.warn("Failed to fetch chassis control type:", error);
-      } finally {
-        setLoadingChassisType(false);
       }
     };
 
@@ -145,6 +145,12 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     message.success(`已保存 ${newTasks.length} 个任务`);
   };
 
+  // 是否有正在执行的action
+  const [hasActiveAction, setHasActiveAction] = useState(false);
+
+  // 是否存在保存的导航配置
+  const [hasSavedConfig, setHasSavedConfig] = useState(false);
+
   // 导航参数配置
   const [actionConfig, setActionConfig] = useState<NavigationActionConfig>({
     use_default_config: true,
@@ -158,14 +164,124 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     deaccelaration_ratio: 0.5,
   });
 
+  // 初始化时加载保存的导航配置并监听反馈话题
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializeConfig = async () => {
+      try {
+        // 1. 加载之前保存的配置
+        const savedConfig =
+          await navigationStorageService.loadNavigationConfig();
+        if (isMounted && savedConfig) {
+          // 只有单点导航时才设置 hasActiveAction
+          // 多点导航由 Navigation 组件通过 isNavigating props 控制
+          if (savedConfig.navigationType === "single") {
+            // 如果检测到保存的单点导航配置，表明导航可能还在执行中
+            // 设置 hasActiveAction = true 来禁用"开始导航"按钮
+            setHasActiveAction(true);
+
+            setNavigationMode(savedConfig.navigationMode as any);
+            setTasks(savedConfig.tasks || []);
+            setActionConfig(savedConfig.actionConfig || { use_default_config: true });
+            setHasSavedConfig(true);
+            robotPose = savedConfig.goalPose || null;
+            message.warning(
+              "检测到导航正在执行或未完成，按钮已禁用。请等待导航完成或刷新页面重试。"
+            );
+          }
+        }
+      } catch (error) {
+        console.error("加载导航配置失败:", error);
+      }
+    };
+
+    initializeConfig();
+
+    // 2. 订阅 /move_chassis_to_server/feedback 话题，检测是否有正在执行的action
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = rosService.subscribeTopic<any>(
+        "/move_chassis_to_server/feedback",
+        "astribot_msgs/MoveChassisToFeedback",
+        (feedback: any) => {
+          console.debug("[NavigationControl] 收到action反馈:", feedback);
+          // 只要有反馈消息，说明正在有action在执行
+          setHasActiveAction(true);
+
+          // 通过 rosService 转发 feedback 事件，这样刷新后的反馈也能被 Navigation 组件接收
+          // 提取有用的反馈信息
+          const feedbackData = {
+            distance_to_goal: feedback.feedback.distance_to_goal,
+            current_pose: feedback.feedback.current_pose,
+            current_task: feedback.feedback.current_task,
+            progress: feedback.feedback.progress,
+            eta: feedback.feedback.eta,
+            raw: feedback,
+          };
+          rosService.emit('navigation-feedback', feedbackData);
+          console.debug("[NavigationControl] 转发feedback事件到rosService:", feedbackData);
+        }
+      );
+    } catch (error) {
+      console.warn(
+        "[NavigationControl] 订阅feedback话题失败，可能ROS未连接:",
+        error
+      );
+    }
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+
+  // 监听导航完成事件，清除action执行标记
+  useEffect(() => {
+    const handleNavigationResult = (result: any) => {
+      console.log("[NavigationControl] 导航完成，清除action标记:", result);
+      setHasActiveAction(false);
+    };
+
+    rosService.on("navigation-result", handleNavigationResult);
+
+    return () => {
+      rosService.off("navigation-result", handleNavigationResult);
+    };
+  }, []);
+
   const handleStartNavigation = async () => {
     if (!goalPose) {
       message.error("请先设置目标点");
       return;
     }
 
+    // 检查是否有正在执行的action
+    if (hasActiveAction) {
+      message.error("还有正在执行的导航action，请等待完成或取消后再开始新导航");
+      return;
+    }
+
     try {
       onNavigationStart(); // 先设置状态
+
+      // 保存导航配置到本地文件系统
+      try {
+        await navigationStorageService.saveNavigationConfig({
+          navigationType: "single", // 单点导航
+          navigationMode,
+          goalPose,
+          tasks,
+          actionConfig,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        console.error("保存导航配置失败:", error);
+        message.warning("导航配置保存失败，继续执行导航");
+      }
 
       if (navigationMode === NavigationMode.LOCAL_NAVIGATION) {
         // 局部导航模式：发送到 /small_range_goal 话题
@@ -195,9 +311,32 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   };
 
   const handleStopNavigation = () => {
-    rosService.cancelNavigation();
-    // message.info('导航已取消'); // 移除立即提示，等待服务器响应
-    onNavigationStop();
+    // 多点巡航模式下，调用专门的停止函数清除定时器
+    if (waypointMode && onStopWaypointNavigation) {
+      onStopWaypointNavigation();
+      // 多点模式停止后，也要清除action执行标记和已保存配置标记
+      setHasActiveAction(false);
+      setHasSavedConfig(false);
+    } else {
+      // 单点导航模式
+      rosService.cancelNavigation();
+      // message.info('导航已取消'); // 移除立即提示，等待服务器响应
+      onNavigationStop();
+      // 导航停止时，清除action执行标记
+      setHasActiveAction(false);
+    }
+  };
+
+  // 清除保存的导航配置
+  const handleClearNavigationConfig = async () => {
+    try {
+      await navigationStorageService.clearNavigationConfig();
+      setHasSavedConfig(false); // 更新状态，隐藏提示
+      message.success("已清除保存的导航配置");
+    } catch (error) {
+      console.error("清除导航配置失败:", error);
+      message.error("清除导航配置失败");
+    }
   };
 
   return (
@@ -348,7 +487,8 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 disabled={
                   !robotPose ||
                   (waypointMode ? waypoints.length === 0 : !goalPose) ||
-                  chassisControlType === "joy"
+                  chassisControlType === "joy" ||
+                  hasActiveAction
                 }
               >
                 {waypointMode ? "开始巡航" : "开始导航"}
@@ -374,6 +514,21 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 >
                   ⚠️ 手柄模式下不允许开始导航，请切换到自动模式
                 </div>
+              )}
+
+              {/* 清除保存的导航配置按钮 - 当检测到有保存的配置时显示 */}
+              {hasSavedConfig && hasActiveAction && (
+                <Button
+                  danger
+                  size="small"
+                  block
+                  icon={<DeleteOutlined />}
+                  onClick={handleClearNavigationConfig}
+                  type="text"
+                  style={{ marginTop: 8 }}
+                >
+                  清除保存的导航配置
+                </Button>
               )}
             </>
           )}
