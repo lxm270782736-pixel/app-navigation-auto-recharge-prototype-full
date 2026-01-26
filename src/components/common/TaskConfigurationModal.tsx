@@ -49,10 +49,12 @@ export const TaskConfigurationModal: React.FC<TaskConfigurationModalProps> = ({
       onCancel={handleCancel}
       width="90%"
       style={{ top: 20, maxWidth: 1200 }}
-      bodyStyle={{
-        height: 'calc(100vh - 200px)',
-        overflow: 'auto',
-        padding: '24px',
+      styles={{
+        body: {
+          height: 'calc(100vh - 200px)',
+          overflow: 'auto',
+          padding: '24px',
+        },
       }}
       footer={
         <Space>

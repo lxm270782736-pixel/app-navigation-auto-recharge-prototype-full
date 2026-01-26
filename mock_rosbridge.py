@@ -30,6 +30,23 @@ def normalize_message_type(msg_type: str) -> str:
 MAPS_STORAGE_DIR = Path(__file__).parent / "mock_saved_maps"
 MAPS_STORAGE_DIR.mkdir(exist_ok=True)
 
+
+def normalize_message_type(msg_type: str) -> str:
+    """
+    Normalize ROS2 message types to internal format.
+    ROS2 uses '/msg/', '/srv/', '/action/' in type strings, while internally we use shorter format.
+
+    Examples:
+        ROS2: 'nav_msgs/msg/OccupancyGrid' -> 'nav_msgs/OccupancyGrid'
+        ROS2: 'std_srvs/srv/Trigger' -> 'std_srvs/Trigger'
+        ROS2: 'astribot_msgs/action/MoveChassisTo' -> 'astribot_msgs/MoveChassisTo'
+        ROS1: 'nav_msgs/OccupancyGrid' -> 'nav_msgs/OccupancyGrid' (unchanged)
+    """
+    if msg_type is None:
+        return ""
+    return msg_type.replace('/msg/', '/').replace('/srv/', '/').replace('/action/', '/')
+
+
 class MockROSBridge:
     def __init__(self):
         self.clients = set()
@@ -283,10 +300,9 @@ class MockROSBridge:
         """处理话题订阅"""
         topic = data.get("topic")
         msg_type = data.get("type")
-        # Normalize ROS2 message types to internal format
         msg_type_normalized = normalize_message_type(msg_type)
 
-        print(f"订阅话题: {topic} ({msg_type} -> {msg_type_normalized})")
+        print(f"订阅话题: {topic} ({msg_type_normalized})")
 
         if topic not in self.subscriptions:
             self.subscriptions[topic] = set()
@@ -388,12 +404,11 @@ class MockROSBridge:
         """处理服务调用"""
         service = data.get("service")
         service_type = data.get("type")
-        # Normalize ROS2 service types to internal format
         service_type_normalized = normalize_message_type(service_type)
         args = data.get("args", {})
         call_id = data.get("id")
 
-        print(f"服务调用: {service} ({service_type} -> {service_type_normalized})")
+        print(f"服务调用: {service} ({service_type_normalized})")
 
         response = {"op": "service_response", "id": call_id, "values": {}}
 
@@ -1309,13 +1324,13 @@ class MockROSBridge:
     async def handle_action_goal(self, websocket, data):
         """处理导航 Action Goal (通过 send_action_goal 消息)"""
         action = data.get("action")
-        action_type = data.get("type")
-        # Normalize ROS2 action types to internal format
-        action_type_normalized = normalize_message_type(action_type)
+        # 支持两种字段名: type (rosbridge标准) 或 action_type (前端使用)
+        action_type = data.get("type") or data.get("action_type")
+        action_type_normalized = normalize_message_type(action_type) if action_type else ""
         goal = data.get("goal", {})
         action_id = data.get("id", "")
 
-        print(f"📥 收到 Action Goal (send_action_goal): {action} ({action_type} -> {action_type_normalized})")
+        print(f"📥 收到 Action Goal (send_action_goal): {action} ({action_type_normalized})")
         print(f"   Action ID: {action_id}")
         print(f"   完整 goal 数据: {goal}")
         print(f"   目标位姿: {goal.get('target_pose', {})}")
@@ -1348,12 +1363,18 @@ class MockROSBridge:
         self.navigation_active = True
 
         # 提取任务配置和导航参数
+        # ROS2格式: config参数在嵌套的config对象中
         use_default_config = goal.get("use_default_config", True)
-        safe_dist = goal.get("safe_dist", 0.2)
-        v_max = goal.get("v_max", 0.5)
-        w_max = goal.get("w_max", 1.0)
+        config = goal.get("config", {})
+        safe_dist = config.get("safe_dist", 0.2)
+        v_max = config.get("v_max", 0.5)
+        w_max = config.get("w_max", 1.0)
+        a_max = config.get("a_max", 0.5)
+        dw_max = config.get("dw_max", 1.0)
+        is_holonomic = config.get("is_holonomic", False)
 
         print(f"导航参数: use_default={use_default_config}, safe_dist={safe_dist}, v_max={v_max}, w_max={w_max}")
+        print(f"         a_max={a_max}, dw_max={dw_max}, is_holonomic={is_holonomic}")
 
         # 提取任务配置（如果有）
         tasks_json = goal.get("tasks", "")
@@ -1390,34 +1411,26 @@ class MockROSBridge:
 
         self.navigation_active = False
 
-        # 发送取消结果（通过话题发布，使用真实 ROS 格式）
+        # 发送取消结果（使用 rosbridge action 协议格式）
         result_message = {
-            "op": "publish",
-            "topic": "/move_chassis_to_server/result",
-            "msg": {
-                "header": {
-                    "stamp": {"secs": int(time.time()), "nsecs": 0}
-                },
-                "status": {
-                    "goal_id": {"id": action_id},
-                    "status": 2  # PREEMPTED
-                },
-                "result": {
-                    "result": False,
-                    "result_text": "Navigation cancelled by user",
-                    "final_pose": {},
-                    "navigation_time": 0.0
-                }
+            "op": "action_result",
+            "id": action_id,
+            "action": "/move_chassis_to_server",
+            "status": 5,  # ROS2: STATUS_CANCELED = 5
+            "values": {
+                "result": False,
+                "result_text": "Navigation cancelled by user",
+                "final_pose": {},
+                "navigation_time": 0.0
             }
         }
         await self._send_message_to_all_clients(result_message)
 
-    async def _send_message_to_all_clients(self, message: dict):
-        for websocket in self.clients:
-            try:
-                await websocket.send(json.dumps(message))
-            except:
-                continue
+        try:
+            await websocket.send(json.dumps(result_message))
+            print(f"   ✅ 取消结果已发送")
+        except:
+            pass
 
     async def simulate_navigation(self, websocket, action_id):
         """模拟导航过程"""
@@ -1445,12 +1458,12 @@ class MockROSBridge:
 
             print(f"   📏 模拟导航: 距离 {total_distance:.2f}m, 预计用时 {navigation_duration:.1f}s")
 
-            # 发送状态: PENDING
-            await self.send_action_status(websocket, action_id, 0)
+            # 发送状态: STATUS_ACCEPTED (ROS2: 1)
+            await self.send_action_status(websocket, action_id, 1)
             await asyncio.sleep(0.5)
 
-            # 发送状态: ACTIVE
-            await self.send_action_status(websocket, action_id, 1)
+            # 发送状态: STATUS_EXECUTING (ROS2: 2)
+            await self.send_action_status(websocket, action_id, 2)
 
             # 模拟导航过程，发送反馈
             steps = 20
@@ -1476,24 +1489,22 @@ class MockROSBridge:
                 remaining_distance = math.sqrt((goal_x - current_x)**2 + (goal_y - current_y)**2)
                 eta = remaining_distance / 0.5
 
-                # 发送反馈（通过话题发布，符合 ROS actionlib 标准）
+                # 发送反馈（使用 rosbridge action 协议格式）
                 feedback_message = {
-                    "op": "publish",
-                    "topic": "/move_chassis_to_server/feedback",
-                    "msg": {
-                        "header": {
-                            "stamp": {"secs": int(time.time()), "nsecs": 0}
-                        },
-                        "status": {
-                            "goal_id": {"id": action_id},
+                    "op": "action_feedback",
+                    "id": action_id,
+                    "action": "/move_chassis_to_server",
+                    "values": {
+                        "current_status": {
                             "status": 1,  # ACTIVE
-                            "text": "This goal has been accepted by the simple action server"
+                            "message": "Navigating to goal"
                         },
-                        "feedback": {
-                            "distance_to_goal": remaining_distance,
-                            "progress": progress,
-                            "eta": eta,
-                            "current_pose": {
+                        "current_pose": {
+                            "header": {
+                                "stamp": {"sec": int(time.time()), "nanosec": 0},
+                                "frame_id": "map"
+                            },
+                            "pose": {
                                 "position": {"x": current_x, "y": current_y, "z": 0.0},
                                 "orientation": {
                                     "x": 0.0,
@@ -1502,7 +1513,12 @@ class MockROSBridge:
                                     "w": math.cos(current_theta / 2)
                                 }
                             }
-                        }
+                        },
+                        "distance_to_goal": remaining_distance,
+                        "elapsed_time": time.time() - self.navigation_start_time,
+                        # 兼容旧格式
+                        "progress": progress,
+                        "eta": eta
                     }
                 }
 
@@ -1529,24 +1545,21 @@ class MockROSBridge:
             self.navigation_active = False
             print(f"   🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉 导航任务成功完成!  ({goal_x:.2f}, {goal_y:.2f})")
 
-            # 发送成功结果（通过话题发布，使用真实 ROS 格式）
+            # 发送成功结果（使用 rosbridge action 协议格式）
             result_message = {
-                "op": "publish",
-                "topic": "/move_chassis_to_server/result",
-                "msg": {
-                    "header": {
-                        "stamp": {"secs": int(time.time()), "nsecs": 0}
-                    },
-                    "status": {
-                        "goal_id": {"id": action_id},
-                        "status": 3,  # SUCCEEDED
-                        "text": "The goal has been successfully achieved by the SimpleActionServer"
-                    },
-                    "result": {
-                        # 使用真实 ROS 格式
-                        "result": True,  # 真实 ROS 使用 'result' 而不是 'success'
-                        "result_text": "Successfully reached the goal",
-                        "final_pose": {
+                "op": "action_result",
+                "id": action_id,
+                "action": "/move_chassis_to_server",
+                "status": 4,  # ROS2: STATUS_SUCCEEDED = 4
+                "values": {
+                    "result": True,
+                    "result_text": "Successfully reached the goal",
+                    "final_pose": {
+                        "header": {
+                            "stamp": {"sec": int(time.time()), "nanosec": 0},
+                            "frame_id": "map"
+                        },
+                        "pose": {
                             "position": {"x": goal_x, "y": goal_y, "z": 0.0},
                             "orientation": {
                                 "x": 0.0,
@@ -1554,15 +1567,15 @@ class MockROSBridge:
                                 "z": math.sin(goal_theta / 2),
                                 "w": math.cos(goal_theta / 2)
                             }
-                        },
-                        "navigation_time": time.time() - self.navigation_start_time
-                    }
+                        }
+                    },
+                    "navigation_time": time.time() - self.navigation_start_time
                 }
             }
 
             try:
-                await self._send_message_to_all_clients(result_message)
-                print(f"   ✅ 导航结果已发送: status={result_message['msg']['status']['status']}, result={result_message['msg']['result']['result']}")
+                await websocket.send(json.dumps(result_message))
+                print(f"   ✅ 导航结果已发送: status={result_message['status']}, result=True")
             except Exception as e:
                 print(f"   ❌ 发送导航结果失败: {e}")
 
@@ -1573,29 +1586,23 @@ class MockROSBridge:
             import traceback
             traceback.print_exc()
 
-            # 发送失败结果（通过话题发布，使用真实 ROS 格式）
+            # 发送失败结果（使用 rosbridge action 协议格式）
             try:
                 result_message = {
-                    "op": "publish",
-                    "topic": "/move_chassis_to_server/result",
-                    "msg": {
-                        "header": {
-                            "stamp": {"secs": int(time.time()), "nsecs": 0}
-                        },
-                        "status": {
-                            "goal_id": {"id": action_id},
-                            "status": 4  # ABORTED
-                        },
-                        "result": {
-                            "result": False,
-                            "result_text": f"Navigation failed: {str(e)}",
-                            "final_pose": {},
-                            "navigation_time": 0.0
-                        }
+                    "op": "action_result",
+                    "id": action_id,
+                    "action": "/move_chassis_to_server",
+                    "status": 6,  # ROS2: STATUS_ABORTED = 6
+                    "values": {
+                        "result": False,
+                        "result_text": f"Navigation failed: {str(e)}",
+                        "final_pose": {},
+                        "navigation_time": 0.0
                     }
                 }
-                await self._send_message_to_all_clients(result_message)
-                print(f"   ✅ 导航失败结果已发送到 /move_chassis_to_server/result 话题")
+
+                await websocket.send(json.dumps(result_message))
+                print(f"   ✅ 导航失败结果已发送")
             except:
                 pass
 
@@ -1807,29 +1814,26 @@ class MockROSBridge:
         print(f"\n所有任务执行完成！")
 
     async def send_action_status(self, websocket, action_id, status):
-        """发送 Action 状态（通过话题）"""
+        """发送 Action 状态（使用 rosbridge 协议格式）"""
+        # ROS2 action status codes:
+        # 0: STATUS_UNKNOWN, 1: STATUS_ACCEPTED, 2: STATUS_EXECUTING
+        # 3: STATUS_CANCELING, 4: STATUS_SUCCEEDED, 5: STATUS_CANCELED, 6: STATUS_ABORTED
         status_names = {
-            0: "PENDING",
-            1: "ACTIVE",
-            2: "PREEMPTED",
-            3: "SUCCEEDED",
-            4: "ABORTED"
+            0: "UNKNOWN",
+            1: "ACCEPTED",
+            2: "EXECUTING",
+            3: "CANCELING",
+            4: "SUCCEEDED",
+            5: "CANCELED",
+            6: "ABORTED"
         }
 
-        # 发布到 /move_chassis_to_server/status 话题
+        # 发送 rosbridge 协议格式的状态消息
         status_message = {
-            "op": "publish",
-            "topic": "/move_chassis_to_server/status",
-            "msg": {
-                "header": {
-                    "stamp": {"secs": int(time.time()), "nsecs": 0}
-                },
-                "status_list": [{
-                    "goal_id": {"id": action_id},
-                    "status": status,
-                    "text": status_names.get(status, "UNKNOWN")
-                }]
-            }
+            "op": "status",
+            "id": action_id,
+            "action": "/move_chassis_to_server",
+            "status": status
         }
 
         try:

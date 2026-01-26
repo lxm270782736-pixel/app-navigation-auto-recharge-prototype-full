@@ -135,8 +135,9 @@
 └──────────────┬──────────────────────┘
                │ ROS 2协议
 ┌──────────────▼──────────────────────┐
-│   ROS 2 Humble 后端                 │
-│  - SLAM节点 (slam_toolbox/cartographer) │
+
+│   ROS 2 后端                        │
+│  - SLAM节点 (slam_toolbox)          │
 │  - Nav2 导航                        │
 │  - AMCL 定位                        │
 │  - 硬件驱动                         │
@@ -177,13 +178,15 @@
 
 - Node.js >= 16
 - npm 或 yarn
-- ROS 2 Humble - 用于真实机器人
+
+- ROS 2 Humble (LTS) - 用于真实机器人
 - rosbridge_suite 已安装
 ```bash
 sudo apt update
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
-sudo apt install ros-humble-rosbridge-suite
+
+sudo apt install ros-humble-rosbridge-server
 ```
 ### 安装依赖
 
@@ -237,18 +240,21 @@ npm run preview  # 预览构建结果（端口4173）
 
 1. **rosbridge_suite** - WebSocket通信
 ```bash
-sudo apt-get install ros-humble-rosbridge-suite
+
+sudo apt-get install ros-humble-rosbridge-server
 ```
 
-2. **SLAM包** (例如 slam_toolbox, cartographer)
+2. **SLAM包** (例如 slam_toolbox)
+
 ```bash
 sudo apt-get install ros-humble-slam-toolbox
 ```
 
-3. **导航包** (Nav2 stack)
+
+3. **导航包** (Nav2 navigation stack)
 ```bash
 sudo apt-get install ros-humble-navigation2
-sudo apt-get install ros-humble-nav2-bringup
+
 ```
 
 ### 启动ROS Bridge
@@ -286,7 +292,9 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 | 服务名 | 服务类型 | 描述 |
 |--------|----------|------|
 | `/localization/start_mapping` | `std_srvs/srv/Trigger` | 启动建图 |
-| `/localization/stop` | `std_srvs/srv/Trigger` | 停止建图 |
+
+| `/localization/stop_localization` | `std_srvs/srv/Trigger` | 停止建图/定位 |
+
 | `/localization/save_map` | `localization_msgs/srv/SaveMap` | 保存地图 |
 | `/localization/load_map` | `localization_msgs/srv/LoadMap` | 加载地图 |
 | `/localization/list_maps` | `localization_msgs/srv/ListMaps` | 获取地图列表 |
@@ -511,21 +519,21 @@ rosService.on('navigation-feedback', (feedback) => {
 
 ### 1. 无法连接到ROS Bridge
 
-- 确保 rosbridge_server 已启动：`roslaunch rosbridge_server rosbridge_websocket.launch`
+- 确保 rosbridge_server 已启动：`ros2 launch rosbridge_server rosbridge_websocket_launch.xml`
 - 检查防火墙设置
 - 确认端口号是否正确（默认9090）
 - 查看浏览器控制台的错误信息
 
 ### 2. 地图无法显示
 
-- 确认 `/map` 话题正在发布：`rostopic echo /map -n 1`
+- 确认 `/map` 话题正在发布：`ros2 topic echo /map --once`
 - 检查地图数据格式是否正确
 - 查看浏览器控制台是否有渲染错误
 
 ### 3. 导航无法开始
 
 - 确保已正确设置机器人初始位姿（手动重定位）
-- 检查 move_base 节点是否正常运行：`rosnode info /move_base`
+- 检查 Nav2 节点是否正常运行：`ros2 node list | grep nav`
 - 确认目标点在地图的可达区域内
 - 查看导航服务器是否已加载地图
 

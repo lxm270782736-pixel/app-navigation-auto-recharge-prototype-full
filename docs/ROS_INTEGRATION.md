@@ -1,6 +1,8 @@
 # ROS 2后端集成指南
 
-本文档详细说明如何配置ROS 2 Humble后端与导航UI系统集成。
+
+本文档详细说明如何配置ROS 2后端与导航UI系统集成。
+
 
 ## 目录
 
@@ -23,11 +25,12 @@
 
 ```bash
 # ROS Bridge - WebSocket通信
-sudo apt-get install ros-humble-rosbridge-suite
+
+sudo apt-get install ros-humble-rosbridge-server
 
 # SLAM (选择其一)
 sudo apt-get install ros-humble-slam-toolbox       # SLAM Toolbox (推荐)
-sudo apt-get install ros-humble-cartographer-ros   # Cartographer
+
 
 # 导航 (Nav2)
 sudo apt-get install ros-humble-navigation2
@@ -44,6 +47,13 @@ sudo apt-get install ros-humble-robot-state-publisher
 ```
 
 ## ROS话题和服务
+
+### ROS 2 消息类型格式说明
+
+ROS 2 消息类型字符串格式与 ROS 1 不同:
+- **话题**: `package/msg/MessageType` (如 `nav_msgs/msg/OccupancyGrid`)
+- **服务**: `package/srv/ServiceType` (如 `std_srvs/srv/Trigger`)
+- **动作**: `package/action/ActionType` (如 `astribot_msgs/action/MoveChassis`)
 
 ### UI订阅的话题
 
@@ -76,7 +86,9 @@ data: [...]  # -1=未知, 0=空闲, 100=占据
 话题名: /loc_high_freq
 消息类型: nav_msgs/msg/Odometry
 频率: ~10Hz
-用途: 显示机器人当前位置
+
+用途: 显示机器人当前位置（定位后高频输出）
+
 ```
 
 #### 3. 机器人定位位姿

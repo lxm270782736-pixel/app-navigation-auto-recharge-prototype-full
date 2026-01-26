@@ -4,10 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Astribot Navigation UI is a React + TypeScript web interface for ROS robot SLAM mapping and autonomous navigation. It communicates with ROS 2 Humble backend via WebSocket (rosbridge) and supports both simulation and real robot modes.
-
-**ROS Version**: ROS 2 Humble (LTS)
-**Message Type Format**: ROS2 style (e.g., `nav_msgs/msg/OccupancyGrid` for topics, `std_srvs/srv/Trigger` for services)
+Astribot Navigation UI is a React + TypeScript web interface for ROS 2 robot SLAM mapping and autonomous navigation. It communicates with ROS 2 backend via WebSocket (rosbridge) and supports both simulation and real robot modes.
 
 ## Common Commands
 
@@ -40,23 +37,8 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
     rosService (src/services/ros.ts - ROS communication layer)
            ↓
     ROSLIB (WebSocket to rosbridge_server on port 9090)
-           ↓
-    ROS 2 Humble Backend (SLAM, Nav2, AMCL, hardware drivers)
-```
-
-### ROS2 Message Type Configuration
-
-**Config file**: `src/config/ros2MessageTypes.ts`
-
-Centralizes all ROS2 message type strings:
-- Topics: `nav_msgs/msg/OccupancyGrid`, `nav_msgs/msg/Odometry`, etc.
-- Services: `std_srvs/srv/Trigger`, `localization_msgs/srv/ApplyMap`, etc.
-- Actions: `astribot_msgs/action/MoveChassis`
-
-**Usage pattern**:
-```typescript
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-rosService.subscribeTopic('/map', ROS2_MESSAGE_TYPES.OCCUPANCY_GRID, callback);
+         ↓
+    ROS 2 Backend (SLAM, Nav2, AMCL, hardware drivers)
 ```
 
 ### Key Service Layers
@@ -194,6 +176,16 @@ See docs/TASK_SYSTEM.md for architectural details and docs/TASK_USAGE_GUIDE.md f
 - Clear reconnect timer on manual disconnect (avoids zombie timers)
 - Emit 'connection' event with {connected: boolean}
 - IMPORTANT: Always unsubscribe from topics in useEffect cleanup to prevent memory leaks
+
+### ROS 2 Message Type Format
+- This project uses **ROS 2 Humble** (LTS) message type format
+- All message type strings are defined in `src/config/ros2MessageTypes.ts`
+- Format differences from ROS 1:
+  - Topics: `nav_msgs/msg/OccupancyGrid` (ROS 2) vs `nav_msgs/OccupancyGrid` (ROS 1)
+  - Services: `std_srvs/srv/Trigger` (ROS 2) vs `std_srvs/Trigger` (ROS 1)
+  - Actions: `astribot_msgs/action/MoveChassis` (ROS 2) vs `astribot_msgs/MoveChassisToAction` (ROS 1)
+- Timestamp fields use ROS 2 format: `sec` and `nanosec` (not `secs` and `nsecs`)
+- The mock server normalizes ROS 2 message types internally for backward compatibility
 
 ### Map Storage
 - Server-side: saved_maps/ directory with GZIP compression

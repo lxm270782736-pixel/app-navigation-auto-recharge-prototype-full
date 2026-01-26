@@ -30,8 +30,6 @@ import type {
 import { TaskConfigurationModal, TaskListView } from "./TaskConfigurationModal";
 import { navigationStorageService } from "@/services/navigationStorage";
 
-const { Panel } = Collapse;
-
 enum OperationMode {
   SET_GOAL = "set_goal", // 设置目标点模式
 }
@@ -616,272 +614,183 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
 
           {/* 折叠面板 - 附加任务和导航参数（仅在单点导航模式下显示） */}
           {!waypointMode && (
-            <Collapse ghost size="small" style={{ background: "transparent" }}>
-              <Panel
-                header={<span style={{ fontSize: "12px" }}>附加任务</span>}
-                key="tasks"
-              >
-                <TaskListView
-                  tasks={tasks}
-                  onConfigure={() => setTaskConfigModalVisible(true)}
-                />
-              </Panel>
-
-              <Panel
-                header={
-                  <span style={{ fontSize: "12px" }}>
-                    <SettingOutlined /> 导航参数
-                  </span>
-                }
-                key="params"
-              >
-                <Space
-                  direction="vertical"
-                  style={{ width: "100%" }}
-                  size="small"
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span style={{ fontSize: "12px" }}>使用默认配置</span>
-                    <Switch
-                      size="small"
-                      checked={actionConfig.use_default_config}
-                      onChange={(checked) =>
-                        setActionConfig({
-                          ...actionConfig,
-                          use_default_config: checked,
-                        })
-                      }
+            <Collapse
+              ghost
+              size="small"
+              style={{ background: 'transparent' }}
+              items={[
+                {
+                  key: 'tasks',
+                  label: <span style={{ fontSize: '12px' }}>附加任务</span>,
+                  children: (
+                    <TaskListView
+                      tasks={tasks}
+                      onConfigure={() => setTaskConfigModalVisible(true)}
                     />
-                  </div>
-
-                  {!actionConfig.use_default_config && (
-                    <Collapse
-                      ghost
-                      size="small"
-                      style={{
-                        background: "#fafafa",
-                        borderRadius: "4px",
-                        marginTop: "8px",
-                      }}
-                    >
-                      <Panel
-                        header={
-                          <span style={{ fontSize: "11px" }}>速度与避障</span>
-                        }
-                        key="1"
-                      >
-                        <Space
-                          direction="vertical"
-                          style={{ width: "100%" }}
+                  ),
+                },
+                {
+                  key: 'params',
+                  label: <span style={{ fontSize: '12px' }}><SettingOutlined /> 导航参数</span>,
+                  children: (
+                    <Space direction="vertical" style={{ width: '100%' }} size="small">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '12px' }}>使用默认配置</span>
+                        <Switch
                           size="small"
-                        >
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              安全距离 (m)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={1.0}
-                              step={0.05}
-                              value={actionConfig.safe_dist}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  safe_dist: value || 0.2,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              最大速度 (m/s)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={2.0}
-                              step={0.1}
-                              value={actionConfig.v_max}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  v_max: value || 0.5,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              最大角速度 (rad/s)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={3.0}
-                              step={0.1}
-                              value={actionConfig.w_max}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  w_max: value || 1.0,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                        </Space>
-                      </Panel>
+                          checked={actionConfig.use_default_config}
+                          onChange={(checked) =>
+                            setActionConfig({ ...actionConfig, use_default_config: checked })
+                          }
+                        />
+                      </div>
 
-                      <Panel
-                        header={
-                          <span style={{ fontSize: "11px" }}>加速度</span>
-                        }
-                        key="2"
-                      >
-                        <Space
-                          direction="vertical"
-                          style={{ width: "100%" }}
+                      {!actionConfig.use_default_config && (
+                        <Collapse
+                          ghost
                           size="small"
-                        >
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              最大加速度 (m/s²)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={2.0}
-                              step={0.1}
-                              value={actionConfig.a_max}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  a_max: value || 0.5,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              最大转向加速度 (rad/s²)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={3.0}
-                              step={0.1}
-                              value={actionConfig.dw_max}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  dw_max: value || 1.0,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                        </Space>
-                      </Panel>
-
-                      <Panel
-                        header={
-                          <span style={{ fontSize: "11px" }}>运动与减速</span>
-                        }
-                        key="3"
-                      >
-                        <Space
-                          direction="vertical"
-                          style={{ width: "100%" }}
-                          size="small"
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                            }}
-                          >
-                            <span style={{ fontSize: "11px" }}>全向轮</span>
-                            <Switch
-                              size="small"
-                              checked={actionConfig.is_holonomic}
-                              onChange={(checked) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  is_holonomic: checked,
-                                })
-                              }
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              减速距离 (m)
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={5.0}
-                              step={0.1}
-                              value={actionConfig.deaccelaration_dist}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  deaccelaration_dist: value || 1.0,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{ fontSize: "11px", marginBottom: "4px" }}
-                            >
-                              减速比例
-                            </div>
-                            <InputNumber
-                              min={0.1}
-                              max={1.0}
-                              step={0.05}
-                              value={actionConfig.deaccelaration_ratio}
-                              onChange={(value) =>
-                                setActionConfig({
-                                  ...actionConfig,
-                                  deaccelaration_ratio: value || 0.5,
-                                })
-                              }
-                              size="small"
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                        </Space>
-                      </Panel>
-                    </Collapse>
-                  )}
-                </Space>
-              </Panel>
-            </Collapse>
+                          style={{ background: '#fafafa', borderRadius: '4px', marginTop: '8px' }}
+                          items={[
+                            {
+                              key: '1',
+                              label: <span style={{ fontSize: '11px' }}>速度与避障</span>,
+                              children: (
+                                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>安全距离 (m)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={1.0}
+                                      step={0.05}
+                                      value={actionConfig.safe_dist}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, safe_dist: value || 0.2 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>最大速度 (m/s)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={2.0}
+                                      step={0.1}
+                                      value={actionConfig.v_max}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, v_max: value || 0.5 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>最大角速度 (rad/s)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={3.0}
+                                      step={0.1}
+                                      value={actionConfig.w_max}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, w_max: value || 1.0 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                </Space>
+                              ),
+                            },
+                            {
+                              key: '2',
+                              label: <span style={{ fontSize: '11px' }}>加速度</span>,
+                              children: (
+                                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>最大加速度 (m/s²)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={2.0}
+                                      step={0.1}
+                                      value={actionConfig.a_max}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, a_max: value || 0.5 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>最大转向加速度 (rad/s²)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={3.0}
+                                      step={0.1}
+                                      value={actionConfig.dw_max}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, dw_max: value || 1.0 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                </Space>
+                              ),
+                            },
+                            {
+                              key: '3',
+                              label: <span style={{ fontSize: '11px' }}>运动与减速</span>,
+                              children: (
+                                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '11px' }}>全向轮</span>
+                                    <Switch
+                                      size="small"
+                                      checked={actionConfig.is_holonomic}
+                                      onChange={(checked) =>
+                                        setActionConfig({ ...actionConfig, is_holonomic: checked })
+                                      }
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>减速距离 (m)</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={5.0}
+                                      step={0.1}
+                                      value={actionConfig.deaccelaration_dist}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, deaccelaration_dist: value || 1.0 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', marginBottom: '4px' }}>减速比例</div>
+                                    <InputNumber
+                                      min={0.1}
+                                      max={1.0}
+                                      step={0.05}
+                                      value={actionConfig.deaccelaration_ratio}
+                                      onChange={(value) =>
+                                        setActionConfig({ ...actionConfig, deaccelaration_ratio: value || 0.5 })
+                                      }
+                                      size="small"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </div>
+                                </Space>
+                              ),
+                            },
+                          ]}
+                        />
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
           )}
         </Space>
       </Card>

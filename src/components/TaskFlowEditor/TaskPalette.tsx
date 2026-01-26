@@ -2,8 +2,6 @@ import React from 'react';
 import { Card, Collapse } from 'antd';
 import './TaskPalette.css';
 
-const { Panel } = Collapse;
-
 const taskCategories = {
   basic: {
     label: '基础任务',
@@ -48,15 +46,19 @@ export const TaskPalette: React.FC = () => {
       size="small"
       title="任务工具箱"
       style={{ width: 220, height: '100%', overflow: 'auto' }}
-      bodyStyle={{ padding: 8 }}
+      styles={{ body: { padding: 8 } }}
     >
       <div style={{ marginBottom: 12, fontSize: 12, color: '#666' }}>
         拖拽任务到右侧画布
       </div>
 
-      <Collapse ghost defaultActiveKey={['basic', 'perception', 'interaction', 'control']}>
-        {Object.entries(taskCategories).map(([key, category]) => (
-          <Panel header={category.label} key={key}>
+      <Collapse
+        ghost
+        defaultActiveKey={['basic', 'perception', 'interaction', 'control']}
+        items={Object.entries(taskCategories).map(([key, category]) => ({
+          key,
+          label: category.label,
+          children: (
             <div className="task-palette-items">
               {category.tasks.map((task) => (
                 <div
@@ -74,9 +76,9 @@ export const TaskPalette: React.FC = () => {
                 </div>
               ))}
             </div>
-          </Panel>
-        ))}
-      </Collapse>
+          ),
+        }))}
+      />
     </Card>
   );
 };

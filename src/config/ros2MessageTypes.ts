@@ -1,40 +1,85 @@
 /**
- * ROS2 Message Type Constants
+ * ROS2 Message Type Configuration
  *
- * Centralizes all ROS2 message type strings for easy maintenance.
+ * ROS2 uses a different message type format than ROS1:
+ * - Topics: 'package/msg/MessageType' (ROS1: 'package/MessageType')
+ * - Services: 'package/srv/ServiceType' (ROS1: 'package/ServiceType')
+ * - Actions: 'package/action/ActionType' (ROS1: 'package/ActionType')
  *
- * Key differences from ROS1:
- * - Topics: nav_msgs/OccupancyGrid -> nav_msgs/msg/OccupancyGrid
- * - Services: std_srvs/Trigger -> std_srvs/srv/Trigger
- * - Actions: astribot_msgs/MoveChassisToAction -> astribot_msgs/action/MoveChassis
+ * This file centralizes all ROS2 message type strings for easy maintenance.
  */
 
 export const ROS2_MESSAGE_TYPES = {
-  // ========== Standard Topics ==========
+  // ============================================
+  // Topic Message Types (package/msg/Type)
+  // ============================================
+
+  // Navigation messages
   OCCUPANCY_GRID: 'nav_msgs/msg/OccupancyGrid',
   ODOMETRY: 'nav_msgs/msg/Odometry',
+  PATH: 'nav_msgs/msg/Path',
+
+  // Geometry messages
   POSE_WITH_COVARIANCE_STAMPED: 'geometry_msgs/msg/PoseWithCovarianceStamped',
   POSE_STAMPED: 'geometry_msgs/msg/PoseStamped',
   TWIST: 'geometry_msgs/msg/Twist',
+  TWIST_STAMPED: 'geometry_msgs/msg/TwistStamped',
+
+  // Sensor messages
   LASER_SCAN: 'sensor_msgs/msg/LaserScan',
+  POINT_CLOUD2: 'sensor_msgs/msg/PointCloud2',
+  IMAGE: 'sensor_msgs/msg/Image',
+  BATTERY_STATE: 'sensor_msgs/msg/BatteryState',
+
+  // Standard messages
   STRING: 'std_msgs/msg/String',
   INT32: 'std_msgs/msg/Int32',
   BOOL: 'std_msgs/msg/Bool',
+  FLOAT32: 'std_msgs/msg/Float32',
+  HEADER: 'std_msgs/msg/Header',
 
-  // ========== Standard Services ==========
+  // Action messages
+  GOAL_STATUS_ARRAY: 'actionlib_msgs/GoalStatusArray',
+
+  // ============================================
+  // Service Types (package/srv/Type)
+  // ============================================
+
+  // Standard services
   TRIGGER: 'std_srvs/srv/Trigger',
+  SET_BOOL: 'std_srvs/srv/SetBool',
+  EMPTY: 'std_srvs/srv/Empty',
 
-  // ========== Custom Services - localization_msgs ==========
+  // Localization services (custom)
   APPLY_MAP: 'localization_msgs/srv/ApplyMap',
   LIST_MAPS: 'localization_msgs/srv/ListMaps',
   SAVE_MAP: 'localization_msgs/srv/SaveMap',
   LOAD_MAP: 'localization_msgs/srv/LoadMap',
   DELETE_MAP: 'localization_msgs/srv/DeleteMap',
+  GET_CURRENT_MAP_NAME: 'localization_msgs/srv/GetCurrentMapName',
 
-  // ========== Custom Services - astribot_msgs ==========
+  // Astribot services (custom)
   GET_MAP_LIST: 'astribot_msgs/srv/GetMapList',
   RAW_REQUEST: 'astribot_msgs/srv/RawRequest',
 
-  // ========== Actions ==========
-  MOVE_CHASSIS: 'astribot_msgs/action/MoveChassis',
+  // ============================================
+  // Action Types (package/action/Type)
+  // ============================================
+
+  // Navigation action (custom)
+  MOVE_CHASSIS_TO: 'astribot_msgs/action/MoveChassisTo',
+
+  // Nav2 actions
+  NAVIGATE_TO_POSE: 'nav2_msgs/action/NavigateToPose',
+  FOLLOW_PATH: 'nav2_msgs/action/FollowPath',
 };
+
+/**
+ * Helper function to get ROS2 message type
+ * Can be used for dynamic type lookup
+ */
+export function getROS2MessageType(key: keyof typeof ROS2_MESSAGE_TYPES): string {
+  return ROS2_MESSAGE_TYPES[key];
+}
+
+export default ROS2_MESSAGE_TYPES;

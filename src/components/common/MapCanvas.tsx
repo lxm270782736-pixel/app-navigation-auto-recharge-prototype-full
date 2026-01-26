@@ -4,6 +4,8 @@ import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
+import { ZONE_COLORS, SELECTED_ZONE_STROKE_WIDTH, NORMAL_ZONE_STROKE_WIDTH, POLYGON_CLOSE_THRESHOLD } from '@/constants/zone';
+
 
 interface MapCanvasProps {
   mapData: MapData;

@@ -8,8 +8,6 @@ import {
 import type { Waypoint, TaskConfig, NavigationActionConfig } from '@/types';
 import { TaskConfigurationModal, TaskListView } from './TaskConfigurationModal';
 
-const { Panel } = Collapse;
-
 interface WaypointConfigModalProps {
   visible: boolean;
   waypoint: Waypoint | null;
