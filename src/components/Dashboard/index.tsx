@@ -287,6 +287,7 @@ export const Dashboard: React.FC = () => {
         <Col xs={24} md={12} lg={8}>
           <Card
             hoverable
+            onClick={() => navigate('/settings')}
             style={{ height: '180px', cursor: 'pointer' }}
           >
             <div style={{ textAlign: 'center', paddingTop: '20px' }}>

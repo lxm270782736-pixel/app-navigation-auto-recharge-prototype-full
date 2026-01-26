@@ -142,6 +142,21 @@ export interface NavigationActionConfig {
 }
 
 // 机器人状态
+export enum RobotShapeType {
+  CIRCLE = 'circle',       // 圆形
+  POLYGON = 'polygon'      // 多边形
+}
+
+// 机器人碰撞形状配置
+export interface RobotShapeConfig {
+  type: RobotShapeType;
+  // 圆形参数
+  radius?: number;         // 半径 (m)
+  // 多边形参数 (相对于机器人中心的顶点坐标)
+  vertices?: { x: number; y: number }[];
+}
+
+// 机器人状态
 export enum RobotStatus {
   IDLE = 'idle',
   MAPPING = 'mapping',

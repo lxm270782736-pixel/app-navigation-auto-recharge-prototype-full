@@ -7,10 +7,11 @@ import { MapManager } from '@/components/MapManager';
 import { MapEditor } from '@/components/MapEditor';
 import { Mapping } from '@/components/Mapping';
 import { Navigation } from '@/components/Navigation';
+import { Settings } from '@/components/Settings';
 import './App.css';
 
 // 需要全屏显示的路由（不需要 app-container 背景和padding）
-const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation'];
+const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings'];
 
 function AppContent() {
   const location = useLocation();
@@ -26,6 +27,7 @@ function AppContent() {
         <Route path="/map-editor/:mapId" element={<MapEditor />} />
         <Route path="/mapping" element={<Mapping />} />
         <Route path="/navigation" element={<Navigation />} />
+        <Route path="/settings" element={<Settings />} />
       </Routes>
     </div>
   );
