@@ -245,21 +245,6 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     try {
       onNavigationStart(); // 先设置状态
 
-      // 保存导航配置到本地文件系统
-      try {
-        await navigationStorageService.saveNavigationConfig({
-          navigationType: "single", // 单点导航
-          navigationMode,
-          goalPose,
-          tasks,
-          actionConfig,
-          timestamp: Date.now(),
-        });
-      } catch (error) {
-        console.error("保存导航配置失败:", error);
-        message.warning("导航配置保存失败，继续执行导航");
-      }
-
       if (navigationMode === NavigationMode.LOCAL_NAVIGATION) {
         // 局部导航模式：发送到 /small_range_goal 话题
         rosService.sendLocalNavigationGoal(goalPose);

@@ -51,7 +51,7 @@ echo ""
 
 # 加载用户工作空间 (如果存在)
 # 注意: 请根据实际情况修改工作空间路径
-USER_WS_SETUP=""
+USER_WS_SETUP="/home/instellarma/Documents/Codes/Planning/astribot_slam_navi_ws/install/setup.bash"
 if [ -f "/home/astribot/ros2_ws/install/setup.bash" ]; then
     USER_WS_SETUP="/home/astribot/ros2_ws/install/setup.bash"
 elif [ -f "$HOME/ros2_ws/install/setup.bash" ]; then

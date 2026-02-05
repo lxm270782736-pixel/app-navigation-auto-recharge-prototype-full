@@ -129,143 +129,196 @@ class ROSService {
     });
   }
 
-  // 发送导航目标 (通过 /goal_pose topic)
-  // 该导航系统使用 topic 而不是 action server
+  // 发送导航目标 (通过 ROS Action)
   async sendNavigationGoal(goal: NavigationGoal): Promise<void> {
     if (!this.ros) {
       throw new Error('Not connected to ROS');
     }
 
-    console.log('[ROS] 🚀 sendNavigationGoal 被调用 (topic 模式)');
+    console.log('[ROS] 🚀 sendNavigationGoal 被调用 (action 模式)');
     console.log('[ROS] 导航目标:', goal);
 
-    // 构建 PoseStamped 消息
-    const poseMessage = {
-      header: {
-        stamp: {
-          sec: Math.floor(Date.now() / 1000),
-          nanosec: (Date.now() % 1000) * 1000000,
+    const actionClient = new ROSLIB.ActionClient({
+      ros: this.ros,
+      serverName: '/move_chassis_to_proxy',
+      actionName: 'astribot_nav_msgs/MoveChassisToAction',
+    });
+
+    console.log('[ROS] ActionClient 已创建:', actionClient);
+
+    // 构建 goal message
+    const goalMessageData: any = {
+      target_pose: {
+        header: {
+          frame_id: 'map',
         },
-        frame_id: 'map',
+        pose: {
+          position: {
+            x: goal.pose.x,
+            y: goal.pose.y,
+            z: 0,
+          },
+          orientation: {
+            x: 0,
+            y: 0,
+            z: Math.sin(goal.pose.theta / 2),
+            w: Math.cos(goal.pose.theta / 2),
+          },
+        },
       },
-      pose: {
-        position: {
-          x: goal.pose.x,
-          y: goal.pose.y,
-          z: 0,
-        },
-        orientation: {
-          x: 0,
-          y: 0,
-          z: Math.sin(goal.pose.theta / 2),
-          w: Math.cos(goal.pose.theta / 2),
-        },
+      use_default_config: goal.actionConfig?.use_default_config ?? true,
+      config: {
+        safe_dist: 0.35,
+        v_max: 0.5,
+        w_max: 1.0,
+        a_max: 1.0,
+        dw_max: 2.0,
+        is_holonomic: false,
+        deaccelaration_dist: 0.5,
+        deaccelaration_ratio: 0.5,
       },
     };
 
-    console.log('[ROS] 发布到 /goal_pose:', poseMessage);
-
-    // 发布到 /goal_pose topic
-    const goalTopic = new ROSLIB.Topic({
-      ros: this.ros,
-      name: '/goal_pose',
-      messageType: 'geometry_msgs/msg/PoseStamped',
-    });
-
-    const goalMessage = new ROSLIB.Message(poseMessage);
-    goalTopic.publish(goalMessage);
-
-
-    console.log('[ROS] ✅ 导航目标已发布到 /goal_pose');
-
-    // 订阅 /planner/task_status 监听导航状态
-    // status_code: 0=执行中，1=成功，2=目标点不可达，3=路径阻塞
-    const taskStatusTopic = new ROSLIB.Topic({
-      ros: this.ros,
-      name: '/planner/task_status',
-      messageType: 'astribot_msgs/msg/TaskStatus',
-    });
-
-    taskStatusTopic.subscribe((message: any) => {
-      console.log('[ROS] 收到 task_status:', message);
-
-      const statusCode = message.status_code;
-      const statusText = message.status_text || '';
-
-      // 发送导航状态事件
-      if (statusCode === 0) {
-        // 执行中
-        this.emit('navigation-status', {
-          status: 2, // EXECUTING
-          text: statusText || 'EXECUTING',
-        });
-      } else if (statusCode === 1) {
-        // 成功
-        this.emit('navigation-result', {
-          success: true,
-          actionStatus: 4, // SUCCEEDED
-          actionSucceeded: true,
-          actionAborted: false,
-          actionPreempted: false,
-          resultData: { status_text: statusText },
-          errorMessage: '',
-          statusText: statusText || 'SUCCEEDED',
-        });
-        taskStatusTopic.unsubscribe();
-      } else if (statusCode === 2 || statusCode === 3) {
-        // 失败：目标点不可达或路径阻塞
-        this.emit('navigation-result', {
-          success: false,
-          actionStatus: 6, // ABORTED
-          actionSucceeded: false,
-          actionAborted: true,
-          actionPreempted: false,
-          resultData: { status_text: statusText },
-          errorMessage: statusText || (statusCode === 2 ? 'Goal unreachable' : 'Path blocked'),
-          statusText: statusText || 'ABORTED',
-        });
-        taskStatusTopic.unsubscribe();
+    // 如果不使用默认配置，更新 config 字段
+    if (goal.actionConfig && !goal.actionConfig.use_default_config) {
+      if (goal.actionConfig.safe_dist !== undefined) {
+        goalMessageData.config.safe_dist = goal.actionConfig.safe_dist;
       }
+      if (goal.actionConfig.v_max !== undefined) {
+        goalMessageData.config.v_max = goal.actionConfig.v_max;
+      }
+      if (goal.actionConfig.w_max !== undefined) {
+        goalMessageData.config.w_max = goal.actionConfig.w_max;
+      }
+      if (goal.actionConfig.a_max !== undefined) {
+        goalMessageData.config.a_max = goal.actionConfig.a_max;
+      }
+      if (goal.actionConfig.dw_max !== undefined) {
+        goalMessageData.config.dw_max = goal.actionConfig.dw_max;
+      }
+      if (goal.actionConfig.is_holonomic !== undefined) {
+        goalMessageData.config.is_holonomic = goal.actionConfig.is_holonomic;
+      }
+      if (goal.actionConfig.deaccelaration_dist !== undefined) {
+        goalMessageData.config.deaccelaration_dist = goal.actionConfig.deaccelaration_dist;
+      }
+      if (goal.actionConfig.deaccelaration_ratio !== undefined) {
+        goalMessageData.config.deaccelaration_ratio = goal.actionConfig.deaccelaration_ratio;
+      }
+    }
+
+    // 添加任务配置（如果有）
+    if (goal.tasks && goal.tasks.length > 0) {
+      goalMessageData.tasks = JSON.stringify(goal.tasks);
+      console.log('[ROS] Sending tasks with navigation goal:', goal.tasks);
+    }
+
+    console.log('[ROS] Goal message data:', goalMessageData);
+
+    const goalMessage = new ROSLIB.Goal({
+      actionClient,
+      goalMessage: goalMessageData,
     });
 
-    // 发送初始导航状态事件
-    this.emit('navigation-status', {
-      status: 1, // ACCEPTED
-      text: 'ACCEPTED',
+    // 保存当前 goal 用于取消
+    this.currentActionGoal = goalMessage;
+
+    console.log('[ROS] Goal 对象已创建:', goalMessage);
+
+    // 用于存储最后收到的 action status
+    let lastActionStatus: number | undefined;
+    let resultHandled = false; // 防止重复处理 result
+
+    return new Promise((resolve, _reject) => {
+      // 监听导航状态更新
+      goalMessage.on('status', (status: any) => {
+        console.log('[ROS] Navigation status:', status);
+
+        lastActionStatus = status.status;
+
+        this.emit('navigation-status', {
+          status: status.status,
+          text: this.getActionStatusText(status.status),
+        });
+      });
+
+      // 处理导航结果
+      goalMessage.on('result', (result: any) => {
+        // 防止重复处理
+        if (resultHandled) {
+          console.log('[ROS] Navigation result already handled, ignoring duplicate');
+          return;
+        }
+        resultHandled = true;
+
+        console.log('[ROS] Navigation result received (RAW):', result);
+
+        const actionStatus = lastActionStatus;
+        const actionSucceeded = actionStatus === 3;
+        const actionAborted = actionStatus === 4;
+        const actionPreempted = actionStatus === 2;
+
+        // 兼容两种格式：
+        // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
+        // 2. Mock: {success: true, message: "..."}
+        const resultSuccess = result.result === true || result.success === true;
+        const errorMessage = result.result_text || result.message || '';
+
+        const success = actionSucceeded && resultSuccess;
+
+        const resultInfo = {
+          success,
+          actionStatus,
+          actionSucceeded,
+          actionAborted,
+          actionPreempted,
+          resultData: result,
+          errorMessage,
+          statusText: this.getActionStatusText(actionStatus || 0),
+        };
+
+        console.log('[ROS] Navigation result analysis:', resultInfo);
+
+        this.emit('navigation-result', resultInfo);
+        this.currentActionGoal = null;
+
+        resolve();
+      });
+
+      // 处理导航反馈
+      goalMessage.on('feedback', (feedback: any) => {
+        console.log('[ROS] Navigation feedback:', feedback);
+
+        const feedbackData = {
+          distance_to_goal: feedback.distance_to_goal,
+          current_pose: feedback.current_pose,
+          current_task: feedback.current_task,
+          progress: feedback.progress,
+          eta: feedback.eta,
+          raw: feedback,
+        };
+
+        this.emit('navigation-feedback', feedbackData);
+      });
+
+      console.log('[ROS] 准备发送 goal...');
+      goalMessage.send();
+      console.log('[ROS] ✅ goalMessage.send() 已调用');
     });
   }
 
-  // 当前 action ID
-  private currentActionId: string | null = null;
+  // 当前 action goal (类型扩展以包含 cancel 方法)
+  private currentActionGoal: (ROSLIB.Goal & { cancel?: () => void }) | null = null;
 
   // 取消导航
   cancelNavigation() {
     if (!this.ros) return;
-    console.log('[ROS] 取消导航 - 发布紧急停止');
+    console.log('[ROS] 取消导航');
 
-    // 发布到 /planner/emergency_stop
-    const emergencyStopTopic = new ROSLIB.Topic({
-      ros: this.ros,
-      name: '/planner/emergency_stop',
-      messageType: 'std_msgs/msg/Bool',
-    });
-
-    const stopMessage = new ROSLIB.Message({ data: true });
-    emergencyStopTopic.publish(stopMessage);
-
-    console.log('[ROS] ✅ 紧急停止信号已发送');
-
-    // 发送取消事件
-    this.emit('navigation-result', {
-      success: false,
-      actionStatus: 5, // CANCELED
-      actionSucceeded: false,
-      actionAborted: false,
-      actionPreempted: true,
-      resultData: {},
-      errorMessage: 'Navigation canceled by user',
-      statusText: 'CANCELED',
-    });
+    if (this.currentActionGoal && this.currentActionGoal.cancel) {
+      this.currentActionGoal.cancel();
+      console.log('[ROS] ✅ Action goal 已取消');
+    }
   }
 
   // 发送局部导航目标

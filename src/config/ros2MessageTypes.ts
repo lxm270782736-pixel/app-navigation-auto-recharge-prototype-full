@@ -59,15 +59,15 @@ export const ROS2_MESSAGE_TYPES = {
   GET_CURRENT_MAP_NAME: 'localization_msgs/srv/GetCurrentMapName',
 
   // Astribot services (custom)
-  GET_MAP_LIST: 'astribot_msgs/srv/GetMapList',
-  RAW_REQUEST: 'astribot_msgs/srv/RawRequest',
+  GET_MAP_LIST: 'astribot_nav_msgs/srv/GetMapList',
+  RAW_REQUEST: 'astribot_nav_msgs/srv/RawRequest',
 
   // ============================================
   // Action Types (package/action/Type)
   // ============================================
 
   // Navigation action (custom)
-  MOVE_CHASSIS_TO: 'astribot_msgs/action/MoveChassisTo',
+  MOVE_CHASSIS_TO: 'astribot_nav_msgs/action/MoveChassisTo',
 
   // Nav2 actions
   NAVIGATE_TO_POSE: 'nav2_msgs/action/NavigateToPose',
