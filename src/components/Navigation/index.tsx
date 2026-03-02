@@ -19,12 +19,15 @@ import { mapStorageService } from '@/services/storage';
 import { navigationStorageService } from '@/services/navigationStorage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, Waypoint } from '@/types';
+import type { MapData, Pose, Waypoint, PathPoint } from '@/types';
 import dayjs from 'dayjs';
 
 export const Navigation: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
+
+  // 导航规划路径
+  const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
 
   // 使用实时地图（通过 /map 话题订阅）
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
@@ -82,9 +85,16 @@ export const Navigation: React.FC = () => {
   // 重定位模式状态
   const [isRelocalizationMode, setIsRelocalizationMode] = useState(false);
 
-  // 栅格显示状态
-  const [showGrid, setShowGrid] = useState(false);
-  const [gridSize, setGridSize] = useState(1.0); // 栅格大小（米）
+  // 图层显示状态
+  const [layers, setLayers] = useState({
+    grid: false,
+    gridSize: 1.0,
+    coordinateSystem: true,
+    robotPose: true,
+    goalPose: true,
+    path: true,
+    trail: true,
+  });
 
   // 页面加载时，恢复保存的导航配置（目标点、任务和路径点）
   const [savedNavConfig, setSavedNavConfig] = useState<any>(null);
@@ -293,6 +303,30 @@ export const Navigation: React.FC = () => {
           y: position.y,
           theta,
         });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [connectionStatus]);
+
+  // 订阅导航规划路径
+  useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      setNavigationPath([]);
+      return;
+    }
+
+    const unsubscribe = rosService.subscribeTopic<any>(
+      '/visualizer/mincoPath',
+      ROS2_MESSAGE_TYPES.PATH,
+      (pathMsg) => {
+        const points: PathPoint[] = pathMsg.poses.map((ps: any) => ({
+          x: ps.pose.position.x,
+          y: ps.pose.position.y,
+        }));
+        setNavigationPath(points);
       }
     );
 
@@ -1061,28 +1095,6 @@ export const Navigation: React.FC = () => {
           导航 - {isMapRealtime ? '实时地图' : currentMap.name}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '14px', color: '#666' }}>栅格</span>
-            <Switch
-              size="small"
-              checked={showGrid}
-              onChange={setShowGrid}
-            />
-            {showGrid && (
-              <Select
-                size="small"
-                value={gridSize}
-                onChange={setGridSize}
-                style={{ width: 80 }}
-                options={[
-                  { label: '0.5m', value: 0.5 },
-                  { label: '1.0m', value: 1.0 },
-                  { label: '2.0m', value: 2.0 },
-                  { label: '5.0m', value: 5.0 },
-                ]}
-              />
-            )}
-          </div>
           <Button
             icon={<SaveOutlined />}
             onClick={handleSaveMap}
@@ -1102,13 +1114,15 @@ export const Navigation: React.FC = () => {
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <MapCanvas
           mapData={currentMap}
-          robotPose={robotPose}
-          goalPose={goalPose}
+          robotPose={layers.robotPose ? robotPose : undefined}
+          goalPose={layers.goalPose ? goalPose : undefined}
           initialPose={initialPose}
+          path={layers.path ? navigationPath : undefined}
           onMapClick={handleMapClick}
-          showCoordinateSystem={true}
-          showGrid={showGrid}
-          gridSize={gridSize}
+          showCoordinateSystem={layers.coordinateSystem}
+          showRobotTrail={layers.trail}
+          showGrid={layers.grid}
+          gridSize={layers.gridSize}
           waypoints={waypointMode ? waypoints.map(w => w.pose) : []}
           currentWaypointIndex={currentWaypointIndex}
           completedWaypoints={completedWaypoints}
@@ -1117,6 +1131,58 @@ export const Navigation: React.FC = () => {
           onWaypointDrag={handleWaypointDrag}
           onWaypointDelete={handleDeleteWaypoint}
         />
+
+        {/* 图层控制面板（地图右上角） */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '350px',
+            background: 'rgba(255, 255, 255, 0.92)',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            zIndex: 100,
+            backdropFilter: 'blur(6px)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            minWidth: '160px',
+          }}
+        >
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: '#333' }}>图层</div>
+          {[
+            { key: 'coordinateSystem', label: '坐标系' },
+            { key: 'robotPose', label: '机器人' },
+            { key: 'goalPose', label: '目标点' },
+            { key: 'path', label: '规划路径' },
+            { key: 'trail', label: '轨迹' },
+            { key: 'grid', label: '栅格' },
+          ].map(({ key, label }) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0' }}>
+              <span style={{ fontSize: '13px', color: '#555' }}>{label}</span>
+              <Switch
+                size="small"
+                checked={layers[key as keyof typeof layers] as boolean}
+                onChange={(v) => setLayers(prev => ({ ...prev, [key]: v }))}
+              />
+            </div>
+          ))}
+          {layers.grid && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0', marginTop: '2px', borderTop: '1px solid #eee', paddingTop: '6px' }}>
+              <span style={{ fontSize: '12px', color: '#888' }}>栅格大小</span>
+              <Select
+                size="small"
+                value={layers.gridSize}
+                onChange={(v) => setLayers(prev => ({ ...prev, gridSize: v }))}
+                style={{ width: 72 }}
+                options={[
+                  { label: '0.5m', value: 0.5 },
+                  { label: '1.0m', value: 1.0 },
+                  { label: '2.0m', value: 2.0 },
+                  { label: '5.0m', value: 5.0 },
+                ]}
+              />
+            </div>
+          )}
+        </div>
 
         {/* 浮动控制面板 */}
         <div

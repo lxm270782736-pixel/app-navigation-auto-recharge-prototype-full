@@ -326,18 +326,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     // 绘制路径
     if (path && path.length > 0) {
-      ctx.strokeStyle = '#1890ff';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-
       const firstPoint = worldToMap(path[0].x, path[0].y, mapData);
-      ctx.moveTo(firstPoint.x, firstPoint.y);
 
+      // 底层发光效果（较粗的半透明线）
+      ctx.strokeStyle = 'rgba(0, 210, 255, 0.25)';
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(firstPoint.x, firstPoint.y);
       for (let i = 1; i < path.length; i++) {
         const point = worldToMap(path[i].x, path[i].y, mapData);
         ctx.lineTo(point.x, point.y);
       }
+      ctx.stroke();
 
+      // 上层实线（青色，与航点连线的蓝色虚线区分）
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(firstPoint.x, firstPoint.y);
+      for (let i = 1; i < path.length; i++) {
+        const point = worldToMap(path[i].x, path[i].y, mapData);
+        ctx.lineTo(point.x, point.y);
+      }
       ctx.stroke();
     }
 
