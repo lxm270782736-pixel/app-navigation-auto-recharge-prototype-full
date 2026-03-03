@@ -41,6 +41,9 @@ export const ROS2_MESSAGE_TYPES = {
   // Action messages
   GOAL_STATUS_ARRAY: 'actionlib_msgs/GoalStatusArray',
 
+  // Dock messages
+  DOCK_STATUS: 'astribot_nav_msgs/msg/DockStatus',
+
   // ============================================
   // Service Types (package/srv/Type)
   // ============================================
@@ -72,6 +75,10 @@ export const ROS2_MESSAGE_TYPES = {
   // Nav2 actions
   NAVIGATE_TO_POSE: 'nav2_msgs/action/NavigateToPose',
   FOLLOW_PATH: 'nav2_msgs/action/FollowPath',
+
+  // Dock actions
+  DOCK: 'astribot_nav_msgs/action/Dock',
+  UNDOCK: 'astribot_nav_msgs/action/Undock',
 };
 
 /**

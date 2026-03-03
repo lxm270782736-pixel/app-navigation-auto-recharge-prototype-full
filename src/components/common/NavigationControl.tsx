@@ -262,7 +262,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
           actionConfig, // 添加导航参数配置
         };
 
-        await rosService.sendNavigationGoal(goal);
+        rosService.sendNavigationGoal(goal);
         // message.success('导航已开始'); // 移除立即提示，通过导航状态显示
       }
     } catch (error) {

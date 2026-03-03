@@ -13,6 +13,7 @@ import { SimpleLocalizationControl } from '@/components/common/SimpleLocalizatio
 import { WaypointControl } from '@/components/common/WaypointControl';
 import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
 import { ChassisControl } from '@/components/common/ChassisControl';
+import { DockControl } from '@/components/common/DockControl';
 import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { mapStorageService } from '@/services/storage';
@@ -878,9 +879,6 @@ export const Navigation: React.FC = () => {
           pose: waypoint.pose,
           tasks: waypoint.tasks || [],
           actionConfig: waypoint.actionConfig || { use_default_config: true },
-        }).catch(error => {
-          console.error('[导航] 发送导航目标失败:', error);
-          message.error(`发送导航目标失败: ${error.message}`);
         });
       }
     } catch (error) {
@@ -1215,6 +1213,9 @@ export const Navigation: React.FC = () => {
               console.log('Chassis control type changed:', type);
             }}
             />
+
+          {/* 回充控制 */}
+          <DockControl isNavigating={isNavigating} />
 
           {/* 导航模式切换和路径点管理 */}
           <WaypointControl

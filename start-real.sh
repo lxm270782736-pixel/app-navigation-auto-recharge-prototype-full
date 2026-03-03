@@ -88,7 +88,7 @@ fi
 # 启动ROS2 Bridge Server
 if [ "$ROSBRIDGE_LAUNCHED" != "false" ] && ! lsof -Pi :9090 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
     echo "启动ROS2 Bridge服务器..."
-    ros2 launch rosbridge_server rosbridge_websocket_launch.xml &
+    ros2 launch rosbridge_server rosbridge_websocket_launch.xml send_action_goals_in_new_thread:=true &
     ROSBRIDGE_PID=$!
     sleep 3
 

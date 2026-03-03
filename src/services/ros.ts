@@ -1,6 +1,7 @@
 import ROSLIB from 'roslib';
 import type { MapData, Pose, NavigationGoal } from '@/types';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
+import { sendROS2ActionGoal, getActionStatusText, ActionStatus, type ROS2ActionHandle } from '@/services/ros2Action';
 
 class ROSService {
   private ros: ROSLIB.Ros | null = null;
@@ -129,35 +130,20 @@ class ROSService {
     });
   }
 
-  // 发送导航目标 (通过 ROS Action)
-  async sendNavigationGoal(goal: NavigationGoal): Promise<void> {
+  // 发送导航目标 (通过 rosbridge ROS2 Action 协议)
+  sendNavigationGoal(goal: NavigationGoal): void {
     if (!this.ros) {
       throw new Error('Not connected to ROS');
     }
 
-    console.log('[ROS] 🚀 sendNavigationGoal 被调用 (action 模式)');
-    console.log('[ROS] 导航目标:', goal);
-
-    const actionClient = new ROSLIB.ActionClient({
-      ros: this.ros,
-      serverName: '/move_chassis_to_proxy',
-      actionName: 'astribot_nav_msgs/MoveChassisToAction',
-    });
-
-    console.log('[ROS] ActionClient 已创建:', actionClient);
+    console.log('[ROS] sendNavigationGoal (ROS2 Action)');
 
     // 构建 goal message
     const goalMessageData: any = {
       target_pose: {
-        header: {
-          frame_id: 'map',
-        },
+        header: { frame_id: 'map' },
         pose: {
-          position: {
-            x: goal.pose.x,
-            y: goal.pose.y,
-            z: 0,
-          },
+          position: { x: goal.pose.x, y: goal.pose.y, z: 0 },
           orientation: {
             x: 0,
             y: 0,
@@ -181,143 +167,100 @@ class ROSService {
 
     // 如果不使用默认配置，更新 config 字段
     if (goal.actionConfig && !goal.actionConfig.use_default_config) {
-      if (goal.actionConfig.safe_dist !== undefined) {
-        goalMessageData.config.safe_dist = goal.actionConfig.safe_dist;
-      }
-      if (goal.actionConfig.v_max !== undefined) {
-        goalMessageData.config.v_max = goal.actionConfig.v_max;
-      }
-      if (goal.actionConfig.w_max !== undefined) {
-        goalMessageData.config.w_max = goal.actionConfig.w_max;
-      }
-      if (goal.actionConfig.a_max !== undefined) {
-        goalMessageData.config.a_max = goal.actionConfig.a_max;
-      }
-      if (goal.actionConfig.dw_max !== undefined) {
-        goalMessageData.config.dw_max = goal.actionConfig.dw_max;
-      }
-      if (goal.actionConfig.is_holonomic !== undefined) {
-        goalMessageData.config.is_holonomic = goal.actionConfig.is_holonomic;
-      }
-      if (goal.actionConfig.deaccelaration_dist !== undefined) {
-        goalMessageData.config.deaccelaration_dist = goal.actionConfig.deaccelaration_dist;
-      }
-      if (goal.actionConfig.deaccelaration_ratio !== undefined) {
-        goalMessageData.config.deaccelaration_ratio = goal.actionConfig.deaccelaration_ratio;
-      }
+      const cfg = goal.actionConfig;
+      if (cfg.safe_dist !== undefined) goalMessageData.config.safe_dist = cfg.safe_dist;
+      if (cfg.v_max !== undefined) goalMessageData.config.v_max = cfg.v_max;
+      if (cfg.w_max !== undefined) goalMessageData.config.w_max = cfg.w_max;
+      if (cfg.a_max !== undefined) goalMessageData.config.a_max = cfg.a_max;
+      if (cfg.dw_max !== undefined) goalMessageData.config.dw_max = cfg.dw_max;
+      if (cfg.is_holonomic !== undefined) goalMessageData.config.is_holonomic = cfg.is_holonomic;
+      if (cfg.deaccelaration_dist !== undefined) goalMessageData.config.deaccelaration_dist = cfg.deaccelaration_dist;
+      if (cfg.deaccelaration_ratio !== undefined) goalMessageData.config.deaccelaration_ratio = cfg.deaccelaration_ratio;
     }
 
-    // 添加任务配置（如果有）
+    // 添加任务配置
     if (goal.tasks && goal.tasks.length > 0) {
       goalMessageData.tasks = JSON.stringify(goal.tasks);
-      console.log('[ROS] Sending tasks with navigation goal:', goal.tasks);
     }
 
     console.log('[ROS] Goal message data:', goalMessageData);
 
-    const goalMessage = new ROSLIB.Goal({
-      actionClient,
-      goalMessage: goalMessageData,
-    });
+    this.currentNavHandle = sendROS2ActionGoal(
+      {
+        ros: this.ros,
+        serverName: '/move_chassis_to_server',
+        actionType: ROS2_MESSAGE_TYPES.MOVE_CHASSIS_TO,
+      },
+      goalMessageData,
+      {
+        onStatus: (status, text) => {
+          console.log('[ROS] Navigation status:', status, text);
+          this.emit('navigation-status', { status, text });
+        },
+        onFeedback: (feedback) => {
+          console.log('[ROS] Navigation feedback:', feedback);
+          this.emit('navigation-feedback', {
+            distance_to_goal: feedback.distance_to_goal,
+            current_pose: feedback.current_pose,
+            current_task: feedback.current_task,
+            progress: feedback.progress,
+            eta: feedback.eta,
+            raw: feedback,
+          });
+        },
+        onResult: (result, succeeded) => {
+          console.log('[ROS] Navigation result:', result, 'succeeded:', succeeded);
 
-    // 保存当前 goal 用于取消
-    this.currentActionGoal = goalMessage;
+          // 兼容两种格式：
+          // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
+          // 2. Mock: {success: true, message: "..."}
+          const resultSuccess = succeeded && (result.result !== false && result.success !== false);
+          const errorMessage = result.result_text || result.message || '';
 
-    console.log('[ROS] Goal 对象已创建:', goalMessage);
+          const resultInfo = {
+            success: resultSuccess,
+            actionStatus: succeeded ? ActionStatus.SUCCEEDED : ActionStatus.ABORTED,
+            actionSucceeded: succeeded,
+            actionAborted: !succeeded,
+            actionPreempted: false,
+            resultData: result,
+            errorMessage,
+            statusText: getActionStatusText(succeeded ? ActionStatus.SUCCEEDED : ActionStatus.ABORTED),
+          };
 
-    // 用于存储最后收到的 action status
-    let lastActionStatus: number | undefined;
-    let resultHandled = false; // 防止重复处理 result
-
-    return new Promise((resolve, _reject) => {
-      // 监听导航状态更新
-      goalMessage.on('status', (status: any) => {
-        console.log('[ROS] Navigation status:', status);
-
-        lastActionStatus = status.status;
-
-        this.emit('navigation-status', {
-          status: status.status,
-          text: this.getActionStatusText(status.status),
-        });
-      });
-
-      // 处理导航结果
-      goalMessage.on('result', (result: any) => {
-        // 防止重复处理
-        if (resultHandled) {
-          console.log('[ROS] Navigation result already handled, ignoring duplicate');
-          return;
-        }
-        resultHandled = true;
-
-        console.log('[ROS] Navigation result received (RAW):', result);
-
-        const actionStatus = lastActionStatus;
-        const actionSucceeded = actionStatus === 3;
-        const actionAborted = actionStatus === 4;
-        const actionPreempted = actionStatus === 2;
-
-        // 兼容两种格式：
-        // 1. 真实 ROS: {result: true, result_text: "...", final_pose: {...}, navigation_time: X}
-        // 2. Mock: {success: true, message: "..."}
-        const resultSuccess = result.result === true || result.success === true;
-        const errorMessage = result.result_text || result.message || '';
-
-        const success = actionSucceeded && resultSuccess;
-
-        const resultInfo = {
-          success,
-          actionStatus,
-          actionSucceeded,
-          actionAborted,
-          actionPreempted,
-          resultData: result,
-          errorMessage,
-          statusText: this.getActionStatusText(actionStatus || 0),
-        };
-
-        console.log('[ROS] Navigation result analysis:', resultInfo);
-
-        this.emit('navigation-result', resultInfo);
-        this.currentActionGoal = null;
-
-        resolve();
-      });
-
-      // 处理导航反馈
-      goalMessage.on('feedback', (feedback: any) => {
-        console.log('[ROS] Navigation feedback:', feedback);
-
-        const feedbackData = {
-          distance_to_goal: feedback.distance_to_goal,
-          current_pose: feedback.current_pose,
-          current_task: feedback.current_task,
-          progress: feedback.progress,
-          eta: feedback.eta,
-          raw: feedback,
-        };
-
-        this.emit('navigation-feedback', feedbackData);
-      });
-
-      console.log('[ROS] 准备发送 goal...');
-      goalMessage.send();
-      console.log('[ROS] ✅ goalMessage.send() 已调用');
-    });
+          console.log('[ROS] Navigation result analysis:', resultInfo);
+          this.emit('navigation-result', resultInfo);
+          this.currentNavHandle = null;
+        },
+        onError: (err) => {
+          console.error('[ROS] Navigation action 失败:', err);
+          this.emit('navigation-result', {
+            success: false,
+            actionStatus: ActionStatus.ABORTED,
+            actionSucceeded: false,
+            actionAborted: true,
+            actionPreempted: false,
+            resultData: null,
+            errorMessage: `${err}`,
+            statusText: 'ABORTED',
+          });
+          this.currentNavHandle = null;
+        },
+      }
+    );
   }
 
-  // 当前 action goal (类型扩展以包含 cancel 方法)
-  private currentActionGoal: (ROSLIB.Goal & { cancel?: () => void }) | null = null;
+  // 当前导航 action handle
+  private currentNavHandle: ROS2ActionHandle | null = null;
 
   // 取消导航
   cancelNavigation() {
     if (!this.ros) return;
     console.log('[ROS] 取消导航');
 
-    if (this.currentActionGoal && this.currentActionGoal.cancel) {
-      this.currentActionGoal.cancel();
-      console.log('[ROS] ✅ Action goal 已取消');
+    if (this.currentNavHandle) {
+      this.currentNavHandle.cancel();
+      console.log('[ROS] Navigation cancel 已发送');
     }
   }
 
@@ -797,20 +740,81 @@ class ROSService {
     };
   }
 
-  // 获取 Action 状态文本
-  private getActionStatusText(status: number): string {
-    // ROS2 Action 状态码
-    // https://docs.ros2.org/latest/api/action_msgs/msg/GoalStatus.html
-    const statusMap: { [key: number]: string } = {
-      0: 'UNKNOWN',        // 未知状态
-      1: 'ACCEPTED',       // 目标已接受
-      2: 'EXECUTING',      // 正在执行
-      3: 'CANCELING',      // 正在取消
-      4: 'SUCCEEDED',      // 成功
-      5: 'CANCELED',       // 已取消
-      6: 'ABORTED',        // 中止（失败）
-    };
-    return statusMap[status] || `UNKNOWN(${status})`;
+  // ========== 回充控制 (Dock/Undock) ==========
+
+  private currentDockHandle: ROS2ActionHandle | null = null;
+
+  // 发送上桩指令
+  sendDockGoal(forceRetry: boolean = false): void {
+    if (!this.ros) throw new Error('Not connected to ROS');
+
+    console.log('[ROS] 发送上桩指令, force_retry:', forceRetry);
+
+    this.currentDockHandle = sendROS2ActionGoal(
+      {
+        ros: this.ros,
+        serverName: '/dock',
+        actionType: ROS2_MESSAGE_TYPES.DOCK,
+      },
+      { force_retry: forceRetry },
+      {
+        onStatus: (status, text) => {
+          this.emit('dock-status-update', { status, text });
+        },
+        onFeedback: (feedback) => {
+          this.emit('dock-feedback', feedback);
+        },
+        onResult: (result, succeeded) => {
+          this.emit('dock-result', { ...result, success: succeeded });
+          this.currentDockHandle = null;
+        },
+        onError: (err) => {
+          this.emit('dock-result', { success: false, error_code: -1, message: `${err}` });
+          this.currentDockHandle = null;
+        },
+      }
+    );
+  }
+
+  // 发送下桩指令
+  sendUndockGoal(savePosition: boolean = false): void {
+    if (!this.ros) throw new Error('Not connected to ROS');
+
+    console.log('[ROS] 发送下桩指令, save_position:', savePosition);
+
+    this.currentDockHandle = sendROS2ActionGoal(
+      {
+        ros: this.ros,
+        serverName: '/undock',
+        actionType: ROS2_MESSAGE_TYPES.UNDOCK,
+      },
+      { save_position: savePosition },
+      {
+        onStatus: (status, text) => {
+          this.emit('undock-status-update', { status, text });
+        },
+        onFeedback: (feedback) => {
+          this.emit('undock-feedback', feedback);
+        },
+        onResult: (result, succeeded) => {
+          this.emit('undock-result', { ...result, success: succeeded });
+          this.currentDockHandle = null;
+        },
+        onError: (err) => {
+          this.emit('undock-result', { success: false, error_code: -1, message: `${err}` });
+          this.currentDockHandle = null;
+        },
+      }
+    );
+  }
+
+  // 取消上桩/下桩
+  cancelDock() {
+    if (this.currentDockHandle) {
+      this.currentDockHandle.cancel();
+      this.currentDockHandle.cleanup();
+      this.currentDockHandle = null;
+    }
   }
 
   // 设置底盘控制类型
