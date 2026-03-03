@@ -33,6 +33,7 @@ export const Navigation: React.FC = () => {
   // 使用实时地图（通过 /map 话题订阅）
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [isMapRealtime, setIsMapRealtime] = useState(false); // 地图是否为实时更新
+  const [currentMapName, setCurrentMapName] = useState<string>(''); // 当前地图名称
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [goalPose, setGoalPose] = useState<Pose | undefined>();
   const [initialPose, setInitialPose] = useState<Pose | undefined>(); // 初始化位姿
@@ -245,6 +246,11 @@ export const Navigation: React.FC = () => {
     const unsubscribe = rosService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
       setIsMapRealtime(true); // 接收到实时地图数据
+    });
+
+    // 获取当前地图名称
+    rosService.getCurrentMapName().then((name) => {
+      if (name) setCurrentMapName(name);
     });
 
     return () => {
@@ -591,6 +597,7 @@ export const Navigation: React.FC = () => {
       // 立即设置当前地图，不等待/map话题发布
       setCurrentMap(fullMapData);
       setIsMapRealtime(true);
+      setCurrentMapName(map.name);
 
       message.success({
         content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`,
@@ -1090,7 +1097,7 @@ export const Navigation: React.FC = () => {
           返回
         </Button>
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          导航 - {isMapRealtime ? '实时地图' : currentMap.name}
+          导航 - {currentMapName || currentMap.name}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
           <Button
