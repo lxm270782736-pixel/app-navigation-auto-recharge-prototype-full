@@ -1,9 +1,8 @@
 import React from 'react';
-import { Card, Button, List, Space, Tag, Radio, Progress, Empty } from 'antd';
+import { Card, Button, List, Space, Tag, Progress, Empty } from 'antd';
 import {
   DeleteOutlined,
   ClearOutlined,
-  AimOutlined,
   EnvironmentOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -212,7 +211,7 @@ const SortableWaypointItem: React.FC<SortableWaypointItemProps> = ({
 
 export const WaypointControl: React.FC<WaypointControlProps> = ({
   waypointMode,
-  onModeChange,
+  onModeChange: _onModeChange,
   waypoints,
   currentWaypointIndex,
   completedWaypoints,
@@ -249,32 +248,11 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
 
   return (
     <Card
-      title="导航模式"
+      title="路径点管理"
       size="small"
       style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        {/* 模式切换 */}
-        <div>
-          <div style={{ marginBottom: 8, fontSize: '13px', color: '#666' }}>
-            选择导航模式
-          </div>
-          <Radio.Group
-            value={waypointMode}
-            onChange={(e) => onModeChange(e.target.value)}
-            buttonStyle="solid"
-            style={{ width: '100%' }}
-            disabled={isNavigating}
-          >
-            <Radio.Button value={false} style={{ width: '50%', textAlign: 'center' }}>
-              <AimOutlined /> 单点导航
-            </Radio.Button>
-            <Radio.Button value={true} style={{ width: '50%', textAlign: 'center' }}>
-              <EnvironmentOutlined /> 多点巡航
-            </Radio.Button>
-          </Radio.Group>
-        </div>
-
         {/* 多点模式信息 */}
         {waypointMode && (
           <>

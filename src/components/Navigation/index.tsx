@@ -1217,21 +1217,6 @@ export const Navigation: React.FC = () => {
           {/* 回充控制 */}
           <DockControl isNavigating={isNavigating} />
 
-          {/* 导航模式切换和路径点管理 */}
-          <WaypointControl
-            waypointMode={waypointMode}
-            onModeChange={handleModeChange}
-            waypoints={waypoints}
-            currentWaypointIndex={currentWaypointIndex}
-            completedWaypoints={completedWaypoints}
-            selectedWaypointIndex={selectedWaypointIndex}
-            onEditWaypoint={handleEditWaypoint}
-            onDeleteWaypoint={handleDeleteWaypoint}
-            onClearWaypoints={handleClearWaypoints}
-            onMoveWaypoint={handleMoveWaypoint}
-            isNavigating={isNavigating}
-          />
-
           {/* 导航控制 */}
           <NavigationControl
             robotPose={robotPose || null}
@@ -1244,9 +1229,27 @@ export const Navigation: React.FC = () => {
             navigationFeedback={navigationFeedback}
             connectionStatus={connectionStatus}
             waypointMode={waypointMode}
+            onWaypointModeChange={handleModeChange}
             waypoints={waypoints.map(w => w.pose)}
             onStartWaypointNavigation={() => navigateToWaypoint(0)}
           />
+
+          {/* 路径点管理 - 仅多点巡航模式下显示 */}
+          {waypointMode && (
+            <WaypointControl
+              waypointMode={waypointMode}
+              onModeChange={handleModeChange}
+              waypoints={waypoints}
+              currentWaypointIndex={currentWaypointIndex}
+              completedWaypoints={completedWaypoints}
+              selectedWaypointIndex={selectedWaypointIndex}
+              onEditWaypoint={handleEditWaypoint}
+              onDeleteWaypoint={handleDeleteWaypoint}
+              onClearWaypoints={handleClearWaypoints}
+              onMoveWaypoint={handleMoveWaypoint}
+              isNavigating={isNavigating}
+            />
+          )}
         </div>
 
         {/* 底部操作提示 */}

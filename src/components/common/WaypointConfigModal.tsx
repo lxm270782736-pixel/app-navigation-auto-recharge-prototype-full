@@ -217,7 +217,7 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
                   borderRadius: '4px',
                 }}
               >
-                <TaskListView tasks={tasks} />
+                <TaskListView tasks={tasks} onConfigure={() => setTaskConfigModalVisible(true)} />
               </div>
             ) : (
               <div
@@ -347,7 +347,7 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
       {/* 任务配置Modal */}
       <TaskConfigurationModal
         visible={taskConfigModalVisible}
-        initialTasks={tasks}
+        tasks={tasks}
         onSave={handleSaveTasks}
         onCancel={() => setTaskConfigModalVisible(false)}
       />

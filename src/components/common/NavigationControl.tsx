@@ -17,6 +17,7 @@ import {
   LoadingOutlined,
   ThunderboltOutlined,
   AimOutlined,
+  EnvironmentOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
 import { rosService } from "@/services/ros";
@@ -58,6 +59,7 @@ interface NavigationControlProps {
   };
   connectionStatus?: ConnectionStatus;
   waypointMode?: boolean; // 是否为多点巡航模式
+  onWaypointModeChange?: (mode: boolean) => void; // 切换单点/多点模式
   waypoints?: Pose[]; // 路径点列表
   onStartWaypointNavigation?: () => void; // 开始巡航回调
 }
@@ -73,6 +75,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   navigationFeedback,
   connectionStatus = ConnectionStatus.DISCONNECTED,
   waypointMode = false,
+  onWaypointModeChange,
   waypoints = [],
   onStartWaypointNavigation,
 }) => {
@@ -396,11 +399,34 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
             </div>
           )}
 
+          {/* 单点/多点模式切换 */}
+          {!isNavigating && onWaypointModeChange && (
+            <div>
+              <div style={{ fontSize: 13, marginBottom: 8, color: "#666" }}>
+                导航模式：
+              </div>
+              <Radio.Group
+                value={waypointMode}
+                onChange={(e) => onWaypointModeChange(e.target.value)}
+                buttonStyle="solid"
+                style={{ width: "100%" }}
+                disabled={isNavigating}
+              >
+                <Radio.Button value={false} style={{ width: "50%", textAlign: "center" }}>
+                  <AimOutlined /> 单点导航
+                </Radio.Button>
+                <Radio.Button value={true} style={{ width: "50%", textAlign: "center" }}>
+                  <EnvironmentOutlined /> 多点巡航
+                </Radio.Button>
+              </Radio.Group>
+            </div>
+          )}
+
           {/* 导航模式选择 - 仅在单点导航模式下显示 */}
           {!isNavigating && !waypointMode && (
             <div>
               <div style={{ fontSize: 13, marginBottom: 8, color: "#666" }}>
-                导航模式：
+                导航方式：
               </div>
               <Radio.Group
                 value={navigationMode}
