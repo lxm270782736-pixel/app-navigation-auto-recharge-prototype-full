@@ -223,7 +223,7 @@
 
 ### 1. 列出所有地图
 
-**服务名称**: `/localization/list_maps`
+**服务名称**: `/map_manager/list_maps`
 
 **服务类型**: `localization_msgs/ListMaps`
 
@@ -288,7 +288,7 @@ float32 origin_orientation
 
 ### 2. 加载地图
 
-**服务名称**: `/localization/load_map`
+**服务名称**: `/map_manager/load_map`
 
 **服务类型**: `localization_msgs/LoadMap`
 
@@ -344,7 +344,7 @@ float32 origin_orientation
 
 ### 3. 保存地图
 
-**服务名称**: `/localization/save_map`
+**服务名称**: `/map_manager/save_map`
 
 **服务类型**: `localization_msgs/SaveMap`
 
@@ -411,7 +411,7 @@ string message
 
 ### 4. 删除地图
 
-**服务名称**: `/localization/delete_map`
+**服务名称**: `/map_manager/delete_map`
 
 **服务类型**: `localization_msgs/DeleteMap`
 
@@ -439,7 +439,7 @@ string message
 
 ### 5. 应用地图
 
-**服务名称**: `/localization/apply_map`
+**服务名称**: `/map_manager/apply_map`
 
 **服务类型**: `localization_msgs/SetMapName`
 
@@ -592,7 +592,7 @@ interface MapData {
 
 ### ROSMap（ROS地图格式）
 
-用于 `/localization/save_map` 请求参数和 `/localization/load_map` 返回值。
+用于 `/map_manager/save_map` 请求参数和 `/map_manager/load_map` 返回值。
 
 ```typescript
 interface ROSMap {
@@ -864,13 +864,13 @@ unsubscribe();
   3. 通过 `/map` 话题订阅实时地图
 
 - **定位模式**：
-  1. 应用地图 `/localization/apply_map`
+  1. 应用地图 `/map_manager/apply_map`
   2. 启动定位 `/localization/start_localization` 或 `start_localization_auto`
   3. （手动模式）设置初始位姿
 
 - **切换地图**：
   1. 停止定位 `/localization/stop`
-  2. 应用新地图 `/localization/apply_map`
+  2. 应用新地图 `/map_manager/apply_map`
   3. 重启定位 `/localization/start_localization_auto`
 
 ### 3. 地图存储策略

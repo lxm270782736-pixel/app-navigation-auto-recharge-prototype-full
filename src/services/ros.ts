@@ -464,7 +464,7 @@ class ROSService {
   async setCurrentMap(mapData: MapData): Promise<void> {
     // 调用 ROS 定位服务应用地图
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
-      '/localization/apply_map',
+      '/map_manager/apply_map',
       ROS2_MESSAGE_TYPES.APPLY_MAP,
       {
         map_name: mapData.name,
@@ -480,7 +480,7 @@ class ROSService {
   async getCurrentMapName(): Promise<string | null> {
     try {
       const response = await this.callService<{}, { success: boolean; message: string }>(
-        '/localization/get_current_map_name',
+        '/map_manager/get_current_map_name',
         ROS2_MESSAGE_TYPES.TRIGGER,
         {}
       );
@@ -502,7 +502,7 @@ class ROSService {
   async setMapName(mapName: string): Promise<void> {
     // 使用 apply_map 服务设置地图名称（地图可以不存在）
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
-      '/localization/apply_map',
+      '/map_manager/apply_map',
       ROS2_MESSAGE_TYPES.APPLY_MAP,
       {
         map_name: mapName,
@@ -529,7 +529,7 @@ class ROSService {
   async getAllMapMetadata(): Promise<MapData[]> {
     try {
       const response = await this.callService<{}, { success: boolean; message: string; maps: any[] }>(
-        '/localization/list_maps',
+        '/map_manager/list_maps',
         ROS2_MESSAGE_TYPES.LIST_MAPS,
         {}
       );
@@ -577,7 +577,7 @@ class ROSService {
   // 删除地图（调用 ROS 服务）
   async deleteMapFromROS(mapId: string): Promise<void> {
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string }>(
-      '/localization/delete_map',
+      '/map_manager/delete_map',
       ROS2_MESSAGE_TYPES.DELETE_MAP,
       { map_name: mapId }
     );
@@ -621,7 +621,7 @@ class ROSService {
       : Math.floor(Date.now() / 1000);
 
     const response = await this.callService<any, { success: boolean; message: string }>(
-      '/localization/save_map',
+      '/map_manager/save_map',
       ROS2_MESSAGE_TYPES.SAVE_MAP,
       {
         map_name: mapData.name,
@@ -644,7 +644,7 @@ class ROSService {
     }
 
     const response = await this.callService<{ map_name: string }, { success: boolean; message: string; map_data: any }>(
-      '/localization/load_map',
+      '/map_manager/load_map',
       ROS2_MESSAGE_TYPES.LOAD_MAP,
       { map_name: mapName }
     );

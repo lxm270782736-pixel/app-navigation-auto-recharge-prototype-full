@@ -295,9 +295,9 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 
 | `/localization/stop_localization` | `std_srvs/srv/Trigger` | 停止建图/定位 |
 
-| `/localization/save_map` | `localization_msgs/srv/SaveMap` | 保存地图 |
-| `/localization/load_map` | `localization_msgs/srv/LoadMap` | 加载地图 |
-| `/localization/list_maps` | `localization_msgs/srv/ListMaps` | 获取地图列表 |
+| `/map_manager/save_map` | `localization_msgs/srv/SaveMap` | 保存地图 |
+| `/map_manager/load_map` | `localization_msgs/srv/LoadMap` | 加载地图 |
+| `/map_manager/list_maps` | `localization_msgs/srv/ListMaps` | 获取地图列表 |
 
 #### 使用的Action
 

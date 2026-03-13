@@ -222,11 +222,11 @@
                 return;
             }
 
-            log('调用服务: /localization/list_maps (localization_msgs/ListMaps)', 'info');
+            log('调用服务: /map_manager/list_maps (localization_msgs/ListMaps)', 'info');
 
             const service = new ROSLIB.Service({
                 ros: ros,
-                name: '/localization/list_maps',
+                name: '/map_manager/list_maps',
                 serviceType: 'localization_msgs/ListMaps'
             });
 
@@ -254,7 +254,7 @@
         function loadMap() {
             const mapName = prompt('输入要加载的地图名称:');
             if (mapName) {
-                callService('/localization/load_map', { map_name: mapName }, 'localization_msgs/LoadMap');
+                callService('/map_manager/load_map', { map_name: mapName }, 'localization_msgs/LoadMap');
             }
         }
 
@@ -262,7 +262,7 @@
             const mapName = prompt('输入要删除的地图名称:');
             if (mapName) {
                 if (confirm(`确定要删除地图 "${mapName}" 吗？`)) {
-                    callService('/localization/delete_map', { map_name: mapName }, 'localization_msgs/DeleteMap');
+                    callService('/map_manager/delete_map', { map_name: mapName }, 'localization_msgs/DeleteMap');
                 }
             }
         }
@@ -270,7 +270,7 @@
         function applyMap() {
             const mapName = prompt('输入要应用的地图名称:');
             if (mapName) {
-                callService('/localization/apply_map', { map_name: mapName }, 'localization_msgs/SetMapName');
+                callService('/map_manager/apply_map', { map_name: mapName }, 'localization_msgs/SetMapName');
             }
         }
 

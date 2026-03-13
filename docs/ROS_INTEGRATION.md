@@ -142,11 +142,11 @@ message: string
 
 | 服务名称 | 请求参数 | 返回参数 | 功能说明 |
 |---------|---------|---------|---------|
-| `/localization/list_maps` | `{}` | `success, message, maps[]` | 列出所有已保存地图 |
-| `/localization/load_map` | `map_name` | `success, message, map_data` | 加载指定地图的完整数据 |
-| `/localization/save_map` | `map_name, map_data, created_at` | `success, message` | 保存地图到服务器 |
-| `/localization/delete_map` | `map_name` | `success, message` | 删除指定地图 |
-| `/localization/apply_map` | `map_name` | `success, message` | 应用地图为当前地图 |
+| `/map_manager/list_maps` | `{}` | `success, message, maps[]` | 列出所有已保存地图 |
+| `/map_manager/load_map` | `map_name` | `success, message, map_data` | 加载指定地图的完整数据 |
+| `/map_manager/save_map` | `map_name, map_data, created_at` | `success, message` | 保存地图到服务器 |
+| `/map_manager/delete_map` | `map_name` | `success, message` | 删除指定地图 |
+| `/map_manager/apply_map` | `map_name` | `success, message` | 应用地图为当前地图 |
 
 #### 遥控器控制服务
 
@@ -250,11 +250,11 @@ class LocalizationController:
         rospy.Service('/localization/shutdown', Trigger, self.shutdown_service)
 
         # 地图管理服务
-        rospy.Service('/localization/list_maps', Trigger, self.list_maps)
-        rospy.Service('/localization/load_map', Trigger, self.load_map)
-        rospy.Service('/localization/save_map', Trigger, self.save_map)
-        rospy.Service('/localization/delete_map', Trigger, self.delete_map)
-        rospy.Service('/localization/apply_map', Trigger, self.apply_map)
+        rospy.Service('/map_manager/list_maps', Trigger, self.list_maps)
+        rospy.Service('/map_manager/load_map', Trigger, self.load_map)
+        rospy.Service('/map_manager/save_map', Trigger, self.save_map)
+        rospy.Service('/map_manager/delete_map', Trigger, self.delete_map)
+        rospy.Service('/map_manager/apply_map', Trigger, self.apply_map)
 
         # 状态发布定时器
         rospy.Timer(rospy.Duration(1.0), self.publish_status)
@@ -762,7 +762,7 @@ ros2 topic echo /localization/status
 ros2 service call /localization/stop std_srvs/srv/Trigger "{}"
 
 # 列出地图
-ros2 service call /localization/list_maps localization_msgs/srv/ListMaps "{}"
+ros2 service call /map_manager/list_maps localization_msgs/srv/ListMaps "{}"
 ```
 
 ### 3. 测试遥控器
@@ -821,7 +821,7 @@ rqt
 ### 3. 定位服务调用失败
 
 - 确认服务存在: `ros2 service list | grep localization`
-- 测试服务调用: `ros2 service call /localization/list_maps localization_msgs/srv/ListMaps "{}"`
+- 测试服务调用: `ros2 service call /map_manager/list_maps localization_msgs/srv/ListMaps "{}"`
 - 查看节点日志: `ros2 node info /localization_controller`
 
 ### 4. 导航无法启动

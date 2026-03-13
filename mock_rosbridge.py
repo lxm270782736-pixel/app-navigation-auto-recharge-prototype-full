@@ -669,7 +669,7 @@ class MockROSBridge:
             response["values"] = {"response": self.control_type}
 
         # ========== 定位/地图管理服务 (新增) ==========
-        elif service == "/localization/list_maps":
+        elif service == "/map_manager/list_maps":
             # 服务类型: localization_msgs/ListMaps
             # 返回：MapMetadata[] maps（包含完整的元数据和缩略图）
             maps_list = []
@@ -697,7 +697,7 @@ class MockROSBridge:
                 thumb_len = len(map_meta.get("thumbnail", ""))
                 print(f"  - {map_meta['name']} ({map_meta['width']}x{map_meta['height']}, 缩略图: {thumb_len} bytes)")
 
-        elif service == "/localization/load_map":
+        elif service == "/map_manager/load_map":
             # 服务类型: localization_msgs/LoadMap
             # 加载指定地图
             map_name = args.get("map_name", "")
@@ -746,7 +746,7 @@ class MockROSBridge:
                 }
                 print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
-        elif service == "/localization/save_map":
+        elif service == "/map_manager/save_map":
             # 服务类型: localization_msgs/SaveMap
             # 保存地图（保存原生数据和缩略图）
             map_name = args.get("map_name", "")
@@ -800,7 +800,7 @@ class MockROSBridge:
                 thumb_info = f", 缩略图: {len(thumbnail)} bytes" if thumbnail else ""
                 print(f"✓ 定位服务: 保存地图 '{map_name}' - {info.get('width')}x{info.get('height')}{thumb_info} (原生数据{', 已写入磁盘' if disk_success else ''})")
 
-        elif service == "/localization/delete_map":
+        elif service == "/map_manager/delete_map":
             # 服务类型: localization_msgs/DeleteMap
             # 删除地图
             map_name = args.get("map_name", "")
@@ -824,7 +824,7 @@ class MockROSBridge:
                 }
                 print(f"✗ 定位服务: 地图 '{map_name}' 不存在")
 
-        elif service == "/localization/apply_map":
+        elif service == "/map_manager/apply_map":
             # 服务类型: localization_msgs/ApplyMap
             # 应用地图（设置为当前地图）或设置地图名称（用于建图）
             map_name = args.get("map_name", "")
@@ -885,7 +885,7 @@ class MockROSBridge:
                 }
                 print(f"✓ 定位服务: 地图名称已设置为 '{map_name}'（将用于新建地图）")
 
-        elif service == "/localization/get_current_map_name":
+        elif service == "/map_manager/get_current_map_name":
             # 服务类型: std_srvs/Trigger
             # 获取当前应用的地图名称（模仿真实ROS行为）
             if self.current_map_name:
@@ -2044,12 +2044,12 @@ async def main():
     print("    - 0: obstacle avoidance, 1: mapping, 2: localization, 3: idle")
     print()
     print("地图管理服务 (Localization Map Management):")
-    print("  ✓ 列出地图 (/localization/list_maps)")
-    print("  ✓ 加载地图 (/localization/load_map)")
-    print("  ✓ 保存地图 (/localization/save_map)")
-    print("  ✓ 删除地图 (/localization/delete_map)")
-    print("  ✓ 应用地图 (/localization/apply_map)")
-    print("  ✓ 获取当前地图 (/localization/get_current_map_name)")
+    print("  ✓ 列出地图 (/map_manager/list_maps)")
+    print("  ✓ 加载地图 (/map_manager/load_map)")
+    print("  ✓ 保存地图 (/map_manager/save_map)")
+    print("  ✓ 删除地图 (/map_manager/delete_map)")
+    print("  ✓ 应用地图 (/map_manager/apply_map)")
+    print("  ✓ 获取当前地图 (/map_manager/get_current_map_name)")
     print()
     print("建图服务 (旧接口, 兼容性保留):")
     print("  ✓ 启动建图 (/start_mapping)")
