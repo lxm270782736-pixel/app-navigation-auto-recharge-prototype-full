@@ -278,6 +278,7 @@ export interface RoomPatrolState {
   patrol_id: string;
   current_room: string;
   current_step: string;
+  current_step_index: number;
   rooms_completed: string[];
   rooms_failed: string[];
   rooms_total: number;

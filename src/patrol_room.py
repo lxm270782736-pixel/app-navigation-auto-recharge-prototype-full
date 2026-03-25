@@ -158,11 +158,13 @@ class RoomPatrolMixin:
                 "patrol_id": self._room_patrol_id,
                 "current_room": current_room,
                 "current_step": self._room_patrol_current_step,
+                "current_step_index": getattr(self, '_room_patrol_current_step_index', -1),
                 "rooms_completed": list(self._room_patrol_rooms_completed),
                 "rooms_failed": list(self._room_patrol_rooms_failed),
                 "rooms_total": len(rooms),
                 "progress": (len(self._room_patrol_rooms_completed) + len(self._room_patrol_rooms_failed)) / max(len(rooms), 1),
                 "error": self._room_patrol_error,
+                "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in rooms],
             }
 
     # ------ Patrol execution (background thread) ------
@@ -201,17 +203,21 @@ class RoomPatrolMixin:
             room_success = True
             skip_room = False
 
-            for step in steps:
+            for step_idx, step in enumerate(steps):
                 with self._lock:
                     if not self._room_patrol_active:
                         skip_room = True
                         break
 
                 step_type = step.get("type", "")
+                step_target = step.get("target", step.get("label", ""))
                 step_result = {"step": step_type, "status": "running", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
                 with self._lock:
                     self._room_patrol_current_step = step_type
+                    self._room_patrol_current_step_index = step_idx
+
+                print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → START")
 
                 success = False
                 detail = None
@@ -276,6 +282,7 @@ class RoomPatrolMixin:
                 if detail:
                     step_result["detail"] = detail
                 room_result["steps"].append(step_result)
+                print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
 
                 # Navigate/door failure → skip room
                 if not success and step_type in ("navigate", "open_door"):
@@ -331,6 +338,7 @@ class RoomPatrolMixin:
                     return False
 
             if self._nav_done_success:
+                print("nav success")
                 return True
 
             print(f"[room_patrol] Nav attempt {attempt + 1}/{retry_limit} failed, retrying...")

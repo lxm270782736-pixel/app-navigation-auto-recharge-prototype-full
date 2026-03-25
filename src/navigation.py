@@ -3,10 +3,15 @@ import json
 import math
 import threading
 import time
+from datetime import datetime
 
 import roslibpy
 
 from ._utils import _to_dict
+
+
+def _ts():
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 
 class NavigationMixin:
@@ -44,11 +49,14 @@ class NavigationMixin:
             goal_msg["tasks"] = json.dumps(tasks)
 
         try:
-            self._nav_action_client = roslibpy.ActionClient(
-                self._ros, "/move_chassis_to_server",
-                "astribot_nav_msgs/action/MoveChassisTo",
-            )
+            # Reuse ActionClient — creating a new one each time can lose callbacks
+            if self._nav_action_client is None:
+                self._nav_action_client = roslibpy.ActionClient(
+                    self._ros, "/move_chassis_to_server",
+                    "astribot_nav_msgs/action/MoveChassisTo",
+                )
             goal = roslibpy.Goal(goal_msg)
+            print(f"[nav] {_ts()} Sending goal: ({x:.3f}, {y:.3f}, {theta:.3f})")
             self._nav_action_client.send_goal(
                 goal,
                 resultback=self._on_nav_result,
@@ -74,6 +82,8 @@ class NavigationMixin:
         values = result.get("values", {})
         if isinstance(values, dict):
             values = _to_dict(values)
+
+        print(f"[nav] {_ts()} _on_nav_result: status={status}, success={success}")
 
         with self._lock:
             patrol_active = self._patrol_active
@@ -108,16 +118,18 @@ class NavigationMixin:
 
         # Signal room patrol thread if waiting for nav completion
         if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
+            print(f"[nav] {_ts()} Signaling room_patrol: success={success}")
             self._nav_done_success = success
             self._nav_done_event.set()
 
     def _on_nav_error(self, error_msg):
-        print(f"[logic] Navigation action error: {error_msg}")
+        print(f"[nav] {_ts()} _on_nav_error: {error_msg}")
         with self._lock:
             self._nav_status = "failed"
             self._nav_feedback = {"error": error_msg}
         # Signal room patrol thread
         if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
+            print(f"[nav] {_ts()} Signaling room_patrol: error")
             self._nav_done_success = False
             self._nav_done_event.set()
 

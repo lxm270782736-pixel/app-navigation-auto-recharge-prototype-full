@@ -40,3 +40,4 @@ ui/dist-mock
 mock_saved_maps/
 saved_maps/
 saved_nav_configs/
+data/

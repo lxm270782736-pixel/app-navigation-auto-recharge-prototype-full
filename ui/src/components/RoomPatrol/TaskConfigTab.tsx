@@ -6,7 +6,24 @@ import {
   SaveOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  HolderOutlined,
 } from '@ant-design/icons';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
@@ -52,6 +69,58 @@ const STEP_COLORS: Record<string, string> = {
   detect_floor: '#faad14',
   photo: '#722ed1',
   wait: '#999',
+};
+
+// Sortable room item for drag-and-drop reorder
+const SortableRoomItem: React.FC<{
+  room: any;
+  idx: number;
+  isSelected: boolean;
+  isReady: boolean;
+  onSelect: () => void;
+  onToggle: () => void;
+}> = ({ room, idx, isSelected, isReady, onSelect, onToggle }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: room.room_id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : room.enabled ? 1 : 0.5,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '6px 8px',
+        marginBottom: 4,
+        borderRadius: 6,
+        border: `1px solid ${isSelected ? '#1890ff' : '#f0f0f0'}`,
+        background: isSelected ? '#e6f7ff' : '#fff',
+        cursor: 'pointer',
+      }}
+      onClick={onSelect}
+    >
+      <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#999', display: 'flex' }} onClick={e => e.stopPropagation()}>
+        <HolderOutlined />
+      </span>
+      <Checkbox
+        checked={room.enabled}
+        onChange={() => onToggle()}
+        onClick={e => e.stopPropagation()}
+      />
+      <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>
+        <span style={{ color: '#999', marginRight: 4, fontSize: 11 }}>{idx + 1}.</span>
+        {room.room_name || room.room_id}
+      </span>
+      {!isReady && <Tag color="red" style={{ fontSize: 9, lineHeight: '16px', padding: '0 4px' }}>未录</Tag>}
+    </div>
+  );
 };
 
 export const TaskConfigTab: React.FC = () => {
@@ -194,64 +263,61 @@ export const TaskConfigTab: React.FC = () => {
     setTaskConfig({ ...taskConfig, rooms });
   };
 
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!taskConfig) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const rooms = [...taskConfig.rooms];
+    const oldIdx = rooms.findIndex(r => r.room_id === active.id);
+    const newIdx = rooms.findIndex(r => r.room_id === over.id);
+    if (oldIdx < 0 || newIdx < 0) return;
+    const [moved] = rooms.splice(oldIdx, 1);
+    rooms.splice(newIdx, 0, moved);
+    setTaskConfig({ ...taskConfig, rooms });
+  };
+
   if (!taskConfig) {
     return <div style={{ padding: 24, textAlign: 'center', color: '#999' }}>加载中...</div>;
   }
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
-      {/* Left: Room list */}
+      {/* Left: Room list with drag-and-drop reorder */}
       <div style={{ width: 220, borderRight: '1px solid #f0f0f0', overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>巡房顺序</span>
           <Checkbox checked={allEnabled} onChange={toggleAll} style={{ fontSize: 12 }}>全选</Checkbox>
         </div>
-        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>勾选参与巡房的房间，上下箭头调整顺序</div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与巡房的房间</div>
 
-        {taskConfig.rooms.length === 0 && (
+        {taskConfig.rooms.length === 0 ? (
           <Empty description="请先在「点位录制」录制房间" style={{ marginTop: 40 }} />
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={taskConfig.rooms.map(r => r.room_id)} strategy={verticalListSortingStrategy}>
+              {taskConfig.rooms.map((room, idx) => {
+                const isReady = !!roomConfigs.find(r => r.room_id === room.room_id && r.door_outside && r.door_inside && r.bed_check);
+                return (
+                  <SortableRoomItem
+                    key={room.room_id}
+                    room={room}
+                    idx={idx}
+                    isSelected={selectedRoomId === room.room_id}
+                    isReady={isReady}
+                    onSelect={() => setSelectedRoomId(room.room_id)}
+                    onToggle={() => toggleRoom(room.room_id)}
+                  />
+                );
+              })}
+            </SortableContext>
+          </DndContext>
         )}
-
-        {taskConfig.rooms.map((room, idx) => {
-          const isReady = roomConfigs.find(r => r.room_id === room.room_id && r.door_outside && r.door_inside && r.bed_check);
-          return (
-            <div
-              key={room.room_id}
-              onClick={() => setSelectedRoomId(room.room_id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 8px',
-                marginBottom: 4,
-                borderRadius: 6,
-                border: `1px solid ${selectedRoomId === room.room_id ? '#1890ff' : '#f0f0f0'}`,
-                background: selectedRoomId === room.room_id ? '#e6f7ff' : '#fff',
-                cursor: 'pointer',
-                opacity: room.enabled ? 1 : 0.5,
-              }}
-            >
-              <Checkbox
-                checked={room.enabled}
-                onChange={(e) => { e.stopPropagation(); toggleRoom(room.room_id); }}
-                onClick={(e) => e.stopPropagation()}
-              />
-              <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>
-                <span style={{ color: '#999', marginRight: 4, fontSize: 11 }}>{idx + 1}.</span>
-                {room.room_name || room.room_id}
-              </span>
-              {!isReady && <Tag color="red" style={{ fontSize: 9, lineHeight: '16px', padding: '0 4px' }}>未录</Tag>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }} onClick={(e) => e.stopPropagation()}>
-                <Button type="text" size="small" icon={<ArrowUpOutlined style={{ fontSize: 10 }} />}
-                  style={{ padding: 0, height: 16, width: 20 }}
-                  disabled={idx === 0} onClick={() => moveRoom(room.room_id, -1)} />
-                <Button type="text" size="small" icon={<ArrowDownOutlined style={{ fontSize: 10 }} />}
-                  style={{ padding: 0, height: 16, width: 20 }}
-                  disabled={idx === taskConfig.rooms.length - 1} onClick={() => moveRoom(room.room_id, 1)} />
-              </div>
-            </div>
-          );
-        })}
       </div>
 
       {/* Right: Step editor */}

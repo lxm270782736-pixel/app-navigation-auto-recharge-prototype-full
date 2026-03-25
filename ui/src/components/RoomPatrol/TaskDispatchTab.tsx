@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button, Card, Progress, Tag, message, Space, Badge, Steps } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -13,7 +13,7 @@ import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, RoomPatrolState } from '@/types';
+import type { MapData, Pose, RoomPatrolState, RoomConfig } from '@/types';
 
 const STEP_LABELS: Record<string, string> = {
   navigate: '导航中',
@@ -32,6 +32,32 @@ export const TaskDispatchTab: React.FC = () => {
   const [patrolState, setPatrolState] = useState<RoomPatrolState | null>(null);
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
+  const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
+  const [taskRoomIds, setTaskRoomIds] = useState<string[]>([]);
+  const [taskRoomSteps, setTaskRoomSteps] = useState<Record<string, any[]>>({});
+
+  // Load room config + task config to know which rooms and their waypoints
+  const loadConfigs = useCallback(async () => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) return;
+    try {
+      const [roomData, taskData] = await Promise.all([
+        rosService.getRoomConfig(),
+        rosService.getTaskConfig().catch(() => ({ rooms: [] })),
+      ]);
+      setRoomConfigs(roomData.rooms || []);
+      const taskRooms = (taskData.rooms || []).filter((r: any) => r.enabled !== false);
+      const enabledIds = taskRooms.map((r: any) => r.room_id);
+      setTaskRoomIds(enabledIds);
+      // Build per-room step list for progress display
+      const stepsMap: Record<string, any[]> = {};
+      for (const r of taskRooms) {
+        stepsMap[r.room_id] = r.steps || [];
+      }
+      setTaskRoomSteps(stepsMap);
+    } catch { /* ignore */ }
+  }, [connectionStatus]);
+
+  useEffect(() => { loadConfigs(); }, [loadConfigs]);
 
   // Subscribe to SSE room patrol state
   useEffect(() => {
@@ -88,6 +114,43 @@ export const TaskDispatchTab: React.FC = () => {
 
   const progressPercent = patrolState ? Math.round(patrolState.progress * 100) : 0;
 
+  // Build ALL waypoints for map display: 3 points per room (door_outside, door_inside, bed_check)
+  // Structure: [room1_outside, room1_inside, room1_bed, room2_outside, room2_inside, room2_bed, ...]
+  const roomLookup = new Map(roomConfigs.map(r => [r.room_id, r]));
+  const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => r.door_outside).map(r => r.room_id);
+  const waypoints: Pose[] = [];
+  const waypointMeta: { roomId: string; type: string; waypointIdx: number }[] = [];
+
+  for (const rid of displayRoomIds) {
+    const rc = roomLookup.get(rid);
+    if (!rc) continue;
+    const points = [
+      { pose: rc.door_outside, type: 'door_outside' },
+      { pose: rc.door_inside, type: 'door_inside' },
+      { pose: rc.bed_check, type: 'bed_check' },
+    ];
+    for (const p of points) {
+      if (p.pose) {
+        waypointMeta.push({ roomId: rid, type: p.type, waypointIdx: waypoints.length });
+        waypoints.push(p.pose);
+      }
+    }
+  }
+
+  // Determine current waypoint index: highlight the door_outside of the current room being visited
+  let currentWaypointIndex = -1;
+  if (patrolState?.active && patrolState.current_room) {
+    // Find the first point of the current room (door_outside)
+    const meta = waypointMeta.find(m => m.roomId === patrolState.current_room && m.type === 'door_outside');
+    if (meta) currentWaypointIndex = meta.waypointIdx;
+  }
+
+  // Completed: mark all 3 points of completed rooms
+  const completedSet = new Set(patrolState?.rooms_completed || []);
+  const completedWaypoints = waypointMeta
+    .filter(m => completedSet.has(m.roomId))
+    .map(m => m.waypointIdx);
+
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
       {/* Left: Map */}
@@ -96,6 +159,9 @@ export const TaskDispatchTab: React.FC = () => {
           <MapCanvas
             mapData={currentMap}
             robotPose={robotPose}
+            waypoints={waypoints}
+            currentWaypointIndex={currentWaypointIndex}
+            completedWaypoints={completedWaypoints}
             showCoordinateSystem={true}
             showRobotTrail={true}
           />
@@ -176,22 +242,66 @@ export const TaskDispatchTab: React.FC = () => {
           </Card>
         )}
 
-        {/* Room progress list */}
-        {patrolState && isActive && (
-          <Card size="small" title="房间进度">
-            <Space direction="vertical" style={{ width: '100%' }} size={4}>
-              {[...patrolState.rooms_completed.map(r => ({ id: r, status: 'done' as const })),
-                ...(patrolState.current_room && !patrolState.rooms_completed.includes(patrolState.current_room) && !patrolState.rooms_failed.includes(patrolState.current_room)
-                  ? [{ id: patrolState.current_room, status: 'active' as const }] : []),
-                ...patrolState.rooms_failed.map(r => ({ id: r, status: 'failed' as const })),
-              ].map(({ id, status }) => (
-                <div key={id} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                  <span>{id}</span>
-                  {status === 'done' && <CheckCircleFilled style={{ color: '#52c41a' }} />}
-                  {status === 'active' && <LoadingOutlined style={{ color: '#1890ff' }} />}
-                  {status === 'failed' && <CloseCircleFilled style={{ color: '#ff4d4f' }} />}
-                </div>
-              ))}
+        {/* Room progress list with step detail */}
+        {patrolState && patrolState.status !== 'idle' && (
+          <Card size="small" title="房间进度" style={{ flex: 1, overflow: 'auto' }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              {((patrolState as any).rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))).map((room: any) => {
+                const rid = room.room_id;
+                const isDone = patrolState.rooms_completed.includes(rid);
+                const isFailed = patrolState.rooms_failed.includes(rid);
+                const isCurrent = patrolState.active && patrolState.current_room === rid;
+                const isPending = !isDone && !isFailed && !isCurrent;
+                const steps = room.steps || [];
+
+                // Use step index from backend instead of findIndex by type name
+                const currentStepIdx = isCurrent
+                  ? (patrolState.current_step_index ?? -1)
+                  : -1;
+
+                return (
+                  <div key={rid} style={{
+                    border: `1px solid ${isCurrent ? '#1890ff' : '#f0f0f0'}`,
+                    borderRadius: 6,
+                    padding: '8px 10px',
+                    background: isCurrent ? '#e6f7ff' : isDone ? '#f6ffed' : isFailed ? '#fff2f0' : '#fff',
+                  }}>
+                    {/* Room header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCurrent ? 8 : 0 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>
+                        {room.room_name || rid}
+                      </span>
+                      {isDone && <Tag color="success" style={{ margin: 0 }}>已完成</Tag>}
+                      {isFailed && <Tag color="error" style={{ margin: 0 }}>失败</Tag>}
+                      {isCurrent && <Tag color="processing" style={{ margin: 0 }}><LoadingOutlined /> 执行中</Tag>}
+                      {isPending && <Tag style={{ margin: 0 }}>等待</Tag>}
+                    </div>
+
+                    {/* Step progress — only show for current room */}
+                    {isCurrent && steps.length > 0 && (
+                      <Steps
+                        size="small"
+                        direction="vertical"
+                        current={currentStepIdx >= 0 ? currentStepIdx : 0}
+                        style={{ marginTop: 4 }}
+                        items={steps.map((step: any, si: number) => {
+                          let status: 'wait' | 'process' | 'finish' | 'error' = 'wait';
+                          if (si < currentStepIdx) status = 'finish';
+                          else if (si === currentStepIdx) status = 'process';
+
+                          const label = STEP_LABELS[step.type] || step.type;
+                          const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';
+
+                          return {
+                            title: <span style={{ fontSize: 12 }}>{label}{suffix}</span>,
+                            status,
+                          };
+                        })}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </Space>
           </Card>
         )}

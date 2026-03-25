@@ -92,6 +92,7 @@ class BusinessLogic(
         self._room_patrol_error = ""
         self._room_patrol_record: dict = {}
         self._room_patrol_rooms_list: list[dict] = []
+        self._room_patrol_current_step_index = -1
         self._nav_done_event = threading.Event()
         self._nav_done_success = False
 
@@ -190,11 +191,13 @@ class BusinessLogic(
                     "patrol_id": self._room_patrol_id,
                     "current_room": self._room_patrol_rooms_list[self._room_patrol_current_room_idx].get("room_id", "") if 0 <= self._room_patrol_current_room_idx < len(self._room_patrol_rooms_list) else "",
                     "current_step": self._room_patrol_current_step,
+                    "current_step_index": self._room_patrol_current_step_index,
                     "rooms_completed": list(self._room_patrol_rooms_completed),
                     "rooms_failed": list(self._room_patrol_rooms_failed),
                     "rooms_total": len(self._room_patrol_rooms_list),
                     "progress": (len(self._room_patrol_rooms_completed) + len(self._room_patrol_rooms_failed)) / max(len(self._room_patrol_rooms_list), 1) if self._room_patrol_rooms_list else 0,
                     "error": self._room_patrol_error,
+                    "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in self._room_patrol_rooms_list],
                 },
             })
 
