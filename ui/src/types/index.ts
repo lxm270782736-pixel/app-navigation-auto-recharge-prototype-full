@@ -201,3 +201,22 @@ export interface LaserScan {
   ranges: number[]; // 距离数组（米），NaN/Inf表示无效
   intensities?: number[]; // 强度数组（可选）
 }
+
+// 房间点位配置
+export interface RoomConfig {
+  room_id: string;
+  room_name: string;
+  door_outside: Pose | null;
+  door_inside: Pose | null;
+  bed_check: Pose | null;
+  door_type: string;
+  enabled: boolean;
+}
+
+export interface RoomPatrolConfig {
+  start_position: Pose | null;
+  rooms: RoomConfig[];
+  retry_limit: number;
+  detection_types: string[];
+  updated_at?: string;
+}

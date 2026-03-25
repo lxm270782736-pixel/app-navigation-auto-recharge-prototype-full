@@ -306,6 +306,38 @@ class ROSService {
     });
   }
 
+  // ------ Room Config (点位录制) ------
+
+  async getRoomConfig(): Promise<any> {
+    return this._get('/api/room-config');
+  }
+
+  async saveRoomConfig(config: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-config', { config });
+  }
+
+  async addRoom(roomId: string, roomName: string): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-config/rooms', { room_id: roomId, room_name: roomName });
+  }
+
+  async deleteRoom(roomId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/api/room-config/rooms/${encodeURIComponent(roomId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return res.json();
+  }
+
+  async recordRoomWaypoint(roomId: string, waypointType: string): Promise<any> {
+    return this._post(`/api/room-config/rooms/${encodeURIComponent(roomId)}/record`, {
+      waypoint_type: waypointType,
+    });
+  }
+
+  async recordStartPosition(): Promise<any> {
+    return this._post('/api/room-config/record-start', {});
+  }
+
   // ------ Localization Service ------
 
   async startJoystick(): Promise<{ success: boolean; message: string }> {

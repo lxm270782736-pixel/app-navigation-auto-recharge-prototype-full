@@ -22,6 +22,7 @@ from .map_manager import MapManagerMixin
 from .chassis import ChassisMixin
 from .navigation import NavigationMixin
 from .patrol import PatrolMixin
+from .room_config import RoomConfigMixin
 
 
 class BusinessLogic(
@@ -30,6 +31,7 @@ class BusinessLogic(
     ChassisMixin,
     NavigationMixin,
     PatrolMixin,
+    RoomConfigMixin,
 ):
     def __init__(self):
         self._ros_url = _load_ros_url()

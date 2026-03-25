@@ -219,6 +219,52 @@ def update_patrol_waypoints(req: UpdateWaypointsRequest):
     return logic.update_patrol_waypoints(waypoints)
 
 
+# ==================== 房间配置（点位录制） ====================
+
+
+@app.get("/api/room-config")
+def get_room_config():
+    return logic.get_room_config()
+
+
+class SaveRoomConfigRequest(BaseModel):
+    config: dict
+
+
+@app.post("/api/room-config")
+def save_room_config(req: SaveRoomConfigRequest):
+    return logic.save_room_config(req.config)
+
+
+class AddRoomRequest(BaseModel):
+    room_id: str
+    room_name: str
+
+
+@app.post("/api/room-config/rooms")
+def add_room(req: AddRoomRequest):
+    return logic.add_room(req.room_id, req.room_name)
+
+
+@app.delete("/api/room-config/rooms/{room_id}")
+def delete_room(room_id: str):
+    return logic.delete_room(room_id)
+
+
+class RecordWaypointRequest(BaseModel):
+    waypoint_type: str
+
+
+@app.post("/api/room-config/rooms/{room_id}/record")
+def record_waypoint(room_id: str, req: RecordWaypointRequest):
+    return logic.record_room_waypoint(room_id, req.waypoint_type)
+
+
+@app.post("/api/room-config/record-start")
+def record_start_position():
+    return logic.record_room_waypoint("", "start_position")
+
+
 # ==================== 底盘控制 ====================
 
 
