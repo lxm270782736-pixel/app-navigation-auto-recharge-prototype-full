@@ -29,7 +29,6 @@ import type {
   NavigationActionConfig,
 } from "@/types";
 import { TaskConfigurationModal, TaskListView } from "./TaskConfigurationModal";
-import { navigationStorageService } from "@/services/navigationStorage";
 
 enum OperationMode {
   SET_GOAL = "set_goal", // 设置目标点模式
@@ -62,6 +61,15 @@ interface NavigationControlProps {
   onWaypointModeChange?: (mode: boolean) => void; // 切换单点/多点模式
   waypoints?: Pose[]; // 路径点列表
   onStartWaypointNavigation?: () => void; // 开始巡航回调
+  patrolState?: {
+    active: boolean;
+    status: string;
+    current_index: number;
+    completed: number[];
+    skipped: number[];
+    total: number;
+    error: string;
+  } | null;
 }
 
 export const NavigationControl: React.FC<NavigationControlProps> = ({
@@ -78,6 +86,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   onWaypointModeChange,
   waypoints = [],
   onStartWaypointNavigation,
+  patrolState,
 }) => {
   // 导航模式选择已保存导航配置
   const [navigationMode, setNavigationMode] = useState<NavigationMode>(
@@ -143,39 +152,9 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     deaccelaration_ratio: 0.5,
   });
 
-  // 初始化时加载保存的导航配置并监听导航事件
+  // 初始化时监听导航事件
   useEffect(() => {
-    let isMounted = true;
-
-    const initializeConfig = async () => {
-      try {
-        // 1. 加载之前保存的配置
-        const savedConfig =
-          await navigationStorageService.loadNavigationConfig();
-        if (isMounted && savedConfig) {
-          // 只有单点导航时才设置 hasActiveAction
-          // 多点导航由 Navigation 组件通过 isNavigating props 控制
-          if (savedConfig.navigationType === "single") {
-            // 如果检测到保存的单点导航配置，表明导航可能还在执行中
-            // 设置 hasActiveAction = true 来禁用"开始导航"按钮
-            setHasActiveAction(true);
-
-            setNavigationMode(savedConfig.navigationMode as any);
-            setTasks(savedConfig.tasks || []);
-            setActionConfig(savedConfig.actionConfig || { use_default_config: true });
-            setHasSavedConfig(true);
-            robotPose = savedConfig.goalPose || null;
-            message.warning(
-              "检测到导航正在执行或未完成，按钮已禁用。请等待导航完成或刷新页面重试。"
-            );
-          }
-        }
-      } catch (error) {
-        console.error("加载导航配置失败:", error);
-      }
-    };
-
-    initializeConfig();
+    // No-op: saved config no longer needed (patrol managed by backend)
   }, []);
 
 
@@ -267,16 +246,10 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     }
   };
 
-  // 清除保存的导航配置
+  // 清除保存的导航配置（已迁移到后端，保留接口兼容）
   const handleClearNavigationConfig = async () => {
-    try {
-      await navigationStorageService.clearNavigationConfig();
-      setHasSavedConfig(false); // 更新状态，隐藏提示
-      message.success("已清除保存的导航配置");
-    } catch (error) {
-      console.error("清除导航配置失败:", error);
-      message.error("清除导航配置失败");
-    }
+    setHasSavedConfig(false);
+    message.success("已清除保存的导航配置");
   };
 
   return (
@@ -594,6 +567,35 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 <span style={{ fontWeight: "bold", color: "#52c41a" }}>
                   {navigationFeedback.current_task}
                 </span>
+              </div>
+            )}
+
+            {/* 巡航进度信息 - 仅在巡航模式下显示 */}
+            {patrolState?.active && (
+              <div
+                style={{
+                  marginTop: "6px",
+                  paddingTop: "6px",
+                  borderTop: "1px dashed #91d5ff",
+                  fontSize: "11px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                  <span style={{ color: "#666" }}>巡航进度：</span>
+                  <span style={{ fontWeight: "bold" }}>
+                    {patrolState.completed.length + patrolState.skipped.length} / {patrolState.total}
+                  </span>
+                </div>
+                {patrolState.skipped.length > 0 && (
+                  <div style={{ color: "#faad14", fontSize: "11px" }}>
+                    跳过: {patrolState.skipped.map(i => i + 1).join(', ')} 号路径点
+                  </div>
+                )}
+                {patrolState.error && (
+                  <div style={{ color: "#ff4d4f", fontSize: "11px", marginTop: "2px" }}>
+                    {patrolState.error}
+                  </div>
+                )}
               </div>
             )}
           </div>

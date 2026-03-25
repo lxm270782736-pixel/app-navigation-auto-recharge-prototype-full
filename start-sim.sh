@@ -44,6 +44,27 @@ fi
 
 echo ""
 
+# 启动FastAPI后端
+if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    echo "✓ FastAPI后端已在端口8080运行"
+    FASTAPI_PID=""
+else
+    echo "启动FastAPI后端服务器..."
+    python3 main.py &
+    FASTAPI_PID=$!
+    sleep 2
+
+    if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+        echo "✓ FastAPI后端已启动 (PID: $FASTAPI_PID)"
+    else
+        echo "✗ FastAPI后端启动失败"
+        kill $ROSBRIDGE_PID 2>/dev/null
+        exit 1
+    fi
+fi
+
+echo ""
+
 # 检查前端服务器
 if lsof -Pi :3500 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
     echo "✓ 前端服务器已在端口3500运行"
@@ -75,14 +96,17 @@ echo ""
 echo "  🤖 ROS Bridge (模拟):"
 echo "     ws://localhost:9090"
 echo ""
+echo "  🖥️  FastAPI后端:"
+echo "     http://localhost:8080"
+echo ""
 echo "  📊 支持的功能:"
 echo "     ✓ 地图数据发布"
 echo "     ✓ 机器人位姿模拟"
 echo "     ✓ 建图流程模拟"
 echo "     ✓ 导航功能模拟"
 echo "     ✓ 系统节点启动服务（SLAM/导航）"
-echo ""
-echo "  💡 提示:"
+echo "     ✓ 多点巡航（后端管理）"
+echo """
 echo "     - 在浏览器中打开上述地址"
 echo "     - 按 Ctrl+C 停止所有服务"
 echo ""
@@ -90,6 +114,6 @@ echo "=========================================="
 echo ""
 
 # 等待中断信号
-trap 'echo ""; echo "正在停止服务..."; kill $ROSBRIDGE_PID $VITE_PID 2>/dev/null; echo "服务已停止"; exit' INT TERM
+trap 'echo ""; echo "正在停止服务..."; kill $ROSBRIDGE_PID $FASTAPI_PID $VITE_PID 2>/dev/null; echo "服务已停止"; exit' INT TERM
 
 wait

@@ -178,6 +178,47 @@ def send_local_navigation_goal(req: LocalNavRequest):
     return logic.send_local_navigation_goal(req.x, req.y, req.theta)
 
 
+# ==================== 多点巡航 ====================
+
+
+class WaypointItem(BaseModel):
+    pose: dict
+    tasks: list = []
+    navigationMode: str = "obstacle_avoidance"
+    actionConfig: Optional[dict] = None
+
+
+class StartPatrolRequest(BaseModel):
+    waypoints: list[WaypointItem]
+    start_index: int = 0
+
+
+class UpdateWaypointsRequest(BaseModel):
+    waypoints: list[WaypointItem]
+
+
+@app.post("/api/patrol/start")
+def start_patrol(req: StartPatrolRequest):
+    waypoints = [w.model_dump() for w in req.waypoints]
+    return logic.start_patrol(waypoints, req.start_index)
+
+
+@app.post("/api/patrol/stop")
+def stop_patrol():
+    return logic.stop_patrol()
+
+
+@app.get("/api/patrol/status")
+def get_patrol_status():
+    return logic.get_patrol_status()
+
+
+@app.post("/api/patrol/waypoints")
+def update_patrol_waypoints(req: UpdateWaypointsRequest):
+    waypoints = [w.model_dump() for w in req.waypoints]
+    return logic.update_patrol_waypoints(waypoints)
+
+
 # ==================== 底盘控制 ====================
 
 

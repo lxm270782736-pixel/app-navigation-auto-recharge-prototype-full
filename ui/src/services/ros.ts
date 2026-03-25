@@ -114,6 +114,11 @@ class ROSService {
         if (state.nav_status === 'navigating' && state.nav_feedback && !state.nav_feedback.result) {
           this.emit('navigation-feedback', state.nav_feedback);
         }
+
+        // Dispatch patrol state
+        if (state.patrol) {
+          this.emit('patrol-state', state.patrol);
+        }
       } catch (e) {
         console.error('[ROS-HTTP] SSE parse error:', e);
       }
@@ -266,6 +271,39 @@ class ROSService {
       y: pose.y,
       theta: pose.theta,
     }).catch(console.error);
+  }
+
+  // ------ Patrol (multi-waypoint) ------
+
+  async startPatrol(waypoints: import('@/types').Waypoint[], startIndex: number = 0): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/patrol/start', {
+      waypoints: waypoints.map(w => ({
+        pose: w.pose,
+        tasks: w.tasks || [],
+        navigationMode: w.navigationMode || 'obstacle_avoidance',
+        actionConfig: w.actionConfig || { use_default_config: true },
+      })),
+      start_index: startIndex,
+    });
+  }
+
+  async stopPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/patrol/stop', {});
+  }
+
+  async getPatrolStatus(): Promise<any> {
+    return this._get('/api/patrol/status');
+  }
+
+  async updatePatrolWaypoints(waypoints: import('@/types').Waypoint[]): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/patrol/waypoints', {
+      waypoints: waypoints.map(w => ({
+        pose: w.pose,
+        tasks: w.tasks || [],
+        navigationMode: w.navigationMode || 'obstacle_avoidance',
+        actionConfig: w.actionConfig || { use_default_config: true },
+      })),
+    });
   }
 
   // ------ Localization Service ------
