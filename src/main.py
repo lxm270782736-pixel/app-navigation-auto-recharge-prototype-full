@@ -265,6 +265,73 @@ def record_start_position():
     return logic.record_room_waypoint("", "start_position")
 
 
+# ==================== 巡房任务 ====================
+
+
+class StartRoomPatrolRequest(BaseModel):
+    task_config: Optional[dict] = None
+
+
+@app.post("/api/room-patrol/start")
+def start_room_patrol(req: StartRoomPatrolRequest):
+    return logic.start_room_patrol(req.task_config)
+
+
+@app.post("/api/room-patrol/stop")
+def stop_room_patrol():
+    return logic.stop_room_patrol()
+
+
+@app.get("/api/room-patrol/status")
+def get_room_patrol_status():
+    return logic.get_room_patrol_status()
+
+
+@app.get("/api/room-patrol/task-config")
+def get_task_config():
+    return logic.get_task_config()
+
+
+class SaveTaskConfigRequest(BaseModel):
+    config: dict
+
+
+@app.post("/api/room-patrol/task-config")
+def save_task_config(req: SaveTaskConfigRequest):
+    return logic.save_task_config(req.config)
+
+
+# ==================== 告警 ====================
+
+
+@app.get("/api/alerts")
+def get_alerts(status: Optional[str] = None, date: Optional[str] = None):
+    return logic.get_alerts(status=status, date=date)
+
+
+@app.post("/api/alerts/{date}/{alert_id}/confirm")
+def confirm_alert(date: str, alert_id: str):
+    return logic.confirm_alert(alert_id, date)
+
+
+@app.post("/api/alerts/{date}/{alert_id}/close")
+def close_alert(date: str, alert_id: str):
+    return logic.close_alert(alert_id, date)
+
+
+# ==================== 巡房记录 ====================
+
+
+@app.get("/api/patrol-records")
+def get_patrol_records():
+    return logic.get_patrol_records()
+
+
+@app.get("/api/patrol-records/{date}/{record_id}")
+def get_patrol_record(date: str, record_id: str):
+    return logic.get_patrol_record(record_id, date)
+
+
 # ==================== 底盘控制 ====================
 
 

@@ -106,11 +106,20 @@ class NavigationMixin:
                         self._nav_feedback = {}
             threading.Thread(target=_reset, daemon=True).start()
 
+        # Signal room patrol thread if waiting for nav completion
+        if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
+            self._nav_done_success = success
+            self._nav_done_event.set()
+
     def _on_nav_error(self, error_msg):
         print(f"[logic] Navigation action error: {error_msg}")
         with self._lock:
             self._nav_status = "failed"
             self._nav_feedback = {"error": error_msg}
+        # Signal room patrol thread
+        if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
+            self._nav_done_success = False
+            self._nav_done_event.set()
 
     def cancel_navigation(self) -> dict:
         if self._nav_action_client:

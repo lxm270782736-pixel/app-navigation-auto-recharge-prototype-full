@@ -10,6 +10,10 @@ Mixins:
   - ChassisMixin        (chassis.py)       — velocity, initial pose, dock
   - NavigationMixin     (navigation.py)    — single-point navigation + callbacks
   - PatrolMixin         (patrol.py)        — multi-waypoint patrol + persistence
+  - RoomConfigMixin     (room_config.py)   — room waypoint configuration
+  - DetectionMixin      (detection.py)     — VLM visual detection (interface)
+  - AlertMixin          (alert.py)         — alert management
+  - RoomPatrolMixin     (patrol_room.py)   — room patrol orchestration
 """
 import threading
 import time
@@ -23,6 +27,9 @@ from .chassis import ChassisMixin
 from .navigation import NavigationMixin
 from .patrol import PatrolMixin
 from .room_config import RoomConfigMixin
+from .detection import DetectionMixin
+from .alert import AlertMixin
+from .patrol_room import RoomPatrolMixin
 
 
 class BusinessLogic(
@@ -32,6 +39,9 @@ class BusinessLogic(
     NavigationMixin,
     PatrolMixin,
     RoomConfigMixin,
+    DetectionMixin,
+    AlertMixin,
+    RoomPatrolMixin,
 ):
     def __init__(self):
         self._ros_url = _load_ros_url()
@@ -70,6 +80,20 @@ class BusinessLogic(
         self._patrol_error = ""
         self._patrol_started_at: float = 0
         self._patrol_local_timer: threading.Timer | None = None
+
+        # Room patrol state (night patrol)
+        self._room_patrol_active = False
+        self._room_patrol_id = ""
+        self._room_patrol_status = "idle"
+        self._room_patrol_current_room_idx = -1
+        self._room_patrol_current_step = ""
+        self._room_patrol_rooms_completed: list[str] = []
+        self._room_patrol_rooms_failed: list[str] = []
+        self._room_patrol_error = ""
+        self._room_patrol_record: dict = {}
+        self._room_patrol_rooms_list: list[dict] = []
+        self._nav_done_event = threading.Event()
+        self._nav_done_success = False
 
         # Load saved patrol config (if any) — NOT auto-resumed, frontend decides
         self._try_resume_patrol()
@@ -159,6 +183,18 @@ class BusinessLogic(
                     "total": len(self._patrol_waypoints),
                     "error": self._patrol_error,
                     "waypoints": list(self._patrol_waypoints),
+                },
+                "room_patrol": {
+                    "active": self._room_patrol_active,
+                    "status": self._room_patrol_status,
+                    "patrol_id": self._room_patrol_id,
+                    "current_room": self._room_patrol_rooms_list[self._room_patrol_current_room_idx].get("room_id", "") if 0 <= self._room_patrol_current_room_idx < len(self._room_patrol_rooms_list) else "",
+                    "current_step": self._room_patrol_current_step,
+                    "rooms_completed": list(self._room_patrol_rooms_completed),
+                    "rooms_failed": list(self._room_patrol_rooms_failed),
+                    "rooms_total": len(self._room_patrol_rooms_list),
+                    "progress": (len(self._room_patrol_rooms_completed) + len(self._room_patrol_rooms_failed)) / max(len(self._room_patrol_rooms_list), 1) if self._room_patrol_rooms_list else 0,
+                    "error": self._room_patrol_error,
                 },
             })
 

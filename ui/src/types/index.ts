@@ -220,3 +220,67 @@ export interface RoomPatrolConfig {
   detection_types: string[];
   updated_at?: string;
 }
+
+// 巡房任务步骤
+export interface RoomTaskStep {
+  type: 'navigate' | 'open_door' | 'close_door' | 'detect_bed' | 'detect_floor' | 'photo' | 'wait';
+  target?: string;
+  label?: string;
+  duration?: number;
+}
+
+// 单房间任务配置
+export interface RoomTaskConfig {
+  room_id: string;
+  room_name: string;
+  enabled: boolean;
+  steps: RoomTaskStep[];
+}
+
+// 巡房任务编排配置
+export interface PatrolTaskConfig {
+  rooms: RoomTaskConfig[];
+  retry_limit: number;
+  updated_at?: string;
+}
+
+// 告警
+export interface Alert {
+  id: string;
+  patrol_id: string;
+  room_id: string;
+  alert_type: string;
+  status: 'new' | 'processing' | 'closed';
+  message: string;
+  confidence: number;
+  photo: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  closed_at: string | null;
+}
+
+// 巡房记录
+export interface PatrolRecord {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  rooms_total: number;
+  rooms_completed: number;
+  rooms_failed: number;
+  room_results: any[];
+}
+
+// 巡房实时状态 (SSE)
+export interface RoomPatrolState {
+  active: boolean;
+  status: string;
+  patrol_id: string;
+  current_room: string;
+  current_step: string;
+  rooms_completed: string[];
+  rooms_failed: string[];
+  rooms_total: number;
+  progress: number;
+  error: string;
+}

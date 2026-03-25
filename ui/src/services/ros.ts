@@ -119,6 +119,11 @@ class ROSService {
         if (state.patrol) {
           this.emit('patrol-state', state.patrol);
         }
+
+        // Dispatch room patrol state
+        if (state.room_patrol) {
+          this.emit('room-patrol-state', state.room_patrol);
+        }
       } catch (e) {
         console.error('[ROS-HTTP] SSE parse error:', e);
       }
@@ -336,6 +341,56 @@ class ROSService {
 
   async recordStartPosition(): Promise<any> {
     return this._post('/api/room-config/record-start', {});
+  }
+
+  // ------ Room Patrol (巡房任务) ------
+
+  async startRoomPatrol(taskConfig?: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/start', { task_config: taskConfig || null });
+  }
+
+  async stopRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/stop', {});
+  }
+
+  async getRoomPatrolStatus(): Promise<any> {
+    return this._get('/api/room-patrol/status');
+  }
+
+  async getTaskConfig(): Promise<any> {
+    return this._get('/api/room-patrol/task-config');
+  }
+
+  async saveTaskConfig(config: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/task-config', { config });
+  }
+
+  // ------ Alerts (告警) ------
+
+  async getAlerts(filter?: { status?: string; date?: string }): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (filter?.status) params.set('status', filter.status);
+    if (filter?.date) params.set('date', filter.date);
+    const query = params.toString() ? `?${params}` : '';
+    return this._get(`/api/alerts${query}`);
+  }
+
+  async confirmAlert(date: string, alertId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/alerts/${date}/${alertId}/confirm`, {});
+  }
+
+  async closeAlert(date: string, alertId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/alerts/${date}/${alertId}/close`, {});
+  }
+
+  // ------ Patrol Records (巡房记录) ------
+
+  async getPatrolRecords(): Promise<any[]> {
+    return this._get('/api/patrol-records');
+  }
+
+  async getPatrolRecord(date: string, recordId: string): Promise<any> {
+    return this._get(`/api/patrol-records/${date}/${recordId}`);
   }
 
   // ------ Localization Service ------

@@ -283,18 +283,18 @@ export const Dashboard: React.FC = () => {
           </Card>
         </Col>
 
-        {/* 点位录制 */}
+        {/* 巡房任务 */}
         <Col xs={24} md={12} lg={8}>
           <Card
             hoverable
-            onClick={() => navigate('/room-config')}
+            onClick={() => navigate('/room-patrol')}
             style={{ height: '180px', cursor: 'pointer' }}
           >
             <div style={{ textAlign: 'center', paddingTop: '20px' }}>
               <EnvironmentOutlined style={{ fontSize: '48px', color: '#eb2f96' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>点位录制</h3>
+              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>巡房任务</h3>
               <p style={{ color: '#999', marginTop: '8px' }}>
-                录制巡房房间点位
+                点位录制、任务编排、巡房下发
               </p>
             </div>
           </Card>
