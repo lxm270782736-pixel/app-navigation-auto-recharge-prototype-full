@@ -79,24 +79,6 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   waypoints = [],
   onStartWaypointNavigation,
 }) => {
-  // 调试日志：监控开始导航按钮的disable条件
-  // useEffect(() => {
-  //   const isDisabled = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose);
-
-  //   console.log('[NavigationControl] 开始导航按钮状态检查:');
-  //   console.log('  robotPose:', robotPose);
-  //   console.log('  !robotPose:', !robotPose);
-  //   console.log('  waypointMode:', waypointMode);
-  //   if (waypointMode) {
-  //     console.log('  waypoints.length:', waypoints.length);
-  //     console.log('  waypoints.length === 0:', waypoints.length === 0);
-  //   } else {
-  //     console.log('  goalPose:', goalPose);
-  //     console.log('  !goalPose:', !goalPose);
-  //   }
-  //   console.log('  isDisabled (按钮灰色):', isDisabled);
-  // }, [robotPose, waypointMode, waypoints, goalPose]);
-
   // 导航模式选择已保存导航配置
   const [navigationMode, setNavigationMode] = useState<NavigationMode>(
     NavigationMode.OBSTACLE_AVOIDANCE
@@ -122,10 +104,6 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
 
     // 监听底盘控制类型变化事件
     const handleChassisTypeChange = (data: any) => {
-      console.log(
-        "[NavigationControl] Chassis control type changed:",
-        data.controlType
-      );
       setChassisControlType(data.controlType);
     };
 
@@ -205,20 +183,17 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   useEffect(() => {
     // 监听导航反馈（feedback），说明有action在执行
     const handleNavigationFeedback = (feedback: any) => {
-      console.debug("[NavigationControl] 收到导航反馈，标记action正在执行:", feedback);
       // 只要有反馈消息，说明正在有action在执行
       setHasActiveAction(true);
     };
 
     // 监听导航状态（status）
     const handleNavigationStatus = (status: any) => {
-      console.debug("[NavigationControl] 导航状态:", status);
       // 状态更新，可以在需要时使用
     };
 
     // 监听导航完成事件（result），清除action执行标记
     const handleNavigationResult = (result: any) => {
-      console.log("[NavigationControl] 导航完成，清除action标记:", result);
       setHasActiveAction(false);
     };
 

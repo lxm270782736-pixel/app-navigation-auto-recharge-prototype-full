@@ -66,7 +66,6 @@ class ROSService {
     const es = new EventSource(`${API_BASE}/api/state`);
 
     es.onopen = () => {
-      console.log('[ROS-HTTP] SSE connected to backend');
       this._connected = true;
       this.emit('connection', { connected: true });
     };
@@ -145,7 +144,6 @@ class ROSService {
   private attemptReconnect() {
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
-      console.log('[ROS-HTTP] Attempting SSE reconnect...');
       this.connectSSE();
     }, 3000);
   }
@@ -233,7 +231,6 @@ class ROSService {
   // ------ Navigation ------
 
   sendNavigationGoal(goal: NavigationGoal): void {
-    console.log('[ROS-HTTP] sendNavigationGoal');
     this._lastNavStatus = 'navigating';
     this._post('/api/navigation/go', {
       x: goal.pose.x,
@@ -260,7 +257,6 @@ class ROSService {
   }
 
   cancelNavigation() {
-    console.log('[ROS-HTTP] cancelNavigation');
     this._post('/api/navigation/cancel', {}).catch(console.error);
   }
 

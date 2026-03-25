@@ -106,7 +106,6 @@ export const Navigation: React.FC = () => {
       try {
         const savedConfig = await navigationStorageService.loadNavigationConfig();
         if (savedConfig) {
-          console.log('[Navigation] 加载保存的导航配置:', savedConfig);
           setSavedNavConfig(savedConfig);
 
           if (savedConfig.navigationType === 'waypoint') {
@@ -130,13 +129,6 @@ export const Navigation: React.FC = () => {
                 setGoalPose(restoredWaypoints[restoredIndex].pose);
                 // 立即设置正在导航，确保按钮显示"停止导航"而不是灰色"开始导航"
                 setIsNavigating(true);
-                console.log(
-                  '[Navigation] 恢复多点导航配置，路径点数:',
-                  restoredWaypoints.length,
-                  '当前路径点索引:',
-                  restoredIndex,
-                  '(等待2秒判断是否需要发送目标点)'
-                );
 
                 // 显示通知
                 message.info({
@@ -149,20 +141,12 @@ export const Navigation: React.FC = () => {
                   navigationResumedRef.current = true;
                   hasReceivedFeedbackRef.current = false; // 重置 feedback 标记
                   waitingForCurrentActionRef.current = true; // 设置等待模式
-                  console.log('[Navigation] 多点巡航恢复模式：等待2秒判断是否有action执行...');
 
                   // 设置超时：判断是否需要重新发送导航指令
                   const waitTimer = setTimeout(() => {
-                    console.log('[Navigation] 2秒超时，feedback更新情况:', {
-                      hasReceivedFeedback: hasReceivedFeedbackRef.current,
-                      navigationResumed: navigationResumedRef.current,
-                      waitingForCurrentAction: waitingForCurrentActionRef.current
-                    });
-
                     // 无论是否收到过 feedback，都需要重新发送目标点
                     // 原因：如果 action 已经完成，result 事件可能在刷新前已发送，不会再有新的 result
                     // 因此需要主动重新发送，以确保有活跃的 action
-                    console.log('[Navigation] 重新发送导航指令，确保有活跃的 action');
                     setCurrentWaypointIndex(restoredIndex);
                     setGoalPose(restoredWaypoints[restoredIndex].pose);
 
@@ -178,8 +162,6 @@ export const Navigation: React.FC = () => {
                   activeTimersRef.current.push(waitTimer);
                 }
               } else {
-                console.log('[Navigation] 恢复多点导航配置，路径点数:', restoredWaypoints.length);
-
                 // 显示通知
                 message.info({
                   content: `已恢复多点巡航配置，共 ${restoredWaypoints.length} 个路径点`,
@@ -191,7 +173,6 @@ export const Navigation: React.FC = () => {
             // 单点导航：恢复目标点
             if (savedConfig.goalPose) {
               setGoalPose(savedConfig.goalPose);
-              console.log('[Navigation] 恢复单点导航目标点:', savedConfig.goalPose);
 
               // 显示通知
               message.info({
@@ -216,22 +197,6 @@ export const Navigation: React.FC = () => {
     currentWaypointIndexRef.current = currentWaypointIndex;
     completedWaypointsRef.current = completedWaypoints;
   }, [waypointMode, waypoints, currentWaypointIndex, completedWaypoints]);
-
-  // 自动恢复多点导航（刷新网页后继续导航）
-  // 注：该 useEffect 已在配置加载时处理，此处仅用于日志记录
-  useEffect(() => {
-    if (!savedNavConfig || navigationResumedRef.current) {
-      return;
-    }
-
-    console.log('[Navigation] 检查恢复条件:', {
-      navigationType: savedNavConfig.navigationType,
-      currentWaypointIndex: savedNavConfig.currentWaypointIndex,
-      waypointsLength: waypoints.length,
-      currentWaypointIndexState: currentWaypointIndex,
-      navigationResumed: navigationResumedRef.current,
-    });
-  }, [savedNavConfig, waypoints, currentWaypointIndex]);
 
   // 订阅实时地图数据
   useEffect(() => {
@@ -267,7 +232,6 @@ export const Navigation: React.FC = () => {
 
     // 如果已经有地图数据，不需要等待
     if (currentMap) {
-      console.debug('[导航] 已检测到地图数据，无需打开地图选择');
       return;
     }
 
@@ -275,7 +239,6 @@ export const Navigation: React.FC = () => {
     const timer = setTimeout(() => {
       if (!currentMap && connectionStatus === ConnectionStatus.CONNECTED) {
         // 2秒后仍无地图数据，自动打开地图选择modal
-        console.log('[导航] 未检测到地图数据，自动打开地图选择');
         handleOpenApplyMapModal();
       }
     }, 2000);
@@ -345,27 +308,15 @@ export const Navigation: React.FC = () => {
   // 监听导航事件（始终监听，但只在必要时处理）
   useEffect(() => {
     const handleNavigationResult = (data: any) => {
-      console.log('[Navigation] 导航结果:', data);
-
       // 使用 ref.current 获取最新状态值
       const currentWaypointMode = waypointModeRef.current;
       const currentWaypoints = waypointsRef.current;
       const currentIndex = currentWaypointIndexRef.current;
       const currentCompleted = completedWaypointsRef.current;
 
-      console.log('[Navigation] 当前状态:', {
-        waypointMode: currentWaypointMode,
-        currentWaypointIndex: currentIndex,
-        waypointsLength: currentWaypoints.length,
-        completedCount: currentCompleted.length,
-        waitingForCurrentAction: waitingForCurrentActionRef.current,
-        hasReceivedFeedback: hasReceivedFeedbackRef.current
-      });
-
       // 如果是恢复后的等待状态，并且收到了 feedback（说明有 action 在执行），
       // 这个 result 就是当前 action 的完成结果，继续导航下一个路径点
       if (waitingForCurrentActionRef.current && hasReceivedFeedbackRef.current && data.success) {
-        console.log('[Navigation] 恢复模式：当前action已完成，继续导航下一个路径点');
         waitingForCurrentActionRef.current = false; // 退出等待模式
 
         // 标记当前路径点为已完成
@@ -431,7 +382,6 @@ export const Navigation: React.FC = () => {
             );
           }
         } else {
-          console.log('[Navigation] 单点导航成功处理', currentWaypointMode, currentIndex);
           // 单点导航模式
           message.success({
             content: '导航成功！机器人已到达目标位置',
@@ -493,12 +443,9 @@ export const Navigation: React.FC = () => {
     // 1. sendNavigationGoal 中的 goalMessage.on('feedback')（新发送的导航指令）
     // 2. NavigationControl 订阅的 ROS 话题反馈（包括刷新后已执行的导航）
     const handleNavigationFeedback = (data: any) => {
-      // console.log('[Navigation] 导航反馈:', data);
-
       // 如果在等待状态下收到 feedback，说明有 action 在执行
       if (waitingForCurrentActionRef.current) {
         hasReceivedFeedbackRef.current = true;
-        console.log('[Navigation] 收到feedback，检测到有action在执行，继续等待...');
       }
 
       // 更新导航反馈状态
@@ -508,24 +455,10 @@ export const Navigation: React.FC = () => {
         eta: data.eta,
         current_task: data.current_task,
       });
-
-      // 打印日志
-      // if (data.distance_to_goal !== undefined) {
-      //   console.log(`[Navigation] 距离目标: ${data.distance_to_goal.toFixed(2)}m`);
-      // }
-
-      // if (data.current_task) {
-      //   console.log(`[Navigation] 当前任务: ${data.current_task}`);
-      // }
-
-      // if (data.progress !== undefined) {
-      //   console.log(`[Navigation] 进度: ${(data.progress * 100).toFixed(1)}%`);
-      // }
     };
 
     // 监听导航状态更新
     const handleNavigationStatus = (data: any) => {
-      // console.log('[Navigation] 导航状态:', data.text);
       setNavigationStatus(data.text);
     };
 
@@ -533,22 +466,13 @@ export const Navigation: React.FC = () => {
     rosService.on('navigation-result', handleNavigationResult);
     rosService.on('navigation-feedback', handleNavigationFeedback);
     rosService.on('navigation-status', handleNavigationStatus);
-    console.log('[Navigation] 导航事件监听已设置feedback');
-
-    // console.log('[Navigation] 导航事件监听已设置');
 
     return () => {
       rosService.off('navigation-result', handleNavigationResult);
       rosService.off('navigation-feedback', handleNavigationFeedback);
       rosService.off('navigation-status', handleNavigationStatus);
-      // console.log('[Navigation] 导航事件监听已清除');
     };
   }, []); // 只在组件挂载时设置一次
-
-  // 监控 isNavigating 状态变化
-  // useEffect(() => {
-  //   console.log('[Navigation] isNavigating 状态已更新为:', isNavigating);
-  // }, [isNavigating]);
 
   // 加载可用地图列表（只从ROS后端加载）
   const loadAvailableMaps = async () => {
@@ -605,7 +529,6 @@ export const Navigation: React.FC = () => {
         duration: 3,
       });
 
-      console.log('[导航] 已应用地图:', map.name);
       setApplyMapModalVisible(false);
     } catch (error) {
       console.error('应用地图失败:', error);
@@ -618,7 +541,6 @@ export const Navigation: React.FC = () => {
 
   // 处理重定位开始
   const handleRelocalizationStart = () => {
-    console.log('[导航] 进入重定位模式');
     setIsRelocalizationMode(true);
   };
 
@@ -627,7 +549,6 @@ export const Navigation: React.FC = () => {
 
     if (isRelocalizationMode) {
       // 重定位模式：设置初始位置
-      console.log('[重定位] 设置初始位置:', pose);
       rosService.setInitialPose(pose);
       setInitialPose(pose); // 保存初始位姿以便显示标记
       message.success(`初始位置已发送，等待确认...`);
@@ -725,8 +646,6 @@ export const Navigation: React.FC = () => {
 
   // 停止巡航函数（清除定时器和状态）
   const handleStopWaypointNavigation = async () => {
-    console.log('[Navigation] 停止巡航，清除所有定时器');
-
     // 1. 清除所有活跃的定时器
     activeTimersRef.current.forEach(timer => clearTimeout(timer));
     activeTimersRef.current = [];
@@ -790,9 +709,6 @@ export const Navigation: React.FC = () => {
 
   // 导航到指定的路径点
   const navigateToWaypoint = async (index: number) => {
-    console.log('[Navigation] navigateToWaypoint 被调用，索引:', index);
-    console.log('[Navigation] 调用栈:', new Error().stack);
-
     // 使用 ref 获取最新的 waypoints 列表
     const currentWaypoints = waypointsRef.current;
     const currentCompleted = completedWaypointsRef.current;
@@ -804,12 +720,10 @@ export const Navigation: React.FC = () => {
 
     // **重复检查：如果已经是这个路径点，就不再发送**
     if (currentWaypointIndexRef.current === index) {
-      console.log('[导航] 已经是路径点', index, '，跳过重复发送');
       return;
     }
 
     const waypoint = currentWaypoints[index];
-    console.log(`[导航] 开始导航到路径点 ${index + 1}/${currentWaypoints.length}:`, waypoint);
 
     // 设置当前目标点（用于地图显示）
     setGoalPose(waypoint.pose);
@@ -832,7 +746,7 @@ export const Navigation: React.FC = () => {
       currentWaypointIndex: index, // 保存当前路径点索引
       timestamp: Date.now(),
     }).then(() => {
-      console.log(`[导航] 多点导航配置已保存，当前路径点索引: ${index}`);
+      // config saved
     }).catch(error => {
       console.error('[导航] 保存多点导航配置失败:', error);
     });
@@ -1206,9 +1120,7 @@ export const Navigation: React.FC = () => {
         >
           {/* 定位控制 */}
           <SimpleLocalizationControl
-            onModeChange={(mode) => {
-              console.log('Localization mode changed:', mode);
-            }}
+            onModeChange={() => {}}
             onRelocalizationStart={handleRelocalizationStart}
             robotPose={robotPose}
           />
@@ -1216,9 +1128,7 @@ export const Navigation: React.FC = () => {
           {/* 底盘控制 */}
           <ChassisControl
             isNavigating={isNavigating}
-            onControlTypeChange={(type) => {
-              console.log('Chassis control type changed:', type);
-            }}
+            onControlTypeChange={() => {}}
             />
 
           {/* 回充控制 */}
