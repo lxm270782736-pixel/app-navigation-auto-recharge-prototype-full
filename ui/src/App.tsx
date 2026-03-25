@@ -1,3 +1,9 @@
+/**
+ * Navigation App — standard App component entry point.
+ *
+ * Follows the standard AppComponentProps interface required by app-shell.
+ * ROS connection is managed internally via ROSProvider + useApp() hook.
+ */
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -8,7 +14,14 @@ import { MapEditor } from '@/components/MapEditor';
 import { Mapping } from '@/components/Mapping';
 import { Navigation } from '@/components/Navigation';
 import { Settings } from '@/components/Settings';
-import './App.css';
+import './app.css';
+
+// ---- Standard App Interface ----
+
+export type AppComponentProps = {
+  appId: string;
+  onExit: () => void;
+};
 
 // 需要全屏显示的路由（不需要 app-container 背景和padding）
 const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings'];
@@ -33,7 +46,7 @@ function AppContent() {
   );
 }
 
-function App() {
+export default function NavigationApp({ appId: _appId, onExit: _onExit }: AppComponentProps) {
   return (
     <ConfigProvider locale={zhCN}>
       <ROSProvider autoConnect={true}>
@@ -49,5 +62,3 @@ function App() {
     </ConfigProvider>
   );
 }
-
-export default App;

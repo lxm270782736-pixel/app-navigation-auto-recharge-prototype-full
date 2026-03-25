@@ -27,22 +27,18 @@ interface ROSProviderProps {
 export const ROSProvider: React.FC<ROSProviderProps> = ({
   children,
   autoConnect = true,
-  rosUrl,
 }) => {
-  // 动态获取ROS Bridge地址：使用当前网页的主机名 + 9090端口
-  const defaultRosUrl = rosUrl || `ws://${window.location.hostname}:9090`;
-
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     ConnectionStatus.DISCONNECTED
   );
 
-  const connect = async (url: string = defaultRosUrl) => {
+  const connect = async () => {
     try {
       setConnectionStatus(ConnectionStatus.CONNECTING);
-      await rosService.connect(url);
-      setConnectionStatus(ConnectionStatus.CONNECTED);
+      await rosService.connect();
+      // Actual connected/disconnected comes from SSE event listener below
     } catch (error) {
-      console.error('Failed to connect to ROS:', error);
+      console.error('Failed to connect:', error);
       setConnectionStatus(ConnectionStatus.ERROR);
       throw error;
     }
@@ -54,7 +50,6 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
   };
 
   useEffect(() => {
-    // 监听连接状态变化
     const handleConnection = ({ connected }: { connected: boolean }) => {
       setConnectionStatus(
         connected ? ConnectionStatus.CONNECTED : ConnectionStatus.DISCONNECTED
@@ -68,18 +63,15 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
     rosService.on('connection', handleConnection);
     rosService.on('error', handleError);
 
-    // 自动连接
     if (autoConnect) {
-      connect().catch(() => {
-        // 错误已在connect函数中处理
-      });
+      connect().catch(() => {});
     }
 
     return () => {
       rosService.off('connection', handleConnection);
       rosService.off('error', handleError);
     };
-  }, [autoConnect, defaultRosUrl]);
+  }, [autoConnect]);
 
   return (
     <ROSContext.Provider value={{ connectionStatus, connect, disconnect }}>

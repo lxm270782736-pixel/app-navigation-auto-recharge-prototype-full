@@ -9,8 +9,14 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-mock
 dist-ssr
 *.local
+
+# UI build outputs
+ui/node_modules
+ui/dist
+ui/dist-mock
 
 # Editor directories and files
 .vscode/*

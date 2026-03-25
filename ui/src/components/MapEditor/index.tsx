@@ -683,7 +683,7 @@ export const MapEditor: React.FC = () => {
               <p><strong>创建时间:</strong> {dayjs(mapData.createdAt).format('YYYY-MM-DD HH:mm')}</p>
               <p><strong>地图尺寸:</strong> {mapData.width} × {mapData.height} px</p>
               <p><strong>分辨率:</strong> {mapData.resolution.toFixed(3)} m/px</p>
-              <p><strong>地图原点:</strong> ({mapData.origin.x.toFixed(2)}, {mapData.origin.y.toFixed(2)})</p>
+              <p><strong>地图原点:</strong> ({mapData.origin?.x?.toFixed(2) ?? '?'}, {mapData.origin?.y?.toFixed(2) ?? '?'})</p>
               <p style={{ marginBottom: 0 }}><strong>像素总数:</strong> {mapData.data.length.toLocaleString()}</p>
             </div>
           </Card>

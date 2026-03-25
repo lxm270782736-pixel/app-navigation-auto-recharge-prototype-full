@@ -1,0 +1,286 @@
+"""
+Navigation App — FastAPI entry point
+
+Exposes REST + SSE endpoints for navigation control.
+All ROS communication goes through logic.py — frontend never touches ROS directly.
+"""
+import json
+import asyncio
+from typing import Optional
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
+
+from .logic import BusinessLogic
+
+app = FastAPI(title="Navigation App")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logic = BusinessLogic()
+
+
+# ==================== SSE: 状态推送 ====================
+
+
+@app.get("/api/state")
+async def state_stream():
+    """Push full state every 500ms — includes raw ROS topic data."""
+    async def generate():
+        while True:
+            yield {"data": json.dumps(logic.get_state())}
+            await asyncio.sleep(0.5)
+    return EventSourceResponse(generate())
+
+
+# ==================== 定位/建图 ====================
+
+
+@app.post("/api/localization/start-mapping")
+def start_mapping():
+    return logic.start_mapping()
+
+
+@app.post("/api/localization/stop-mapping")
+def stop_mapping():
+    return logic.stop_mapping()
+
+
+@app.post("/api/localization/start")
+def start_localization():
+    return logic.start_localization()
+
+
+@app.post("/api/localization/start-auto")
+def start_localization_auto():
+    return logic.start_localization_auto()
+
+
+@app.post("/api/localization/start-obstacle-avoidance")
+def start_obstacle_avoidance():
+    return logic.start_obstacle_avoidance()
+
+
+@app.post("/api/localization/stop")
+def stop_localization():
+    return logic.stop_localization()
+
+
+@app.post("/api/localization/shutdown")
+def shutdown_localization():
+    return logic.shutdown_localization()
+
+
+# ==================== 遥控器 ====================
+
+
+@app.post("/api/joystick/start")
+def start_joystick():
+    return logic.start_joystick()
+
+
+@app.post("/api/joystick/stop")
+def stop_joystick():
+    return logic.stop_joystick()
+
+
+# ==================== 系统节点 ====================
+
+
+@app.post("/api/system/start-slam")
+def start_slam_node():
+    return logic.start_slam_node()
+
+
+@app.post("/api/system/start-nav")
+def start_navigation_node():
+    return logic.start_navigation_node()
+
+
+# ==================== 地图管理 ====================
+
+
+@app.get("/api/maps")
+def list_maps():
+    return logic.list_maps()
+
+
+@app.get("/api/maps/current")
+def get_current_map():
+    return logic.get_current_map_name()
+
+
+class MapNameRequest(BaseModel):
+    map_name: str
+
+
+@app.get("/api/maps/{map_name}")
+def load_map(map_name: str):
+    return logic.load_map(map_name)
+
+
+@app.post("/api/maps/apply")
+def apply_map(req: MapNameRequest):
+    return logic.apply_map(req.map_name)
+
+
+class SaveMapRequest(BaseModel):
+    map_name: str
+    map_data: Optional[dict] = None
+
+
+@app.post("/api/maps/save")
+def save_map(req: SaveMapRequest):
+    return logic.save_map(req.map_name, req.map_data)
+
+
+@app.post("/api/maps/delete")
+def delete_map(req: MapNameRequest):
+    return logic.delete_map(req.map_name)
+
+
+# ==================== 导航 ====================
+
+
+class NavigateRequest(BaseModel):
+    x: float
+    y: float
+    theta: float
+    config: Optional[dict] = None
+    tasks: Optional[list] = None
+
+
+@app.post("/api/navigation/go")
+def navigate_to(req: NavigateRequest):
+    return logic.navigate_to(req.x, req.y, req.theta, req.config, req.tasks)
+
+
+@app.post("/api/navigation/cancel")
+def cancel_navigation():
+    return logic.cancel_navigation()
+
+
+class LocalNavRequest(BaseModel):
+    x: float
+    y: float
+    theta: float
+
+
+@app.post("/api/navigation/local-go")
+def send_local_navigation_goal(req: LocalNavRequest):
+    return logic.send_local_navigation_goal(req.x, req.y, req.theta)
+
+
+# ==================== 底盘控制 ====================
+
+
+class VelocityRequest(BaseModel):
+    linear_x: float
+    angular_z: float
+
+
+@app.post("/api/chassis/velocity")
+def send_velocity(req: VelocityRequest):
+    return logic.send_velocity(req.linear_x, req.angular_z)
+
+
+class PoseRequest(BaseModel):
+    x: float
+    y: float
+    theta: float
+
+
+@app.post("/api/chassis/initial-pose")
+def set_initial_pose(req: PoseRequest):
+    return logic.set_initial_pose(req.x, req.y, req.theta)
+
+
+@app.get("/api/chassis/control-type")
+def get_chassis_control_type():
+    return logic.get_chassis_control_type()
+
+
+class ControlTypeRequest(BaseModel):
+    control_type: str
+
+
+@app.post("/api/chassis/control-type")
+def set_chassis_control_type(req: ControlTypeRequest):
+    return logic.set_chassis_control_type(req.control_type)
+
+
+# ==================== Dock ====================
+
+
+class DockRequest(BaseModel):
+    force_retry: bool = False
+
+
+@app.post("/api/dock/dock")
+def send_dock_goal(req: DockRequest):
+    return logic.send_dock_goal(req.force_retry)
+
+
+class UndockRequest(BaseModel):
+    save_position: bool = True
+
+
+@app.post("/api/dock/undock")
+def send_undock_goal(req: UndockRequest):
+    return logic.send_undock_goal(req.save_position)
+
+
+@app.post("/api/dock/cancel")
+def cancel_dock():
+    return logic.cancel_dock()
+
+
+# ==================== 通用透传 ====================
+
+
+class ServiceCallRequest(BaseModel):
+    service_name: str
+    service_type: str
+    request: dict = {}
+
+
+@app.post("/api/ros/service")
+def call_ros_service(req: ServiceCallRequest):
+    """Generic ROS service passthrough."""
+    return logic.call_ros_service(req.service_name, req.service_type, req.request)
+
+
+class TopicPublishRequest(BaseModel):
+    topic_name: str
+    msg_type: str
+    message: dict
+
+
+@app.post("/api/ros/publish")
+def publish_topic(req: TopicPublishRequest):
+    """Generic ROS topic publish passthrough."""
+    return logic.publish_topic(req.topic_name, req.msg_type, req.message)
+
+
+@app.get("/api/ros/topic/{topic_path:path}")
+def get_topic(topic_path: str):
+    """Get latest message for a topic (for heavy data like /map, /scan)."""
+    topic_name = "/" + topic_path
+    data = logic.get_topic(topic_name)
+    if data is None:
+        return {"success": False, "message": f"No data for {topic_name}"}
+    return {"success": True, "data": data}
+
+# ==================== Standalone runner ====================
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8080)

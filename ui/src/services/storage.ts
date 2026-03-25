@@ -5,8 +5,8 @@ const MAP_DATA_KEY_PREFIX = 'astribot_map_data_'; // 单独存储地图数据
 const THUMBNAIL_MAX_SIZE = 200; // 缩略图最大尺寸
 const THUMBNAIL_QUALITY = 0.6; // 缩略图质量 (0.0 - 1.0)
 
-// HTTP API 基础 URL
-const API_BASE_URL = 'http://localhost:8080/api';
+// HTTP API 基础 URL — 统一走后端
+const API_BASE_URL = `http://${window.location.hostname}:8080/api`;
 
 // 地图元数据（不包含大量的地图数据）
 interface MapMetadata {

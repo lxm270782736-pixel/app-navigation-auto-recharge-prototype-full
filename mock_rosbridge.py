@@ -235,7 +235,7 @@ class MockROSBridge:
         print(f"状态消息: {self.localization_status_message}")
         print("="*50 + "\n")
 
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket, path=None):
         """处理客户端连接"""
         self.clients.add(websocket)
         print(f"客户端已连接: {websocket.remote_address}")
@@ -2009,7 +2009,7 @@ async def create_http_server():
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, 'localhost', 8080)
+    site = web.TCPSite(runner, 'localhost', 8082)
     await site.start()
     return runner
 
@@ -2024,7 +2024,7 @@ async def main():
     print()
 
     print("WebSocket地址: ws://localhost:9090")
-    print("HTTP API地址: http://localhost:8080")
+    print("HTTP API地址: http://localhost:8082")
     print()
     print("支持的功能:")
     print("  ✓ 地图数据发布 (/map)")

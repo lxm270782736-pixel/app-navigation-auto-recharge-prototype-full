@@ -1,0 +1,17 @@
+id: "com.astribot.app.navigation"
+name: "Navigation"
+version: "1.0.0"
+description: "机器人SLAM建图和自主导航应用"
+
+dependencies:
+  python: ">= 3.10"
+  pip:
+    - "fastapi"
+    - "sse-starlette"
+    - "uvicorn"
+    - "pyyaml"
+    - "roslibpy"
+
+# ROS Bridge 连接地址
+remote_routes:
+  ros_bridge: "ws://localhost:9090"
