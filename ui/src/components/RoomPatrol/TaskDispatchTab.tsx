@@ -190,7 +190,7 @@ export const TaskDispatchTab: React.FC = () => {
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
       {/* Left: Map */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         {currentMap ? (
           <MapCanvas
             mapData={currentMap}
@@ -209,7 +209,7 @@ export const TaskDispatchTab: React.FC = () => {
       </div>
 
       {/* Right: Control panel */}
-      <div style={{ width: 320, borderLeft: '1px solid #f0f0f0', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ width: 320, minWidth: 280, flexShrink: 0, borderLeft: '1px solid #f0f0f0', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Start/Stop */}
         <Card size="small" title="巡房控制">
           {!isActive && presets.length > 0 && (

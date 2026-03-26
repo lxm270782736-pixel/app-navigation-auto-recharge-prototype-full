@@ -350,7 +350,7 @@ export const WaypointRecordTab: React.FC = () => {
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
       {/* 左侧：地图 */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', height: '100%' }}>
           {currentMap ? (
             <MapCanvas
               mapData={currentMap}
@@ -436,7 +436,9 @@ export const WaypointRecordTab: React.FC = () => {
         {/* 右侧：配置面板 */}
         <div
           style={{
-            width: '360px',
+            width: 320,
+            minWidth: 280,
+            flexShrink: 0,
             borderLeft: '1px solid #f0f0f0',
             background: '#fafafa',
             overflowY: 'auto',
