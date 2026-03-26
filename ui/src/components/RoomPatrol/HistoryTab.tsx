@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Table, Tag, Button, Empty, Space, message, Modal } from 'antd';
-import { ReloadOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
@@ -11,6 +11,24 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   running: { color: 'processing', text: '进行中' },
   stopped: { color: 'warning', text: '已停止' },
   failed: { color: 'error', text: '失败' },
+};
+
+const STEP_LABELS: Record<string, string> = {
+  navigate: '导航',
+  open_door: '开门',
+  close_door: '关门',
+  detect_bed: '在床检测',
+  detect_floor: '地面检测',
+  photo: '拍照',
+  wait: '等待',
+  preparing: '准备',
+  returning: '返回起点',
+};
+
+const TARGET_LABELS: Record<string, string> = {
+  door_outside: '门外',
+  door_inside: '门内',
+  bed_check: '床位',
 };
 
 const ALERT_TYPES: Record<string, string> = {
@@ -131,9 +149,31 @@ export const HistoryTab: React.FC = () => {
                   <Tag color={room.status === 'success' ? 'success' : 'error'}>{room.status}</Tag>
                 </div>
                 {room.error && <div style={{ color: '#ff4d4f', fontSize: 12 }}>{room.error}</div>}
-                <div style={{ fontSize: 11, color: '#999' }}>
+                <div style={{ fontSize: 11, color: '#999', marginBottom: room.steps?.length > 0 ? 6 : 0 }}>
                   {room.steps?.length ?? 0} 步骤 | {room.started_at?.replace('T', ' ')} ~ {room.finished_at?.replace('T', ' ')}
                 </div>
+                {room.steps?.length > 0 && (
+                  <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+                    {room.steps.map((step: any, si: number) => {
+                      const isOk = step.status === 'success';
+                      const label = STEP_LABELS[step.step] || step.step;
+                      const target = step.target ? (TARGET_LABELS[step.target] || step.target) : '';
+                      return (
+                        <div key={si} style={{ display: 'flex', alignItems: 'center', fontSize: 12, padding: '2px 0', gap: 4 }}>
+                          {isOk
+                            ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 11 }} />
+                            : <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 11 }} />
+                          }
+                          <span>{label}</span>
+                          {target && <span style={{ color: '#999' }}>→ {target}</span>}
+                          <span style={{ color: '#bbb', marginLeft: 'auto', fontSize: 11 }}>
+                            {step.started_at?.slice(11)} ~ {step.finished_at?.slice(11)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </Card>
             ))}
           </Space>

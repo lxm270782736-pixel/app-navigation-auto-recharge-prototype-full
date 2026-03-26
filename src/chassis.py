@@ -33,7 +33,7 @@ class ChassisMixin:
     def send_velocity(self, linear_x: float, angular_z: float) -> dict:
         if not self._ros or not self._connected:
             return {"success": False, "message": "Not connected to ROS"}
-        topic = roslibpy.Topic(self._ros, "/cmd_vel", "geometry_msgs/msg/Twist")
+        topic = roslibpy.Topic(self._ros, "/planner/navigation_twist", "geometry_msgs/msg/Twist")
         topic.publish(roslibpy.Message({
             "linear": {"x": linear_x, "y": 0.0, "z": 0.0},
             "angular": {"x": 0.0, "y": 0.0, "z": angular_z},

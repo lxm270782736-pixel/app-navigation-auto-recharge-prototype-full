@@ -211,7 +211,7 @@ class RoomPatrolMixin:
 
                 step_type = step.get("type", "")
                 step_target = step.get("target", step.get("label", ""))
-                step_result = {"step": step_type, "status": "running", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                step_result = {"step": step_type, "target": step_target, "status": "running", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
                 with self._lock:
                     self._room_patrol_current_step = step_type

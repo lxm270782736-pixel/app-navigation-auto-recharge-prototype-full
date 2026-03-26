@@ -403,6 +403,10 @@ class ROSService {
     return this._post('/api/joystick/stop', {});
   }
 
+  async sendVelocity(linearX: number, angularZ: number): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/chassis/velocity', { linear_x: linearX, angular_z: angularZ });
+  }
+
   async startMapping(): Promise<{ success: boolean; message: string }> {
     return this._post('/api/localization/start-mapping', {});
   }
