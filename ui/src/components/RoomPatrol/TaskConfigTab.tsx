@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Card, Select, Space, Checkbox, message, Empty, Tag, Tooltip, Input, InputNumber, Switch } from 'antd';
+import { Button, Card, Select, Checkbox, message, Empty, Tag, Tooltip, Input, InputNumber, Switch } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   SaveOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
   HolderOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -23,6 +21,7 @@ import {
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
+  arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { rosService } from '@/services/ros';
@@ -126,6 +125,33 @@ const SortableRoomItem: React.FC<{
   );
 };
 
+// Sortable step item for drag-and-drop reorder
+const SortableStepItem: React.FC<{
+  id: string;
+  borderColor: string;
+  children: React.ReactNode;
+}> = ({ id, borderColor, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    marginBottom: 8,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card size="small" style={{ borderLeft: `3px solid ${borderColor}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#999', display: 'flex' }}>
+            <HolderOutlined />
+          </span>
+          {children}
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 export const TaskConfigTab: React.FC = () => {
   const { connectionStatus } = useROS();
   const [taskConfig, setTaskConfig] = useState<PatrolTaskConfig | null>(null);
@@ -219,15 +245,6 @@ export const TaskConfigTab: React.FC = () => {
     updateSteps(selectedRoom.steps.filter((_, i) => i !== idx));
   };
 
-  // Move step up/down
-  const moveStep = (idx: number, dir: -1 | 1) => {
-    if (!selectedRoom) return;
-    const steps = [...selectedRoom.steps];
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= steps.length) return;
-    [steps[idx], steps[newIdx]] = [steps[newIdx], steps[idx]];
-    updateSteps(steps);
-  };
 
   // Update single step field
   const updateStep = (idx: number, patch: Partial<RoomTaskStep>) => {
@@ -317,6 +334,23 @@ export const TaskConfigTab: React.FC = () => {
     setTaskConfig({ ...taskConfig, rooms });
   };
 
+  // Step drag-end handler
+  const handleStepDragEnd = (event: DragEndEvent) => {
+    if (!selectedRoom) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = Number(String(active.id).replace('step-', ''));
+    const newIdx = Number(String(over.id).replace('step-', ''));
+    if (isNaN(oldIdx) || isNaN(newIdx)) return;
+    updateSteps(arrayMove(selectedRoom.steps, oldIdx, newIdx));
+  };
+
+  // Stable step IDs for dnd-kit
+  const stepIds = useMemo(
+    () => (selectedRoom?.steps || []).map((_, i) => `step-${i}`),
+    [selectedRoom?.steps],
+  );
+
   if (!taskConfig) {
     return <div style={{ padding: 24, textAlign: 'center', color: '#999' }}>加载中...</div>;
   }
@@ -374,17 +408,13 @@ export const TaskConfigTab: React.FC = () => {
           ) : selectedRoom.steps.length === 0 ? (
             <Empty description="暂无步骤，点击「默认模板」或「添加步骤」" />
           ) : (
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              {selectedRoom.steps.map((step, idx) => {
-                const isCustom = step.type.startsWith('custom:');
-                const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
-                return (
-                  <Card
-                    key={idx}
-                    size="small"
-                    style={{ borderLeft: `3px solid ${stepColors[step.type] || '#999'}` }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
+              <SortableContext items={stepIds} strategy={verticalListSortingStrategy}>
+                {selectedRoom.steps.map((step, idx) => {
+                  const isCustom = step.type.startsWith('custom:');
+                  const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
+                  return (
+                    <SortableStepItem key={stepIds[idx]} id={stepIds[idx]} borderColor={stepColors[step.type] || '#999'}>
                       <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
                       <Select
                         size="small"
@@ -410,53 +440,30 @@ export const TaskConfigTab: React.FC = () => {
                           style={{ width: 80, fontSize: 12, border: '1px solid #d9d9d9', borderRadius: 4, padding: '2px 6px' }}
                         />
                       )}
-                      {/* Custom step params inline */}
                       {isCustom && customDef && customDef.parameters.map(p => (
                         <span key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                           <span style={{ fontSize: 11, color: '#999' }}>{p.label}:</span>
                           {p.type === 'number' && (
-                            <InputNumber
-                              size="small"
-                              value={step.params?.[p.key] ?? p.default_value}
-                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
-                              style={{ width: 60 }}
-                            />
+                            <InputNumber size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 60 }} />
                           )}
                           {p.type === 'string' && (
-                            <Input
-                              size="small"
-                              value={step.params?.[p.key] ?? p.default_value ?? ''}
-                              onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })}
-                              style={{ width: 80 }}
-                            />
+                            <Input size="small" value={step.params?.[p.key] ?? p.default_value ?? ''} onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })} style={{ width: 80 }} />
                           )}
                           {p.type === 'boolean' && (
-                            <Switch
-                              size="small"
-                              checked={step.params?.[p.key] ?? p.default_value ?? false}
-                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
-                            />
+                            <Switch size="small" checked={step.params?.[p.key] ?? p.default_value ?? false} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} />
                           )}
                           {p.type === 'select' && (
-                            <Select
-                              size="small"
-                              value={step.params?.[p.key] ?? p.default_value}
-                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
-                              style={{ width: 80 }}
-                              options={p.options || []}
-                            />
+                            <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 80 }} options={p.options || []} />
                           )}
                         </span>
                       ))}
                       <div style={{ flex: 1 }} />
-                      <Tooltip title="上移"><Button size="small" type="text" icon={<ArrowUpOutlined />} onClick={() => moveStep(idx, -1)} disabled={idx === 0} /></Tooltip>
-                      <Tooltip title="下移"><Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={() => moveStep(idx, 1)} disabled={idx === selectedRoom.steps.length - 1} /></Tooltip>
                       <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
-                    </div>
-                  </Card>
-                );
-              })}
-            </Space>
+                    </SortableStepItem>
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>
