@@ -124,6 +124,10 @@ export const HistoryTab: React.FC = () => {
             })}
             columns={[
               {
+                title: '任务', dataIndex: 'task_name', width: 100,
+                render: (v: string) => v || '-',
+              },
+              {
                 title: '时间', dataIndex: 'started_at', width: 160,
                 render: (v: string) => v?.replace('T', ' '),
               },
@@ -168,17 +172,24 @@ export const HistoryTab: React.FC = () => {
                       const isOk = step.status === 'success';
                       const label = stepLabels[step.step] || step.step;
                       const target = step.target ? (TARGET_LABELS[step.target] || step.target) : '';
+                      const errorDetail = !isOk && step.detail?.error ? step.detail.error : '';
                       return (
-                        <div key={si} style={{ display: 'flex', alignItems: 'center', fontSize: 12, padding: '2px 0', gap: 4 }}>
-                          {isOk
-                            ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 11 }} />
-                            : <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 11 }} />
-                          }
-                          <span>{label}</span>
-                          {target && <span style={{ color: '#999' }}>→ {target}</span>}
-                          <span style={{ color: '#bbb', marginLeft: 'auto', fontSize: 11 }}>
-                            {step.started_at?.slice(11)} ~ {step.finished_at?.slice(11)}
-                          </span>
+                        <div key={si}>
+                          <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, padding: '2px 0', gap: 4 }}>
+                            {isOk
+                              ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 11 }} />
+                              : <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 11 }} />
+                            }
+                            <span style={{ color: isOk ? undefined : '#ff4d4f', fontWeight: isOk ? undefined : 600 }}>{label}</span>
+                            {target && <span style={{ color: '#999' }}>→ {target}</span>}
+                            {!isOk && <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>失败</Tag>}
+                            <span style={{ color: '#bbb', marginLeft: 'auto', fontSize: 11 }}>
+                              {step.started_at?.slice(11)} ~ {step.finished_at?.slice(11)}
+                            </span>
+                          </div>
+                          {!isOk && errorDetail && (
+                            <div style={{ fontSize: 11, color: '#ff4d4f', paddingLeft: 18, marginBottom: 2 }}>{errorDetail}</div>
+                          )}
                         </div>
                       );
                     })}

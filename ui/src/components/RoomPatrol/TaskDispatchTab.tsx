@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Steps } from 'antd';
+import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -13,7 +13,7 @@ import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, RoomPatrolState, RoomConfig, CustomStepDefinition } from '@/types';
+import type { MapData, Pose, RoomPatrolState, RoomConfig, CustomStepDefinition, TaskPreset } from '@/types';
 
 const STEP_LABELS: Record<string, string> = {
   navigate: '导航中',
@@ -36,6 +36,8 @@ export const TaskDispatchTab: React.FC = () => {
   const [taskRoomIds, setTaskRoomIds] = useState<string[]>([]);
   const [taskRoomSteps, setTaskRoomSteps] = useState<Record<string, any[]>>({});
   const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+  const [presets, setPresets] = useState<TaskPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
 
   // Dynamic step labels: built-in + custom
   const stepLabels = useMemo(() => {
@@ -48,13 +50,23 @@ export const TaskDispatchTab: React.FC = () => {
   const loadConfigs = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
-      const [roomData, taskData, customData] = await Promise.all([
+      const [roomData, taskData, customData, presetsData] = await Promise.all([
         rosService.getRoomConfig(),
         rosService.getTaskConfig().catch(() => ({ rooms: [] })),
         rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
+        rosService.getTaskPresets().catch(() => ({ presets: [] })),
       ]);
       setRoomConfigs(roomData.rooms || []);
       setCustomStepTypes(customData.custom_step_types || []);
+      const loadedPresets = presetsData.presets || [];
+      setPresets(loadedPresets);
+      if (loadedPresets.length > 0) {
+        setSelectedPresetId(prev => {
+          if (prev && loadedPresets.find((p: TaskPreset) => p.id === prev)) return prev;
+          const def = loadedPresets.find((p: TaskPreset) => p.is_default);
+          return def ? def.id : loadedPresets[0].id;
+        });
+      }
       const taskRooms = (taskData.rooms || []).filter((r: any) => r.enabled !== false);
       const enabledIds = taskRooms.map((r: any) => r.room_id);
       setTaskRoomIds(enabledIds);
@@ -68,6 +80,18 @@ export const TaskDispatchTab: React.FC = () => {
   }, [connectionStatus]);
 
   useEffect(() => { loadConfigs(); }, [loadConfigs]);
+
+  // Update displayed rooms when preset selection changes
+  useEffect(() => {
+    const preset = presets.find(p => p.id === selectedPresetId);
+    if (preset) {
+      const rooms = (preset.rooms || []).filter(r => r.enabled !== false);
+      setTaskRoomIds(rooms.map(r => r.room_id));
+      const stepsMap: Record<string, any[]> = {};
+      for (const r of rooms) stepsMap[r.room_id] = r.steps || [];
+      setTaskRoomSteps(stepsMap);
+    }
+  }, [selectedPresetId, presets]);
 
   // Subscribe to SSE room patrol state
   useEffect(() => {
@@ -105,7 +129,9 @@ export const TaskDispatchTab: React.FC = () => {
   const isActive = patrolState?.active ?? false;
 
   const handleStart = async () => {
-    const result = await rosService.startRoomPatrol();
+    const preset = presets.find(p => p.id === selectedPresetId);
+    const taskConfig = preset ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit } : undefined;
+    const result = await rosService.startRoomPatrol(taskConfig);
     if (result.success) {
       message.success(result.message);
     } else {
@@ -186,6 +212,18 @@ export const TaskDispatchTab: React.FC = () => {
       <div style={{ width: 320, borderLeft: '1px solid #f0f0f0', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Start/Stop */}
         <Card size="small" title="巡房控制">
+          {!isActive && presets.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>选择任务</div>
+              <Select
+                size="small"
+                value={selectedPresetId}
+                onChange={setSelectedPresetId}
+                style={{ width: '100%' }}
+                options={presets.map(p => ({ value: p.id, label: `${p.is_default ? '⭐ ' : ''}${p.name}` }))}
+              />
+            </div>
+          )}
           {isActive ? (
             <Button type="primary" danger block icon={<StopOutlined />} onClick={handleStop}>
               停止巡房
@@ -200,7 +238,7 @@ export const TaskDispatchTab: React.FC = () => {
 
         {/* Status */}
         {patrolState && patrolState.status !== 'idle' && (
-          <Card size="small" title="巡房状态">
+          <Card size="small" title={`巡房状态${(patrolState as any).task_name ? ` — ${(patrolState as any).task_name}` : ''}`}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>状态</span>

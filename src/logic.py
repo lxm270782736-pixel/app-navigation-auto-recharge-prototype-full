@@ -92,6 +92,7 @@ class BusinessLogic(
         self._room_patrol_rooms_completed: list[str] = []
         self._room_patrol_rooms_failed: list[str] = []
         self._room_patrol_error = ""
+        self._room_patrol_task_name = ""
         self._room_patrol_record: dict = {}
         self._room_patrol_rooms_list: list[dict] = []
         self._room_patrol_current_step_index = -1
@@ -191,6 +192,7 @@ class BusinessLogic(
                     "active": self._room_patrol_active,
                     "status": self._room_patrol_status,
                     "patrol_id": self._room_patrol_id,
+                    "task_name": getattr(self, '_room_patrol_task_name', ''),
                     "current_room": self._room_patrol_rooms_list[self._room_patrol_current_room_idx].get("room_id", "") if 0 <= self._room_patrol_current_room_idx < len(self._room_patrol_rooms_list) else "",
                     "current_step": self._room_patrol_current_step,
                     "current_step_index": self._room_patrol_current_step_index,

@@ -24,34 +24,177 @@ DEFAULT_ROOM_STEPS = [
 ]
 
 _TASK_CONFIG_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "room_task_config.json"
+_PRESETS_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "task_presets.json"
 
 
 class RoomPatrolMixin:
     """Room patrol orchestration — runs inspection steps per room."""
 
-    # ------ Task config persistence ------
+    # ------ Task config persistence (backward-compatible, delegates to presets) ------
 
     def get_task_config(self) -> dict:
-        """Load task orchestration config from disk."""
-        try:
-            if _TASK_CONFIG_FILE.exists():
-                with open(_TASK_CONFIG_FILE) as f:
-                    return json.load(f)
-        except Exception as e:
-            print(f"[room_patrol] Failed to load task config: {e}")
+        """Load default preset as task config (backward-compatible)."""
+        presets = self.get_task_presets().get("presets", [])
+        default = next((p for p in presets if p.get("is_default")), None)
+        if default:
+            return {"rooms": default.get("rooms", []), "retry_limit": default.get("retry_limit", 3)}
         return {"rooms": [], "retry_limit": 3}
 
     def save_task_config(self, config: dict) -> dict:
-        """Save task orchestration config."""
+        """Save to default preset (backward-compatible)."""
+        presets_data = self.get_task_presets()
+        presets = presets_data.get("presets", [])
+        default = next((p for p in presets if p.get("is_default")), None)
+        if default:
+            default["rooms"] = config.get("rooms", [])
+            default["retry_limit"] = config.get("retry_limit", 3)
+            default["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        else:
+            # No default yet — create one
+            presets.append({
+                "id": f"preset_{uuid.uuid4().hex[:8]}",
+                "name": "默认任务",
+                "description": "",
+                "is_default": True,
+                "rooms": config.get("rooms", []),
+                "retry_limit": config.get("retry_limit", 3),
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
+        presets_data["presets"] = presets
+        return self._save_presets_file(presets_data)
+
+    # ------ Task presets ------
+
+    def get_task_presets(self) -> dict:
+        """Load all task presets. Migrates from old config if needed."""
         try:
-            config["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            _TASK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-            tmp = _TASK_CONFIG_FILE.with_suffix(".tmp")
-            with open(tmp, "w") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            tmp.rename(_TASK_CONFIG_FILE)
-            return {"success": True, "message": "Task config saved"}
+            if _PRESETS_FILE.exists():
+                with open(_PRESETS_FILE) as f:
+                    return json.load(f)
         except Exception as e:
+            print(f"[room_patrol] Failed to load presets: {e}")
+
+        # Migration: old room_task_config.json → first preset
+        if _TASK_CONFIG_FILE.exists():
+            try:
+                with open(_TASK_CONFIG_FILE) as f:
+                    old = json.load(f)
+                preset = {
+                    "id": f"preset_{uuid.uuid4().hex[:8]}",
+                    "name": "默认任务",
+                    "description": "从旧配置迁移",
+                    "is_default": True,
+                    "rooms": old.get("rooms", []),
+                    "retry_limit": old.get("retry_limit", 3),
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                }
+                data = {"presets": [preset], "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                self._save_presets_file(data)
+                print("[room_patrol] Migrated old task config to presets")
+                return data
+            except Exception as e:
+                print(f"[room_patrol] Migration failed: {e}")
+
+        return {"presets": []}
+
+    def get_task_preset(self, preset_id: str) -> dict | None:
+        """Get a single preset by id."""
+        for p in self.get_task_presets().get("presets", []):
+            if p.get("id") == preset_id:
+                return p
+        return None
+
+    def save_task_preset(self, preset: dict) -> dict:
+        """Create or update a preset."""
+        preset_id = preset.get("id", "").strip()
+        name = preset.get("name", "").strip()
+        if not name:
+            return {"success": False, "message": "名称不能为空"}
+
+        data = self.get_task_presets()
+        presets = data.get("presets", [])
+
+        if not preset_id:
+            # New preset
+            preset_id = f"preset_{uuid.uuid4().hex[:8]}"
+            preset["id"] = preset_id
+            preset.setdefault("is_default", len(presets) == 0)
+            preset["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            preset["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            presets.append(preset)
+        else:
+            # Update existing
+            found = False
+            for i, p in enumerate(presets):
+                if p.get("id") == preset_id:
+                    preset["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                    preset.setdefault("created_at", p.get("created_at"))
+                    preset.setdefault("is_default", p.get("is_default", False))
+                    presets[i] = preset
+                    found = True
+                    break
+            if not found:
+                return {"success": False, "message": f"Preset '{preset_id}' not found"}
+
+        data["presets"] = presets
+        result = self._save_presets_file(data)
+        result["preset_id"] = preset_id
+        return result
+
+    def delete_task_preset(self, preset_id: str) -> dict:
+        """Delete a preset."""
+        data = self.get_task_presets()
+        presets = data.get("presets", [])
+        before = len(presets)
+        data["presets"] = [p for p in presets if p.get("id") != preset_id]
+        if len(data["presets"]) == before:
+            return {"success": False, "message": "Preset not found"}
+        return self._save_presets_file(data)
+
+    def duplicate_task_preset(self, preset_id: str, new_name: str) -> dict:
+        """Duplicate a preset with a new name."""
+        import copy
+        source = self.get_task_preset(preset_id)
+        if not source:
+            return {"success": False, "message": "Source preset not found"}
+        new_preset = copy.deepcopy(source)
+        new_preset["id"] = f"preset_{uuid.uuid4().hex[:8]}"
+        new_preset["name"] = new_name
+        new_preset["is_default"] = False
+        new_preset["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        new_preset["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        data = self.get_task_presets()
+        data.get("presets", []).append(new_preset)
+        result = self._save_presets_file(data)
+        result["preset"] = new_preset
+        return result
+
+    def set_default_preset(self, preset_id: str) -> dict:
+        """Set a preset as the default."""
+        data = self.get_task_presets()
+        found = False
+        for p in data.get("presets", []):
+            p["is_default"] = (p.get("id") == preset_id)
+            if p["is_default"]:
+                found = True
+        if not found:
+            return {"success": False, "message": "Preset not found"}
+        return self._save_presets_file(data)
+
+    def _save_presets_file(self, data: dict) -> dict:
+        """Atomic write presets to disk."""
+        try:
+            data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            _PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _PRESETS_FILE.with_suffix(".tmp")
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp.rename(_PRESETS_FILE)
+            return {"success": True, "message": "Saved"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
             return {"success": False, "message": str(e)}
 
     # ------ Patrol control ------
@@ -93,6 +236,7 @@ class RoomPatrolMixin:
 
         patrol_id = f"patrol_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
         retry_limit = config.get("retry_limit", 3)
+        task_name = config.get("name", "")
 
         with self._lock:
             self._room_patrol_active = True
@@ -103,8 +247,10 @@ class RoomPatrolMixin:
             self._room_patrol_rooms_completed = []
             self._room_patrol_rooms_failed = []
             self._room_patrol_error = ""
+            self._room_patrol_task_name = task_name
             self._room_patrol_record = {
                 "id": patrol_id,
+                "task_name": task_name,
                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "finished_at": None,
                 "status": "running",
@@ -156,6 +302,7 @@ class RoomPatrolMixin:
                 "active": self._room_patrol_active,
                 "status": self._room_patrol_status,
                 "patrol_id": self._room_patrol_id,
+                "task_name": getattr(self, '_room_patrol_task_name', ''),
                 "current_room": current_room,
                 "current_step": self._room_patrol_current_step,
                 "current_step_index": getattr(self, '_room_patrol_current_step_index', -1),

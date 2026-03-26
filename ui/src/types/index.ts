@@ -279,6 +279,18 @@ export interface PatrolTaskConfig {
   updated_at?: string;
 }
 
+// 任务预设
+export interface TaskPreset {
+  id: string;
+  name: string;
+  description?: string;
+  is_default: boolean;
+  rooms: RoomTaskConfig[];
+  retry_limit: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // 告警
 export interface Alert {
   id: string;

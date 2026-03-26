@@ -44,6 +44,7 @@ export const RoomPatrol: React.FC = () => {
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
+        destroyInactiveTabPane
         style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
         tabBarStyle={{ paddingLeft: 24, marginBottom: 0 }}
         items={[

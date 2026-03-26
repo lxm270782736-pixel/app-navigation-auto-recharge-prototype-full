@@ -1,0 +1,320 @@
+{
+  "presets": [
+    {
+      "id": "preset_29ec65f1",
+      "name": "默认任务",
+      "description": "从旧配置迁移",
+      "is_default": true,
+      "rooms": [
+        {
+          "room_id": "101",
+          "room_name": "101室",
+          "enabled": true,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        },
+        {
+          "room_id": "102",
+          "room_name": "102室",
+          "enabled": true,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        }
+      ],
+      "retry_limit": 3,
+      "created_at": "2026-03-26T11:54:54",
+      "updated_at": "2026-03-26T11:54:54"
+    },
+    {
+      "id": "preset_fbd7bcac",
+      "name": "早间巡逻",
+      "description": "",
+      "is_default": false,
+      "rooms": [
+        {
+          "room_id": "101",
+          "room_name": "101室",
+          "enabled": true,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        },
+        {
+          "room_id": "102",
+          "room_name": "102室",
+          "enabled": false,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        }
+      ],
+      "retry_limit": 3,
+      "created_at": "2026-03-26T11:56:50",
+      "updated_at": "2026-03-26T11:57:47"
+    },
+    {
+      "id": "preset_2732fbbc",
+      "name": "早间巡逻 副本",
+      "description": "",
+      "is_default": false,
+      "rooms": [
+        {
+          "room_id": "101",
+          "room_name": "101室",
+          "enabled": true,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        },
+        {
+          "room_id": "102",
+          "room_name": "102室",
+          "enabled": false,
+          "steps": [
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "open_door"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "detect_floor"
+            },
+            {
+              "type": "photo",
+              "label": "通道"
+            },
+            {
+              "type": "navigate",
+              "target": "bed_check"
+            },
+            {
+              "type": "detect_bed"
+            },
+            {
+              "type": "photo",
+              "label": "床位"
+            },
+            {
+              "type": "navigate",
+              "target": "door_inside"
+            },
+            {
+              "type": "navigate",
+              "target": "door_outside"
+            },
+            {
+              "type": "close_door"
+            }
+          ]
+        }
+      ],
+      "retry_limit": 3,
+      "created_at": "2026-03-26T13:04:01",
+      "updated_at": "2026-03-26T13:04:01"
+    }
+  ],
+  "updated_at": "2026-03-26T13:04:01"
+}

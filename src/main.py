@@ -396,6 +396,42 @@ def cancel_dock():
     return logic.cancel_dock()
 
 
+# ==================== 任务预设 ====================
+
+
+class SavePresetRequest(BaseModel):
+    preset: dict
+
+
+class DuplicatePresetRequest(BaseModel):
+    new_name: str
+
+
+@app.get("/api/task-presets")
+def get_task_presets():
+    return logic.get_task_presets()
+
+
+@app.post("/api/task-presets")
+def save_task_preset(req: SavePresetRequest):
+    return logic.save_task_preset(req.preset)
+
+
+@app.delete("/api/task-presets/{preset_id}")
+def delete_task_preset(preset_id: str):
+    return logic.delete_task_preset(preset_id)
+
+
+@app.post("/api/task-presets/{preset_id}/duplicate")
+def duplicate_task_preset(preset_id: str, req: DuplicatePresetRequest):
+    return logic.duplicate_task_preset(preset_id, req.new_name)
+
+
+@app.post("/api/task-presets/{preset_id}/default")
+def set_default_preset(preset_id: str):
+    return logic.set_default_preset(preset_id)
+
+
 # ==================== 自定义步骤类型 ====================
 
 

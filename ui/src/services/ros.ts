@@ -393,6 +393,30 @@ class ROSService {
     return this._get(`/api/patrol-records/${date}/${recordId}`);
   }
 
+  // ------ Task Presets (任务预设) ------
+
+  async getTaskPresets(): Promise<{ presets: any[] }> {
+    return this._get('/api/task-presets');
+  }
+
+  async saveTaskPreset(preset: any): Promise<{ success: boolean; message: string; preset_id?: string }> {
+    return this._post('/api/task-presets', { preset });
+  }
+
+  async deleteTaskPreset(presetId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/api/task-presets/${encodeURIComponent(presetId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async duplicateTaskPreset(presetId: string, newName: string): Promise<{ success: boolean; message: string; preset?: any }> {
+    return this._post(`/api/task-presets/${encodeURIComponent(presetId)}/duplicate`, { new_name: newName });
+  }
+
+  async setDefaultPreset(presetId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/task-presets/${encodeURIComponent(presetId)}/default`, {});
+  }
+
   // ------ Custom Step Types (自定义步骤类型) ------
 
   async getCustomStepTypes(): Promise<{ custom_step_types: any[] }> {
