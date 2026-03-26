@@ -48,10 +48,10 @@ fi
 
 echo "✓ rosbridge_server已安装"
 echo ""
-
+source /home/instellar/Documents/Codes/Planning/meta_astribot_navigation/src/core/astribot_navigation/install/setup.bash
 # 加载用户工作空间 (如果存在)
 # 注意: 请根据实际情况修改工作空间路径
-USER_WS_SETUP="/home/instellarma/Documents/Codes/Planning/astribot_slam_navi_ws/install/setup.bash"
+USER_WS_SETUP="/home/instellar/Documents/Codes/Planning/meta_astribot_localization/src/core/install/setup.bash"
 if [ -f "/home/astribot/ros2_ws/install/setup.bash" ]; then
     USER_WS_SETUP="/home/astribot/ros2_ws/install/setup.bash"
 elif [ -f "$HOME/ros2_ws/install/setup.bash" ]; then
@@ -112,7 +112,8 @@ if lsof -Pi :3500 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
     VITE_PID=""
 else
     echo "启动前端服务器..."
-    npm run dev &
+    cd ui
+    npm run dev:mock &
     VITE_PID=$!
     sleep 3
 
@@ -168,6 +169,7 @@ cleanup() {
         pkill -P $ROSBRIDGE_PID 2>/dev/null
     fi
     echo "服务已停止"
+    cd ..
     exit
 }
 

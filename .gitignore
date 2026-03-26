@@ -9,8 +9,14 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-mock
 dist-ssr
 *.local
+
+# UI build outputs
+ui/node_modules
+ui/dist
+ui/dist-mock
 
 # Editor directories and files
 .vscode/*
@@ -33,3 +39,4 @@ dist-ssr
 # Mock地图存储目录
 mock_saved_maps/
 saved_maps/
+saved_nav_configs/
