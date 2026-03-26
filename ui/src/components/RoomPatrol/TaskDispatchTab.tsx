@@ -27,6 +27,12 @@ const STEP_LABELS: Record<string, string> = {
   returning: '返回起点',
 };
 
+const WAYPOINT_TYPE_COLORS: Record<string, string> = {
+  door_outside: '#1890ff',
+  door_inside: '#52c41a',
+  bed_check: '#ff4d4f',
+};
+
 export const TaskDispatchTab: React.FC = () => {
   const { connectionStatus } = useROS();
   const [patrolState, setPatrolState] = useState<RoomPatrolState | null>(null);
@@ -62,8 +68,8 @@ export const TaskDispatchTab: React.FC = () => {
       setPresets(loadedPresets);
       if (loadedPresets.length > 0) {
         setSelectedPresetId(prev => {
-          if (prev && loadedPresets.find((p: TaskPreset) => p.id === prev)) return prev;
-          const def = loadedPresets.find((p: TaskPreset) => p.is_default);
+          if (prev && loadedPresets.find((p: any) => p.id === prev)) return prev;
+          const def = loadedPresets.find((p: any) => p.is_default);
           return def ? def.id : loadedPresets[0].id;
         });
       }
@@ -156,10 +162,14 @@ export const TaskDispatchTab: React.FC = () => {
   const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => r.door_outside).map(r => r.room_id);
   const waypoints: Pose[] = [];
   const waypointMeta: { roomId: string; type: string; waypointIdx: number }[] = [];
+  const waypointLabels: string[] = [];
+  const waypointColors: string[] = [];
 
-  for (const rid of displayRoomIds) {
+  for (let i = 0; i < displayRoomIds.length; i++) {
+    const rid = displayRoomIds[i];
     const rc = roomLookup.get(rid);
     if (!rc) continue;
+    const roomLabel = String(i + 1);
     const points = [
       { pose: rc.door_outside, type: 'door_outside' },
       { pose: rc.door_inside, type: 'door_inside' },
@@ -169,6 +179,8 @@ export const TaskDispatchTab: React.FC = () => {
       if (p.pose) {
         waypointMeta.push({ roomId: rid, type: p.type, waypointIdx: waypoints.length });
         waypoints.push(p.pose);
+        waypointLabels.push(roomLabel);
+        waypointColors.push(WAYPOINT_TYPE_COLORS[p.type] || '#999');
       }
     }
   }
@@ -196,6 +208,8 @@ export const TaskDispatchTab: React.FC = () => {
             mapData={currentMap}
             robotPose={robotPose}
             waypoints={waypoints}
+            waypointLabels={waypointLabels}
+            waypointColors={waypointColors}
             currentWaypointIndex={currentWaypointIndex}
             completedWaypoints={completedWaypoints}
             showCoordinateSystem={true}
