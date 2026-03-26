@@ -396,6 +396,28 @@ def cancel_dock():
     return logic.cancel_dock()
 
 
+# ==================== 自定义步骤类型 ====================
+
+
+class SaveCustomStepTypeRequest(BaseModel):
+    definition: dict
+
+
+@app.get("/api/custom-step-types")
+def get_custom_step_types():
+    return logic.get_custom_step_types()
+
+
+@app.post("/api/custom-step-types")
+def save_custom_step_type(req: SaveCustomStepTypeRequest):
+    return logic.save_custom_step_type(req.definition)
+
+
+@app.delete("/api/custom-step-types/{step_id}")
+def delete_custom_step_type(step_id: str):
+    return logic.delete_custom_step_type(step_id)
+
+
 # ==================== 通用透传 ====================
 
 

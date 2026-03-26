@@ -39,5 +39,5 @@ ui/dist-mock
 # Mock地图存储目录
 mock_saved_maps/
 saved_maps/
-saved_nav_configs/
+
 data/

@@ -30,6 +30,7 @@ from .room_config import RoomConfigMixin
 from .detection import DetectionMixin
 from .alert import AlertMixin
 from .patrol_room import RoomPatrolMixin
+from .custom_steps import CustomStepsMixin
 
 
 class BusinessLogic(
@@ -42,6 +43,7 @@ class BusinessLogic(
     DetectionMixin,
     AlertMixin,
     RoomPatrolMixin,
+    CustomStepsMixin,
 ):
     def __init__(self):
         self._ros_url = _load_ros_url()

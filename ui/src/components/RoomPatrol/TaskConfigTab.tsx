@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Card, Select, Space, Checkbox, message, Empty, Tag, Tooltip } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button, Card, Select, Space, Checkbox, message, Empty, Tag, Tooltip, Input, InputNumber, Switch } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -7,6 +7,7 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   HolderOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -28,6 +29,8 @@ import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { RoomConfig, RoomTaskStep, PatrolTaskConfig } from '@/types';
+import type { CustomStepDefinition } from '@/types';
+import { CustomStepManager } from './CustomStepManager';
 
 // Available step types
 const STEP_OPTIONS = [
@@ -128,14 +131,34 @@ export const TaskConfigTab: React.FC = () => {
   const [taskConfig, setTaskConfig] = useState<PatrolTaskConfig | null>(null);
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
+  const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+  const [showManager, setShowManager] = useState(false);
+
+  // Dynamic step options: built-in + custom
+  const allStepOptions = useMemo(() => [
+    ...STEP_OPTIONS,
+    ...customStepTypes.map(d => ({
+      value: `custom:${d.id}`, label: `⚡ ${d.name}`, desc: d.description,
+    })),
+  ], [customStepTypes]);
+
+  const stepColors = useMemo(() => {
+    const c: Record<string, string> = { ...STEP_COLORS };
+    for (const d of customStepTypes) c[`custom:${d.id}`] = d.icon_color || '#8c8c8c';
+    return c;
+  }, [customStepTypes]);
 
   // Load configs
   const loadData = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
-      const roomData = await rosService.getRoomConfig();
+      const [roomData, customData] = await Promise.all([
+        rosService.getRoomConfig(),
+        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
+      ]);
       const rooms = (roomData.rooms || []) as RoomConfig[];
       setRoomConfigs(rooms);
+      setCustomStepTypes(customData.custom_step_types || []);
 
       let taskData: any = { rooms: [], retry_limit: 3 };
       try {
@@ -209,6 +232,18 @@ export const TaskConfigTab: React.FC = () => {
   // Update single step field
   const updateStep = (idx: number, patch: Partial<RoomTaskStep>) => {
     if (!selectedRoom) return;
+    // When changing to a custom type, init params with defaults
+    if (patch.type && patch.type.startsWith('custom:') && patch.type !== selectedRoom.steps[idx].type) {
+      const customId = patch.type.split(':', 2)[1];
+      const def = customStepTypes.find(d => d.id === customId);
+      if (def) {
+        const defaultParams: Record<string, any> = {};
+        for (const p of def.parameters) {
+          if (p.default_value !== undefined) defaultParams[p.key] = p.default_value;
+        }
+        patch.params = defaultParams;
+      }
+    }
     updateSteps(selectedRoom.steps.map((s, i) => i === idx ? { ...s, ...patch } : s));
   };
 
@@ -326,6 +361,7 @@ export const TaskConfigTab: React.FC = () => {
         <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择房间'}</span>
           <div style={{ flex: 1 }} />
+          <Button size="small" icon={<SettingOutlined />} onClick={() => setShowManager(true)}>自定义步骤</Button>
           <Button size="small" onClick={applyDefault} disabled={!selectedRoom}>默认模板</Button>
           <Button size="small" icon={<PlusOutlined />} onClick={addStep} disabled={!selectedRoom}>添加步骤</Button>
           <Button size="small" type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存配置</Button>
@@ -339,49 +375,94 @@ export const TaskConfigTab: React.FC = () => {
             <Empty description="暂无步骤，点击「默认模板」或「添加步骤」" />
           ) : (
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              {selectedRoom.steps.map((step, idx) => (
-                <Card
-                  key={idx}
-                  size="small"
-                  style={{ borderLeft: `3px solid ${STEP_COLORS[step.type] || '#999'}` }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
-                    <Select
-                      size="small"
-                      value={step.type}
-                      onChange={(v) => updateStep(idx, { type: v as any })}
-                      style={{ width: 120 }}
-                      options={STEP_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
-                    />
-                    {step.type === 'navigate' && (
+              {selectedRoom.steps.map((step, idx) => {
+                const isCustom = step.type.startsWith('custom:');
+                const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
+                return (
+                  <Card
+                    key={idx}
+                    size="small"
+                    style={{ borderLeft: `3px solid ${stepColors[step.type] || '#999'}` }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
                       <Select
                         size="small"
-                        value={step.target || 'door_outside'}
-                        onChange={(v) => updateStep(idx, { target: v })}
-                        style={{ width: 100 }}
-                        options={NAV_TARGETS}
+                        value={step.type}
+                        onChange={(v) => updateStep(idx, { type: v as any })}
+                        style={{ width: 140 }}
+                        options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
                       />
-                    )}
-                    {step.type === 'photo' && (
-                      <input
-                        placeholder="标签"
-                        value={step.label || ''}
-                        onChange={(e) => updateStep(idx, { label: e.target.value })}
-                        style={{ width: 80, fontSize: 12, border: '1px solid #d9d9d9', borderRadius: 4, padding: '2px 6px' }}
-                      />
-                    )}
-                    <div style={{ flex: 1 }} />
-                    <Tooltip title="上移"><Button size="small" type="text" icon={<ArrowUpOutlined />} onClick={() => moveStep(idx, -1)} disabled={idx === 0} /></Tooltip>
-                    <Tooltip title="下移"><Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={() => moveStep(idx, 1)} disabled={idx === selectedRoom.steps.length - 1} /></Tooltip>
-                    <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
-                  </div>
-                </Card>
-              ))}
+                      {step.type === 'navigate' && (
+                        <Select
+                          size="small"
+                          value={step.target || 'door_outside'}
+                          onChange={(v) => updateStep(idx, { target: v })}
+                          style={{ width: 100 }}
+                          options={NAV_TARGETS}
+                        />
+                      )}
+                      {step.type === 'photo' && (
+                        <input
+                          placeholder="标签"
+                          value={step.label || ''}
+                          onChange={(e) => updateStep(idx, { label: e.target.value })}
+                          style={{ width: 80, fontSize: 12, border: '1px solid #d9d9d9', borderRadius: 4, padding: '2px 6px' }}
+                        />
+                      )}
+                      {/* Custom step params inline */}
+                      {isCustom && customDef && customDef.parameters.map(p => (
+                        <span key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontSize: 11, color: '#999' }}>{p.label}:</span>
+                          {p.type === 'number' && (
+                            <InputNumber
+                              size="small"
+                              value={step.params?.[p.key] ?? p.default_value}
+                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
+                              style={{ width: 60 }}
+                            />
+                          )}
+                          {p.type === 'string' && (
+                            <Input
+                              size="small"
+                              value={step.params?.[p.key] ?? p.default_value ?? ''}
+                              onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })}
+                              style={{ width: 80 }}
+                            />
+                          )}
+                          {p.type === 'boolean' && (
+                            <Switch
+                              size="small"
+                              checked={step.params?.[p.key] ?? p.default_value ?? false}
+                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
+                            />
+                          )}
+                          {p.type === 'select' && (
+                            <Select
+                              size="small"
+                              value={step.params?.[p.key] ?? p.default_value}
+                              onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })}
+                              style={{ width: 80 }}
+                              options={p.options || []}
+                            />
+                          )}
+                        </span>
+                      ))}
+                      <div style={{ flex: 1 }} />
+                      <Tooltip title="上移"><Button size="small" type="text" icon={<ArrowUpOutlined />} onClick={() => moveStep(idx, -1)} disabled={idx === 0} /></Tooltip>
+                      <Tooltip title="下移"><Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={() => moveStep(idx, 1)} disabled={idx === selectedRoom.steps.length - 1} /></Tooltip>
+                      <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
+                    </div>
+                  </Card>
+                );
+              })}
             </Space>
           )}
         </div>
       </div>
+
+      {/* Custom step manager modal */}
+      <CustomStepManager open={showManager} onClose={() => { setShowManager(false); loadData(); }} />
     </div>
   );
 };

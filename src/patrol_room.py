@@ -270,6 +270,9 @@ class RoomPatrolMixin:
                         duration = step.get("duration", 1)
                         time.sleep(duration)
                         success = True
+                    elif step_type.startswith("custom:"):
+                        custom_id = step_type.split(":", 1)[1]
+                        success, detail = self._execute_custom_step(custom_id, step.get("params", {}))
                     else:
                         print(f"[room_patrol] Unknown step type: {step_type}")
                         success = True  # Skip unknown steps
@@ -402,3 +405,68 @@ class RoomPatrolMixin:
     def get_patrol_record(self, record_id: str, date: str) -> dict | None:
         """Get a single patrol record."""
         return self._get_storage().load("records", record_id, date)
+
+    # ------ Custom step execution ------
+
+    def _execute_custom_step(self, step_id: str, params: dict) -> tuple[bool, dict | None]:
+        """Execute a user-defined custom step."""
+        definition = self.get_custom_step_definition(step_id)
+        if not definition:
+            print(f"[room_patrol] Custom step '{step_id}' not found")
+            return False, {"error": f"Custom step '{step_id}' not found"}
+
+        action = definition.get("action", {})
+        action_type = action.get("type", "")
+        print(f"[room_patrol] Custom step '{step_id}' action={action_type}")
+
+        try:
+            if action_type == "ros_service":
+                resolved = self._resolve_params(action.get("request", {}), params)
+                result = self._call_service(action["service_name"], action["service_type"], resolved)
+                ok = result.get("success", True) if isinstance(result, dict) else True
+                # Optional post-call wait
+                wait = params.get("duration", action.get("duration", 0))
+                if wait and wait > 0:
+                    time.sleep(float(wait))
+                return ok, result
+
+            elif action_type == "ros_topic":
+                resolved = self._resolve_params(action.get("message", {}), params)
+                result = self.publish_topic(action["topic_name"], action["msg_type"], resolved)
+                wait = params.get("duration", action.get("duration", 0))
+                if wait and wait > 0:
+                    time.sleep(float(wait))
+                return True, result
+
+            elif action_type == "wait":
+                duration = params.get("duration", action.get("duration", 1))
+                time.sleep(float(duration))
+                return True, {"duration": duration}
+
+            else:
+                return False, {"error": f"Unknown action type: {action_type}"}
+
+        except Exception as e:
+            print(f"[room_patrol] Custom step '{step_id}' error: {e}")
+            return False, {"error": str(e)}
+
+    @staticmethod
+    def _resolve_params(template: dict, params: dict) -> dict:
+        """Recursively replace {{key}} placeholders in template with param values."""
+        import copy
+
+        def _walk(obj):
+            if isinstance(obj, dict):
+                return {k: _walk(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [_walk(v) for v in obj]
+            elif isinstance(obj, str) and "{{" in obj:
+                for key, val in params.items():
+                    placeholder = "{{" + key + "}}"
+                    if obj == placeholder:
+                        return val  # Whole-value replacement preserves type
+                    obj = obj.replace(placeholder, str(val))
+                return obj
+            return obj
+
+        return _walk(copy.deepcopy(template))

@@ -1,0 +1,104 @@
+{
+  "custom_step_types": [
+    {
+      "id": "voice_broadcast",
+      "name": "语音播报",
+      "description": "通过扬声器播放语音提示",
+      "icon_color": "#13c2c2",
+      "action": {
+        "type": "ros_topic",
+        "topic_name": "/speaker/play",
+        "msg_type": "std_msgs/msg/String",
+        "message": {
+          "data": "{{text}}"
+        }
+      },
+      "parameters": [
+        {
+          "key": "text",
+          "label": "播报内容",
+          "type": "string",
+          "default_value": "巡检进行中，请注意安全",
+          "required": true
+        },
+        {
+          "key": "duration",
+          "label": "等待时长(秒)",
+          "type": "number",
+          "default_value": 3,
+          "required": false
+        }
+      ],
+      "timeout": 10,
+      "created_at": "2026-03-26T12:00:00"
+    },
+    {
+      "id": "uv_disinfect",
+      "name": "UV消毒",
+      "description": "启动UV消毒灯进行区域消毒",
+      "icon_color": "#eb2f96",
+      "action": {
+        "type": "ros_service",
+        "service_name": "/uv_light/control",
+        "service_type": "std_srvs/srv/SetBool",
+        "request": {
+          "data": true
+        }
+      },
+      "parameters": [
+        {
+          "key": "duration",
+          "label": "消毒时长(秒)",
+          "type": "number",
+          "default_value": 30,
+          "required": true
+        },
+        {
+          "key": "intensity",
+          "label": "强度",
+          "type": "select",
+          "default_value": "medium",
+          "required": false,
+          "options": [
+            {"value": "low", "label": "低"},
+            {"value": "medium", "label": "中"},
+            {"value": "high", "label": "高"}
+          ]
+        }
+      ],
+      "timeout": 60,
+      "created_at": "2026-03-26T12:00:00"
+    },
+    {
+      "id": "check_temperature",
+      "name": "温度检测",
+      "description": "读取房间温度传感器数据",
+      "icon_color": "#fa8c16",
+      "action": {
+        "type": "ros_service",
+        "service_name": "/sensor/temperature",
+        "service_type": "std_srvs/srv/Trigger",
+        "request": {}
+      },
+      "parameters": [
+        {
+          "key": "threshold",
+          "label": "告警阈值(°C)",
+          "type": "number",
+          "default_value": 38,
+          "required": false
+        },
+        {
+          "key": "log_result",
+          "label": "记录结果",
+          "type": "boolean",
+          "default_value": true,
+          "required": false
+        }
+      ],
+      "timeout": 15,
+      "created_at": "2026-03-26T12:00:00"
+    }
+  ],
+  "updated_at": "2026-03-26T12:00:00"
+}

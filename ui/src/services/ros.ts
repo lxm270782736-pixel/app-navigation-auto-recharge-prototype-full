@@ -393,6 +393,22 @@ class ROSService {
     return this._get(`/api/patrol-records/${date}/${recordId}`);
   }
 
+  // ------ Custom Step Types (自定义步骤类型) ------
+
+  async getCustomStepTypes(): Promise<{ custom_step_types: any[] }> {
+    return this._get('/api/custom-step-types');
+  }
+
+  async saveCustomStepType(definition: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/custom-step-types', { definition });
+  }
+
+  async deleteCustomStepType(stepId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/api/custom-step-types/${encodeURIComponent(stepId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
   // ------ Localization Service ------
 
   async startJoystick(): Promise<{ success: boolean; message: string }> {

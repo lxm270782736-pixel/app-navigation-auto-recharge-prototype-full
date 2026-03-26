@@ -1,0 +1,58 @@
+{
+  "start_position": {
+    "x": -0.5769,
+    "y": -11.7118,
+    "theta": -0.0181
+  },
+  "rooms": [
+    {
+      "room_id": "101",
+      "room_name": "101室",
+      "door_outside": {
+        "x": -0.5005,
+        "y": -7.4747,
+        "theta": -0.0279
+      },
+      "door_inside": {
+        "x": 0.7730872612093513,
+        "y": -7.504467314841321,
+        "theta": -0.0279
+      },
+      "bed_check": {
+        "x": 4.3574,
+        "y": -7.6105,
+        "theta": -0.028
+      },
+      "door_type": "L_handle",
+      "enabled": true
+    },
+    {
+      "room_id": "102",
+      "room_name": "102室",
+      "door_outside": {
+        "x": 3.6215,
+        "y": -2.8428,
+        "theta": 1.0262
+      },
+      "door_inside": {
+        "x": 4.1485,
+        "y": -2.3376,
+        "theta": 0.7644
+      },
+      "bed_check": {
+        "x": 5.060616039991473,
+        "y": -1.644920854912442,
+        "theta": 0.7644
+      },
+      "door_type": "L_handle",
+      "enabled": true
+    }
+  ],
+  "retry_limit": 3,
+  "detection_types": [
+    "bed",
+    "clutter",
+    "water"
+  ],
+  "updated_at": "2026-03-25T20:40:56"
+}

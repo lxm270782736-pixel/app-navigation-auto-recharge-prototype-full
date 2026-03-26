@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, Table, Tag, Button, Empty, Space, message, Modal } from 'antd';
 import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { PatrolRecord, Alert } from '@/types';
+import type { PatrolRecord, Alert, CustomStepDefinition } from '@/types';
 
 const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   completed: { color: 'success', text: '已完成' },
@@ -50,17 +50,27 @@ export const HistoryTab: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PatrolRecord | null>(null);
   const [loading, setLoading] = useState(false);
+  const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+
+  // Dynamic step labels
+  const stepLabels = useMemo(() => {
+    const labels = { ...STEP_LABELS };
+    for (const d of customStepTypes) labels[`custom:${d.id}`] = d.name;
+    return labels;
+  }, [customStepTypes]);
 
   const loadData = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     setLoading(true);
     try {
-      const [recordsData, alertsData] = await Promise.all([
+      const [recordsData, alertsData, customData] = await Promise.all([
         rosService.getPatrolRecords(),
         rosService.getAlerts(),
+        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
       setRecords(Array.isArray(recordsData) ? recordsData : []);
       setAlerts(Array.isArray(alertsData) ? alertsData : []);
+      setCustomStepTypes(customData.custom_step_types || []);
     } catch (e) {
       console.warn('Failed to load history:', e);
     } finally {
@@ -156,7 +166,7 @@ export const HistoryTab: React.FC = () => {
                   <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
                     {room.steps.map((step: any, si: number) => {
                       const isOk = step.status === 'success';
-                      const label = STEP_LABELS[step.step] || step.step;
+                      const label = stepLabels[step.step] || step.step;
                       const target = step.target ? (TARGET_LABELS[step.target] || step.target) : '';
                       return (
                         <div key={si} style={{ display: 'flex', alignItems: 'center', fontSize: 12, padding: '2px 0', gap: 4 }}>

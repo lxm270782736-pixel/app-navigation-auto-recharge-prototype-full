@@ -13,7 +13,7 @@ import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, RoomPatrolState, RoomConfig } from '@/types';
+import type { MapData, Pose, RoomPatrolState, RoomConfig, CustomStepDefinition } from '@/types';
 
 const STEP_LABELS: Record<string, string> = {
   navigate: '导航中',
@@ -35,16 +35,26 @@ export const TaskDispatchTab: React.FC = () => {
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
   const [taskRoomIds, setTaskRoomIds] = useState<string[]>([]);
   const [taskRoomSteps, setTaskRoomSteps] = useState<Record<string, any[]>>({});
+  const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+
+  // Dynamic step labels: built-in + custom
+  const stepLabels = useMemo(() => {
+    const labels = { ...STEP_LABELS };
+    for (const d of customStepTypes) labels[`custom:${d.id}`] = d.name;
+    return labels;
+  }, [customStepTypes]);
 
   // Load room config + task config to know which rooms and their waypoints
   const loadConfigs = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
-      const [roomData, taskData] = await Promise.all([
+      const [roomData, taskData, customData] = await Promise.all([
         rosService.getRoomConfig(),
         rosService.getTaskConfig().catch(() => ({ rooms: [] })),
+        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
       setRoomConfigs(roomData.rooms || []);
+      setCustomStepTypes(customData.custom_step_types || []);
       const taskRooms = (taskData.rooms || []).filter((r: any) => r.enabled !== false);
       const enabledIds = taskRooms.map((r: any) => r.room_id);
       setTaskRoomIds(enabledIds);
@@ -212,7 +222,7 @@ export const TaskDispatchTab: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>当前步骤</span>
-                    <Tag color="blue"><LoadingOutlined /> {STEP_LABELS[patrolState.current_step] || patrolState.current_step}</Tag>
+                    <Tag color="blue"><LoadingOutlined /> {stepLabels[patrolState.current_step] || patrolState.current_step}</Tag>
                   </div>
                 </>
               )}
@@ -289,7 +299,7 @@ export const TaskDispatchTab: React.FC = () => {
                           if (si < currentStepIdx) status = 'finish';
                           else if (si === currentStepIdx) status = 'process';
 
-                          const label = STEP_LABELS[step.type] || step.type;
+                          const label = stepLabels[step.type] || step.type;
                           const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';
 
                           return {
