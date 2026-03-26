@@ -33,9 +33,12 @@ logic = BusinessLogic()
 @app.get("/api/state")
 async def state_stream():
     """Push full state every 500ms — includes raw ROS topic data."""
+    loop = asyncio.get_event_loop()
     async def generate():
         while True:
-            yield {"data": json.dumps(logic.get_state())}
+            # Run get_state() in thread pool to avoid blocking the event loop
+            state = await loop.run_in_executor(None, logic.get_state)
+            yield {"data": json.dumps(state)}
             await asyncio.sleep(0.5)
     return EventSourceResponse(generate())
 

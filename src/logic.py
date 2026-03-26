@@ -171,7 +171,7 @@ class BusinessLogic(
                 k: v for k, v in self._topic_data.items()
                 if k not in self.HEAVY_TOPICS
             }
-            return _to_dict({
+            raw = {
                 "connected": self._connected,
                 "nav_status": self._nav_status,
                 "nav_feedback": self._nav_feedback.copy(),
@@ -203,7 +203,9 @@ class BusinessLogic(
                     "error": self._room_patrol_error,
                     "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in self._room_patrol_rooms_list],
                 },
-            })
+            }
+        # _to_dict conversion outside lock to reduce lock hold time
+        return _to_dict(raw)
 
     def get_topic(self, topic_name: str) -> dict | None:
         """Get latest message for a specific topic (including heavy ones)."""

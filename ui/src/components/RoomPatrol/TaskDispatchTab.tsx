@@ -13,7 +13,7 @@ import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, RoomPatrolState, RoomConfig, CustomStepDefinition, TaskPreset } from '@/types';
+import type { MapData, Pose, RoomPatrolState, RoomConfig } from '@/types';
 
 const STEP_LABELS: Record<string, string> = {
   navigate: '导航中',
@@ -35,8 +35,8 @@ export const TaskDispatchTab: React.FC = () => {
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
   const [taskRoomIds, setTaskRoomIds] = useState<string[]>([]);
   const [taskRoomSteps, setTaskRoomSteps] = useState<Record<string, any[]>>({});
-  const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
-  const [presets, setPresets] = useState<TaskPreset[]>([]);
+  const [customStepTypes, setCustomStepTypes] = useState<any[]>([]);
+  const [presets, setPresets] = useState<any[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
 
   // Dynamic step labels: built-in + custom
@@ -85,8 +85,8 @@ export const TaskDispatchTab: React.FC = () => {
   useEffect(() => {
     const preset = presets.find(p => p.id === selectedPresetId);
     if (preset) {
-      const rooms = (preset.rooms || []).filter(r => r.enabled !== false);
-      setTaskRoomIds(rooms.map(r => r.room_id));
+      const rooms = (preset.rooms || []).filter((r: any) => r.enabled !== false);
+      setTaskRoomIds(rooms.map((r: any) => r.room_id));
       const stepsMap: Record<string, any[]> = {};
       for (const r of rooms) stepsMap[r.room_id] = r.steps || [];
       setTaskRoomSteps(stepsMap);
