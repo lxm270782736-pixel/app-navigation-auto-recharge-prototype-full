@@ -493,6 +493,30 @@ def get_topic(topic_path: str):
         return {"success": False, "message": f"No data for {topic_name}"}
     return {"success": True, "data": data}
 
+
+# ==================== Meta 服务管理 ====================
+
+
+@app.post("/api/meta/connect")
+def connect_meta():
+    return logic.connect_meta()
+
+
+@app.post("/api/meta/activate")
+def activate_meta():
+    return logic.activate_meta()
+
+
+@app.post("/api/meta/deactivate")
+def deactivate_meta():
+    return logic.deactivate_meta()
+
+
+@app.get("/api/meta/status")
+def meta_status():
+    return logic.get_meta_status()
+
+
 # ==================== Standalone runner ====================
 
 

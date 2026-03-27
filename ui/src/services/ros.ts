@@ -417,6 +417,24 @@ class ROSService {
     return this._post(`/api/task-presets/${encodeURIComponent(presetId)}/default`, {});
   }
 
+  // ------ Meta 服务管理 ------
+
+  async connectMeta(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/meta/connect', {});
+  }
+
+  async activateMeta(): Promise<{ success: boolean; results: Record<string, string> }> {
+    return this._post('/api/meta/activate', {});
+  }
+
+  async deactivateMeta(): Promise<{ success: boolean; results: Record<string, string> }> {
+    return this._post('/api/meta/deactivate', {});
+  }
+
+  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string }> {
+    return this._get('/api/meta/status');
+  }
+
   // ------ Custom Step Types (自定义步骤类型) ------
 
   async getCustomStepTypes(): Promise<{ custom_step_types: any[] }> {

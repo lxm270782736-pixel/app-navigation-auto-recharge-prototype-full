@@ -1,5 +1,9 @@
-"""Single-point navigation — goal sending, callbacks, cancel."""
+"""Single-point navigation — goal sending, callbacks, cancel.
+
+Prefers Meta link (self._nav) when available, fallback to roslibpy ActionClient.
+"""
 import json
+import logging
 import math
 import threading
 import time
@@ -8,6 +12,8 @@ from datetime import datetime
 import roslibpy
 
 from ._utils import _to_dict
+
+logger = logging.getLogger(__name__)
 
 
 def _ts():
@@ -19,6 +25,21 @@ class NavigationMixin:
 
     def navigate_to(self, x: float, y: float, theta: float,
                     config: dict | None = None, tasks: list | None = None) -> dict:
+        # ---- Meta link path ----
+        if self._nav_state == "active" and self._nav:
+            try:
+                result = self._nav.navigate_to(x=x, y=y, yaw=theta)
+                with self._lock:
+                    self._nav_status = "navigating"
+                    self._nav_feedback = {}
+                print(f"[nav] {_ts()} Meta navigate_to({x:.3f}, {y:.3f}, {theta:.3f}): {result}")
+                self._start_nav_status_poller()
+                return {"success": result.get("status") == "success",
+                        "message": result.get("message", "")}
+            except Exception as e:
+                logger.warning(f"[nav] Meta navigate_to failed, fallback roslibpy: {e}")
+
+        # ---- roslibpy fallback ----
         if not self._ros or not self._connected:
             return {"success": False, "message": "Not connected to ROS"}
 
@@ -49,7 +70,6 @@ class NavigationMixin:
             goal_msg["tasks"] = json.dumps(tasks)
 
         try:
-            # Reuse ActionClient — creating a new one each time can lose callbacks
             if self._nav_action_client is None:
                 self._nav_action_client = roslibpy.ActionClient(
                     self._ros, "/move_chassis_to_server",
@@ -68,6 +88,75 @@ class NavigationMixin:
             with self._lock:
                 self._nav_status = "failed"
             return {"success": False, "message": str(e)}
+
+    # ---- Meta status polling ----
+
+    def _start_nav_status_poller(self):
+        """Poll Meta navigation status until terminal state."""
+        def _poll():
+            while True:
+                time.sleep(0.5)
+                if not self._nav:
+                    break
+                with self._lock:
+                    if self._nav_status not in ("navigating",):
+                        break  # Already resolved by cancel or other
+                try:
+                    status = self._nav.get_navigation_status()
+                except Exception as e:
+                    logger.warning(f"[nav] Meta status poll error: {e}")
+                    continue
+
+                state = status.get("state", "idle")
+                with self._lock:
+                    self._nav_feedback = status
+
+                if state in ("reached", "failed"):
+                    success = state == "reached"
+                    print(f"[nav] {_ts()} Meta nav result: state={state}, success={success}")
+                    self._on_nav_result_from_meta(success, status)
+                    break
+
+        threading.Thread(target=_poll, daemon=True, name="nav-meta-poller").start()
+
+    def _on_nav_result_from_meta(self, success: bool, status: dict):
+        """Handle Meta navigation result — reuse patrol/room-patrol logic."""
+        with self._lock:
+            patrol_active = self._patrol_active
+            patrol_index = self._patrol_current_index
+
+        if patrol_active:
+            with self._lock:
+                self._nav_status = "succeeded" if success else "failed"
+                self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
+                if success:
+                    self._patrol_completed.append(patrol_index)
+                    print(f"[patrol] Waypoint {patrol_index + 1} succeeded")
+                else:
+                    self._patrol_skipped.append(patrol_index)
+                    self._patrol_error = f"路径点 {patrol_index + 1} 导航失败"
+                    print(f"[patrol] Waypoint {patrol_index + 1} failed, skipping")
+            self._advance_patrol()
+        else:
+            with self._lock:
+                self._nav_status = "succeeded" if success else "failed"
+                self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
+
+            def _reset():
+                time.sleep(2)
+                with self._lock:
+                    if self._nav_status in ("succeeded", "failed"):
+                        self._nav_status = "idle"
+                        self._nav_feedback = {}
+            threading.Thread(target=_reset, daemon=True).start()
+
+        # Signal room patrol thread
+        if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
+            print(f"[nav] {_ts()} Signaling room_patrol: success={success}")
+            self._nav_done_success = success
+            self._nav_done_event.set()
+
+    # ---- roslibpy callbacks (unchanged) ----
 
     def _on_nav_feedback(self, feedback):
         with self._lock:
@@ -90,7 +179,6 @@ class NavigationMixin:
             patrol_index = self._patrol_current_index
 
         if patrol_active:
-            # Patrol mode: advance to next waypoint
             with self._lock:
                 self._nav_status = "succeeded" if success else "failed"
                 self._nav_feedback = {"result": values, "goal_status": status}
@@ -104,7 +192,6 @@ class NavigationMixin:
                     print(f"[patrol] Waypoint {patrol_index + 1} failed, skipping")
             self._advance_patrol()
         else:
-            # Single-point mode
             with self._lock:
                 self._nav_status = "succeeded" if success else "failed"
                 self._nav_feedback = {"result": values, "goal_status": status}
@@ -134,6 +221,13 @@ class NavigationMixin:
             self._nav_done_event.set()
 
     def cancel_navigation(self) -> dict:
+        # Cancel via Meta link
+        if self._nav_state == "active" and self._nav:
+            try:
+                self._nav.cancel_navigation()
+            except Exception:
+                pass
+        # Cancel via roslibpy
         if self._nav_action_client:
             try:
                 self._nav_action_client.cancel_goal()
@@ -154,7 +248,7 @@ class NavigationMixin:
         return {"success": True, "message": "Cancel requested"}
 
     def send_local_navigation_goal(self, x: float, y: float, theta: float) -> dict:
-        """Publish to /small_range_goal topic."""
+        """Publish to /small_range_goal topic — roslibpy only."""
         if not self._ros or not self._connected:
             return {"success": False, "message": "Not connected to ROS"}
         topic = roslibpy.Topic(self._ros, "/small_range_goal", "geometry_msgs/msg/PoseStamped")

@@ -6,12 +6,16 @@ description: "机器人SLAM建图和自主导航应用"
 dependencies:
   python: ">= 3.10"
   pip:
+    - "astribot_link"
     - "fastapi"
     - "sse-starlette"
     - "uvicorn"
     - "pyyaml"
     - "roslibpy"
 
-# ROS Bridge 连接地址
+# 路由表
 remote_routes:
   ros_bridge: "ws://localhost:9090"
+  # Meta 服务通过 UDS 自动发现，无需配置地址
+  # meta.localization: "127.0.0.1:50052"
+  # meta.astribot_navigation: "127.0.0.1:50053"

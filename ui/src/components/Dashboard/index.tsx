@@ -17,7 +17,7 @@ import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose } from '@/types';
-import { NodeLauncher } from '@/components/common/NodeLauncher';
+import { MetaLauncher } from '@/components/common/MetaLauncher';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -161,9 +161,9 @@ export const Dashboard: React.FC = () => {
             </Space>
           </Col>
 
-          {/* 节点启动控制 */}
+          {/* Meta 服务控制 */}
           <Col xs={24} lg={12}>
-            <NodeLauncher />
+            <MetaLauncher />
           </Col>
         </Row>
       </Card>

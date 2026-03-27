@@ -5,6 +5,7 @@ Assembles all feature mixins into a single BusinessLogic class.
 The FastAPI layer (main.py) only imports BusinessLogic.
 
 Mixins:
+  - MetaBridgeMixin    (meta_bridge.py)  — astribot_link connection to Meta services
   - LocalizationMixin  (localization.py)  — mapping, localization, joystick, system nodes
   - MapManagerMixin     (map_manager.py)   — map CRUD
   - ChassisMixin        (chassis.py)       — velocity, initial pose, dock
@@ -21,6 +22,7 @@ import time
 import roslibpy
 
 from ._utils import _to_dict, _load_ros_url
+from .meta_bridge import MetaBridgeMixin
 from .localization import LocalizationMixin
 from .map_manager import MapManagerMixin
 from .chassis import ChassisMixin
@@ -34,6 +36,7 @@ from .custom_steps import CustomStepsMixin
 
 
 class BusinessLogic(
+    MetaBridgeMixin,
     LocalizationMixin,
     MapManagerMixin,
     ChassisMixin,
@@ -54,6 +57,9 @@ class BusinessLogic(
         self._ros: roslibpy.Ros | None = None
         self._connected = False
         self._lock = threading.Lock()
+
+        # Meta link proxies
+        self._init_meta()
 
         # Raw topic messages — keyed by topic name, stores latest message
         self._topic_data: dict[str, dict] = {}
@@ -109,6 +115,13 @@ class BusinessLogic(
     # ------ Connection ------
 
     def _connect_loop(self):
+        # Try Meta connection once at startup
+        meta_result = self.connect_meta()
+        if meta_result["success"]:
+            print(f"[logic] Meta services connected")
+        else:
+            print(f"[logic] Meta connection: {meta_result.get('message', 'failed')}")
+
         while True:
             if not self._connected:
                 try:
@@ -173,6 +186,9 @@ class BusinessLogic(
             }
             raw = {
                 "connected": self._connected,
+                "meta_connected": self.meta_connected,
+                "loc_state": self._loc_state,
+                "nav_state": self._nav_state,
                 "nav_status": self._nav_status,
                 "nav_feedback": self._nav_feedback.copy(),
                 "current_map_name": self._current_map_name,
