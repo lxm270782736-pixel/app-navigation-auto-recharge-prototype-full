@@ -115,13 +115,7 @@ class BusinessLogic(
     # ------ Connection ------
 
     def _connect_loop(self):
-        # Try Meta connection once at startup
-        meta_result = self.connect_meta()
-        if meta_result["success"]:
-            print(f"[logic] Meta services connected")
-        else:
-            print(f"[logic] Meta connection: {meta_result.get('message', 'failed')}")
-
+        # Meta 生命周期由用户通过 Dashboard 控制，不自动连接
         while True:
             if not self._connected:
                 try:
