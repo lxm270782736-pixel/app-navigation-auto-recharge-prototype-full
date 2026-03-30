@@ -21,6 +21,40 @@ import dayjs from 'dayjs';
 // LocalStorage key for current map
 const CURRENT_MAP_KEY = 'astribot_current_map_id';
 
+/** Generate a 200x200 thumbnail from occupancy grid data. */
+function generateThumbnail(map: MapData): string {
+  try {
+    const { width, height, data } = map;
+    if (!width || !height || !data?.length) return '';
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(200 / width, 200 / height);
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    const src = ctx.createImageData(width, height);
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i];
+      let r = 128, g = 128, b = 128; // unknown
+      if (v === 0) { r = 255; g = 255; b = 255; }      // free
+      else if (v === 100) { r = 0; g = 0; b = 0; }     // occupied
+      src.data[i * 4] = r;
+      src.data[i * 4 + 1] = g;
+      src.data[i * 4 + 2] = b;
+      src.data[i * 4 + 3] = 255;
+    }
+    // Draw full-res then scale down
+    const tmp = document.createElement('canvas');
+    tmp.width = width;
+    tmp.height = height;
+    tmp.getContext('2d')!.putImageData(src, 0, 0);
+    ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return '';
+  }
+}
+
 export const MapManager: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
@@ -201,11 +235,10 @@ export const MapManager: React.FC = () => {
         // 从 ROS 加载完整地图数据（只需要 data 字段，元数据和缩略图已有）
         const fullMapData = await rosService.loadMapFromROS(map.id);
 
-        // 创建完整的地图对象
-        const completeMap: MapData = {
-          ...map,
-          data: fullMapData.data,
-        };
+        // 创建完整的地图对象 — fullMapData 包含 width/height/resolution/origin/data
+        const completeMap: MapData = fullMapData
+          ? { ...map, ...fullMapData, thumbnail: map.thumbnail || generateThumbnail(fullMapData) }
+          : { ...map, data: map.data ?? [] };
 
         // 更新 state
         setMaps((prevMaps) =>

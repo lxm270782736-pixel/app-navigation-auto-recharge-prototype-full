@@ -1,73 +1,50 @@
-"""Localization, joystick, and system node control.
-
-Methods prefer Meta link (self._loc) when available, fallback to roslibpy.
-"""
+"""Localization control — all calls go through Meta localization service."""
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class LocalizationMixin:
-    """Localization / mapping / joystick / system-node methods."""
+    """Localization / mapping methods via Meta link."""
 
-    # Localization — prefer Meta link when active
+    def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
+        """Call Meta localization method. Returns error if not active."""
+        if self._loc_state != "active" or not self._loc:
+            return {"success": False, "message": f"Localization Meta not active (state={self._loc_state})"}
+        try:
+            result = getattr(self._loc, method_name)(*args, **kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            logger.error("[loc] %s failed: %s", method_name, e)
+            return {"success": False, "message": str(e)}
+
     def start_mapping(self) -> dict:
-        if self._loc_state == "active":
-            try:
-                return self._loc.start_mapping()
-            except Exception as e:
-                logger.warning(f"[loc] Meta start_mapping failed, fallback: {e}")
-        return self._call_trigger("/localization/start_mapping")
+        return self._loc_call("start_mapping")
 
     def stop_mapping(self) -> dict:
-        if self._loc_state == "active":
-            try:
-                return self._loc.stop()
-            except Exception as e:
-                logger.warning(f"[loc] Meta stop failed, fallback: {e}")
-        return self._call_trigger("/localization/stop")
+        return self._loc_call("stop")
 
     def start_localization(self) -> dict:
-        if self._loc_state == "active":
-            try:
-                return self._loc.start_localization(auto_relocalize=False)
-            except Exception as e:
-                logger.warning(f"[loc] Meta start_localization failed, fallback: {e}")
-        return self._call_trigger("/localization/start_localization")
+        return self._loc_call("start_localization_auto")
 
     def start_localization_auto(self) -> dict:
-        if self._loc_state == "active":
-            try:
-                return self._loc.relocalize(auto=True)
-            except Exception as e:
-                logger.warning(f"[loc] Meta relocalize failed, fallback: {e}")
-        return self._call_trigger("/localization/start_localization_auto")
+        return self._loc_call("start_localization_auto")
 
     def start_obstacle_avoidance(self) -> dict:
-        return self._call_trigger("/localization/start_obstacle_avoidance")
+        # Meta 未暴露，返回提示
+        return {"success": False, "message": "Obstacle avoidance not available via Meta"}
 
     def stop_localization(self) -> dict:
-        if self._loc_state == "active":
-            try:
-                return self._loc.stop()
-            except Exception as e:
-                logger.warning(f"[loc] Meta stop failed, fallback: {e}")
-        return self._call_trigger("/localization/stop")
+        return self._loc_call("stop")
 
     def shutdown_localization(self) -> dict:
-        # Meta 用生命周期管理，直接走 roslibpy
-        return self._call_trigger("/localization/shutdown")
+        # Meta 用 deactivate 管理生命周期
+        return self.deactivate_meta()
 
-    # Joystick — Meta 未覆盖
-    def start_joystick(self) -> dict:
-        return self._call_trigger("/joystick/start")
+    def get_localization_status(self) -> dict:
+        return self._loc_call("get_status")
 
-    def stop_joystick(self) -> dict:
-        return self._call_trigger("/joystick/stop")
-
-    # System nodes — Meta 内部管理，保留 roslibpy fallback
-    def start_slam_node(self) -> dict:
-        return self._call_trigger("/system/start_slam_node")
-
-    def start_navigation_node(self) -> dict:
-        return self._call_trigger("/system/start_navigation_node")
+    def get_pose(self) -> dict:
+        return self._loc_call("get_pose")

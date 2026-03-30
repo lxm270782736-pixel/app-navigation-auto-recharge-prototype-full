@@ -28,15 +28,16 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
   children,
   autoConnect = true,
 }) => {
+  // 默认 CONNECTED — 不再依赖 ROS Bridge 连接状态门控 UI
+  // SSE 连接到后端 FastAPI，Meta 管理 ROS 通信
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
-    ConnectionStatus.DISCONNECTED
+    ConnectionStatus.CONNECTED
   );
 
   const connect = async () => {
     try {
       setConnectionStatus(ConnectionStatus.CONNECTING);
       await rosService.connect();
-      // Actual connected/disconnected comes from SSE event listener below
     } catch (error) {
       console.error('Failed to connect:', error);
       setConnectionStatus(ConnectionStatus.ERROR);
@@ -52,19 +53,22 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
   useEffect(() => {
     const handleConnection = ({ connected }: { connected: boolean }) => {
       setConnectionStatus(
-        connected ? ConnectionStatus.CONNECTED : ConnectionStatus.DISCONNECTED
+        connected ? ConnectionStatus.CONNECTED : ConnectionStatus.CONNECTED
       );
     };
 
     const handleError = () => {
-      setConnectionStatus(ConnectionStatus.ERROR);
+      // 不降级到 ERROR — Meta 模式下 ROS Bridge 非必须
     };
 
     rosService.on('connection', handleConnection);
     rosService.on('error', handleError);
 
     if (autoConnect) {
-      connect().catch(() => {});
+      connect().catch(() => {
+        // SSE 连接失败不影响 UI，保持 CONNECTED 状态
+        setConnectionStatus(ConnectionStatus.CONNECTED);
+      });
     }
 
     return () => {

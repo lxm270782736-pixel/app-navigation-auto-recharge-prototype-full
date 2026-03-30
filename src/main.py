@@ -3,13 +3,17 @@ Navigation App — FastAPI entry point
 
 Exposes REST + SSE endpoints for navigation control.
 All ROS communication goes through logic.py — frontend never touches ROS directly.
+Serves the built frontend SPA from ui/dist-mock/ when available.
 """
 import json
 import asyncio
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -76,6 +80,16 @@ def stop_localization():
     return logic.stop_localization()
 
 
+@app.get("/api/localization/status")
+def get_localization_status():
+    return logic.get_localization_status()
+
+
+@app.get("/api/localization/pose")
+def get_pose():
+    return logic.get_pose()
+
+
 @app.post("/api/localization/shutdown")
 def shutdown_localization():
     return logic.shutdown_localization()
@@ -126,7 +140,32 @@ class MapNameRequest(BaseModel):
 
 @app.get("/api/maps/{map_name}")
 def load_map(map_name: str):
-    return logic.load_map(map_name)
+    result = logic.load_map(map_name)
+    if not isinstance(result, dict) or not result.get("success"):
+        return result if isinstance(result, dict) else {"success": False, "message": str(result)}
+    # Serialize OccupancyGrid from result["map_data"]
+    og = result.get("map_data")
+    if og is None:
+        return {"success": False, "message": "No map_data in response"}
+    try:
+        info = og.info
+        origin = info.origin
+        return {
+            "success": True,
+            "name": map_name,
+            "resolution": float(info.resolution),
+            "width": int(info.width),
+            "height": int(info.height),
+            "origin": {
+                "x": float(origin.position.x),
+                "y": float(origin.position.y),
+                "orientation": float(origin.orientation.z),
+            },
+            "data": list(og.data),
+            "zones_json": result.get("zones_json", ""),
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Failed to serialize map: {e}"}
 
 
 @app.post("/api/maps/apply")
@@ -457,44 +496,13 @@ def delete_custom_step_type(step_id: str):
     return logic.delete_custom_step_type(step_id)
 
 
-# ==================== 通用透传 ====================
-
-
-class ServiceCallRequest(BaseModel):
-    service_name: str
-    service_type: str
-    request: dict = {}
-
-
-@app.post("/api/ros/service")
-def call_ros_service(req: ServiceCallRequest):
-    """Generic ROS service passthrough."""
-    return logic.call_ros_service(req.service_name, req.service_type, req.request)
-
-
-class TopicPublishRequest(BaseModel):
-    topic_name: str
-    msg_type: str
-    message: dict
-
-
-@app.post("/api/ros/publish")
-def publish_topic(req: TopicPublishRequest):
-    """Generic ROS topic publish passthrough."""
-    return logic.publish_topic(req.topic_name, req.msg_type, req.message)
-
-
-@app.get("/api/ros/topic/{topic_path:path}")
-def get_topic(topic_path: str):
-    """Get latest message for a topic (for heavy data like /map, /scan)."""
-    topic_name = "/" + topic_path
-    data = logic.get_topic(topic_name)
-    if data is None:
-        return {"success": False, "message": f"No data for {topic_name}"}
-    return {"success": True, "data": data}
-
-
 # ==================== Meta 服务管理 ====================
+
+
+@app.post("/api/meta/start")
+def start_meta():
+    """一键启动：connect → configure → activate"""
+    return logic.start_meta()
 
 
 @app.post("/api/meta/connect")
@@ -515,6 +523,30 @@ def deactivate_meta():
 @app.get("/api/meta/status")
 def meta_status():
     return logic.get_meta_status()
+
+
+# ==================== 前端静态文件 ====================
+
+_UI_DIR = Path(__file__).parent.parent / "ui" / "dist-mock"
+
+if _UI_DIR.exists():
+    # Serve built assets (JS, CSS)
+    _ASSETS_DIR = _UI_DIR / "assets"
+    if _ASSETS_DIR.exists():
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+
+    # SPA catch-all: non-API routes serve index.html
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        # Try serving the exact file first
+        file_path = _UI_DIR / path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        # Otherwise serve index.html for SPA routing
+        index = _UI_DIR / "index.mock.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"error": "Frontend not built. Run: cd ui && npm run build:mock"}
 
 
 # ==================== Standalone runner ====================

@@ -36,8 +36,10 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — same host, port 8080
-const API_BASE = `http://${window.location.hostname}:8080`;
+// Backend base URL — same origin when served from FastAPI, or port 8080 for dev
+const API_BASE = window.location.port === '8080'
+  ? ''  // same origin, no prefix needed
+  : `http://${window.location.hostname}:8080`;
 
 class ROSService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
@@ -73,20 +75,25 @@ class ROSService {
     es.onmessage = (event) => {
       try {
         const state = JSON.parse(event.data);
-        // Update connection status from backend's ROS connection
-        const wasConnected = this._connected;
-        this._connected = state.connected;
-        if (wasConnected !== state.connected) {
-          this.emit('connection', { connected: state.connected });
-        }
 
-        // Dispatch raw topic data to subscribers
-        if (state.topics) {
-          for (const [topicName, msg] of Object.entries(state.topics)) {
-            const callbacks = this.topicCallbacks.get(topicName);
-            if (callbacks) {
-              callbacks.forEach((cb) => cb(msg));
-            }
+        // Emit full state for MetaLauncher etc.
+        this.emit('state', state);
+
+        // Dispatch pose to topic subscribers (Meta get_pose → /loc_high_freq format)
+        if (state.pose && state.pose.success) {
+          const poseData = state.pose;
+          // Convert Meta pose to Odometry-like format for existing components
+          const odomMsg = {
+            pose: {
+              pose: {
+                position: poseData.position || { x: 0, y: 0, z: 0 },
+                orientation: poseData.quaternion || { x: 0, y: 0, z: 0, w: 1 },
+              },
+            },
+          };
+          const callbacks = this.topicCallbacks.get('/loc_high_freq');
+          if (callbacks) {
+            callbacks.forEach((cb) => cb(odomMsg));
           }
         }
 
@@ -419,6 +426,10 @@ class ROSService {
 
   // ------ Meta 服务管理 ------
 
+  async startMeta(): Promise<{ success: boolean; results?: Record<string, string>; message?: string }> {
+    return this._post('/api/meta/start', {});
+  }
+
   async connectMeta(): Promise<{ success: boolean; message: string }> {
     return this._post('/api/meta/connect', {});
   }
@@ -548,8 +559,9 @@ class ROSService {
   async loadMapFromROS(mapName: string): Promise<MapData | null> {
     try {
       const result = await this._get(`/api/maps/${encodeURIComponent(mapName)}`);
-      if (result.success && result.map_data) {
-        return normalizeMapData({ ...result.map_data, id: mapName, name: mapName });
+      if (result.success) {
+        // Backend returns flat format: {name, resolution, width, height, origin, data}
+        return normalizeMapData({ ...result, id: mapName, name: mapName });
       }
       return null;
     } catch {

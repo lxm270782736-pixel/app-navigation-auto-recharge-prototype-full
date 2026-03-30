@@ -68,18 +68,47 @@ class MetaBridgeMixin:
             errors.append(f"navigation: {e}")
             logger.warning(f"[meta] Failed to connect astribot_navigation: {e}")
 
-        # Auto-configure after connect
+        # Sync local state with actual Meta state
         if self.meta_connected:
-            self.configure_meta()
+            self._sync_meta_state()
 
         if errors:
             return {"success": self.meta_connected,
                     "message": f"Partial: {'; '.join(errors)}"}
-        return {"success": True, "message": "Meta connected and configured"}
+        return {"success": True, "message": "Meta connected"}
+
+    def _probe_service_state(self, proxy, name: str) -> str:
+        """Probe a Meta service's actual lifecycle state by calling a business method."""
+        if proxy is None:
+            return META_DISCONNECTED
+        try:
+            # Try a read-only business method — only works when active
+            if name == "localization":
+                proxy.get_status()
+            else:
+                proxy.get_navigation_status()
+            return META_ACTIVE
+        except Exception as e:
+            msg = str(e)
+            if "unconfigured" in msg:
+                return META_CONNECTED
+            if "inactive" in msg:
+                return META_INACTIVE
+            # Other errors — assume connected but not active
+            return META_CONNECTED
+
+    def _sync_meta_state(self):
+        """Sync local state with actual Meta service state after connect."""
+        if self._loc:
+            self._loc_state = self._probe_service_state(self._loc, "localization")
+            logger.info(f"[meta] Localization actual state: {self._loc_state}")
+        if self._nav:
+            self._nav_state = self._probe_service_state(self._nav, "navigation")
+            logger.info(f"[meta] Navigation actual state: {self._nav_state}")
 
     def configure_meta(self, loc_config: dict | None = None,
                        nav_config: dict | None = None) -> dict:
-        """Configure Meta services — on_configure(config)."""
+        """Configure Meta services — only if in connected state."""
         if not self.meta_connected:
             return {"success": False, "message": "Meta not connected"}
 
@@ -123,6 +152,10 @@ class MetaBridgeMixin:
         if not self.meta_connected:
             return {"success": False, "message": "Meta not connected"}
 
+        # Already active — nothing to do
+        if self._loc_state == META_ACTIVE and self._nav_state == META_ACTIVE:
+            return {"success": True, "results": {"localization": "already active", "navigation": "already active"}}
+
         # Auto-configure if still in connected state
         if self._loc_state == META_CONNECTED or self._nav_state == META_CONNECTED:
             cfg_result = self.configure_meta(loc_config, nav_config)
@@ -146,6 +179,8 @@ class MetaBridgeMixin:
             except Exception as e:
                 results["localization"] = f"failed: {e}"
                 logger.warning(f"[meta] Localization activate failed: {e}")
+        elif self._loc and self._loc_state == META_ACTIVE:
+            results["localization"] = "already active"
 
         if self._nav and self._nav_state == META_INACTIVE:
             try:
@@ -159,6 +194,8 @@ class MetaBridgeMixin:
             except Exception as e:
                 results["navigation"] = f"failed: {e}"
                 logger.warning(f"[meta] Navigation activate failed: {e}")
+        elif self._nav and self._nav_state == META_ACTIVE:
+            results["navigation"] = "already active"
 
         ok = self._loc_state == META_ACTIVE or self._nav_state == META_ACTIVE
         return {"success": ok, "results": results}
@@ -188,6 +225,17 @@ class MetaBridgeMixin:
                 logger.warning(f"[meta] Navigation deactivate failed: {e}")
 
         return {"success": True, "results": results}
+
+    def start_meta(self) -> dict:
+        """一键启动：connect → configure → activate。"""
+        # Step 1: connect
+        if not self.meta_connected:
+            result = self.connect_meta()
+            if not result.get("success") and not self.meta_connected:
+                return {"success": False, "message": f"Connect failed: {result.get('message')}"}
+
+        # Step 2: activate (auto-configures if needed)
+        return self.activate_meta()
 
     def get_meta_status(self) -> dict:
         """Return Meta service status for SSE/API."""

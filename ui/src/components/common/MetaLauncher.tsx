@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Space, Tag, message } from 'antd';
 import {
-  ThunderboltOutlined,
+  RocketOutlined,
   PoweroffOutlined,
   ApiOutlined,
-  LinkOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
-import { useROS } from '@/contexts/ROSContext';
-import { ConnectionStatus } from '@/types';
 
 const STATE_LABELS: Record<string, { text: string; color: string }> = {
   disconnected: { text: '未连接', color: '#8c8c8c' },
@@ -18,12 +15,10 @@ const STATE_LABELS: Record<string, { text: string; color: string }> = {
 };
 
 export const MetaLauncher: React.FC = () => {
-  const { connectionStatus } = useROS();
   const [locState, setLocState] = useState('disconnected');
   const [navState, setNavState] = useState('disconnected');
   const [loading, setLoading] = useState(false);
 
-  const metaConnected = locState !== 'disconnected' || navState !== 'disconnected';
   const isActive = locState === 'active' || navState === 'active';
 
   // SSE 状态同步
@@ -38,46 +33,43 @@ export const MetaLauncher: React.FC = () => {
 
   // 初始获取
   const loadStatus = useCallback(async () => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
       const s = await rosService.getMetaStatus();
       setLocState(s.loc_state || 'disconnected');
       setNavState(s.nav_state || 'disconnected');
     } catch { /* ignore */ }
-  }, [connectionStatus]);
+  }, []);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
-  const handleConnect = async () => {
+  const handleStart = async () => {
     setLoading(true);
     try {
-      const result = await rosService.connectMeta();
-      if (result.success) message.success('Meta 服务已连接');
-      else message.warning(result.message);
+      const result = await rosService.startMeta();
+      if (result.success) {
+        message.success('Meta 服务已启动');
+      } else {
+        message.error(result.message || '启动失败');
+      }
       await loadStatus();
-    } catch { message.error('连接失败'); }
-    finally { setLoading(false); }
+    } catch {
+      message.error('启动失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleActivate = async () => {
+  const handleStop = async () => {
     setLoading(true);
     try {
-      const result = await rosService.activateMeta();
-      if (result.success) message.success('Meta 服务已激活');
-      else message.error('激活失败');
+      await rosService.deactivateMeta();
+      message.info('Meta 服务已停用');
       await loadStatus();
-    } catch { message.error('激活失败'); }
-    finally { setLoading(false); }
-  };
-
-  const handleDeactivate = async () => {
-    setLoading(true);
-    try {
-      const result = await rosService.deactivateMeta();
-      if (result.success) message.info('Meta 服务已停用');
-      await loadStatus();
-    } catch { message.error('停用失败'); }
-    finally { setLoading(false); }
+    } catch {
+      message.error('停用失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const StatusDot: React.FC<{ state: string }> = ({ state }) => (
@@ -99,55 +91,39 @@ export const MetaLauncher: React.FC = () => {
             <ApiOutlined style={{ fontSize: '20px', marginRight: '8px' }} />
             <span style={{ fontSize: '16px', fontWeight: 500 }}>Meta 服务控制</span>
           </div>
-          {metaConnected && (
-            <Tag color={isActive ? 'green' : 'blue'} style={{ fontWeight: 500 }}>
-              {isActive ? '已激活' : '待激活'}
-            </Tag>
+          {isActive && (
+            <Tag color="green" style={{ fontWeight: 500 }}>已启动</Tag>
           )}
         </div>
 
-        {!metaConnected ? (
-          <Button type="primary" size="large" icon={<LinkOutlined />}
-            onClick={handleConnect} loading={loading}
-            disabled={connectionStatus !== ConnectionStatus.CONNECTED} block
+        {!isActive ? (
+          <Button type="primary" size="large" icon={<RocketOutlined />}
+            onClick={handleStart} loading={loading} block
             style={{ background: 'white', color: '#667eea', borderColor: 'white', fontWeight: 500, height: '44px' }}>
-            {loading ? '连接中...' : '连接 Meta 服务'}
-          </Button>
-        ) : !isActive ? (
-          <Button type="primary" size="large" icon={<ThunderboltOutlined />}
-            onClick={handleActivate} loading={loading} block
-            style={{ background: 'white', color: '#667eea', borderColor: 'white', fontWeight: 500, height: '44px' }}>
-            {loading ? '激活中...' : '激活 Meta 服务'}
+            {loading ? '启动中...' : '一键启动所有服务'}
           </Button>
         ) : (
           <Button size="large" icon={<PoweroffOutlined />}
-            onClick={handleDeactivate} loading={loading} block
+            onClick={handleStop} loading={loading} block
             style={{ background: 'rgba(255,255,255,0.15)', color: 'white', borderColor: 'rgba(255,255,255,0.3)', fontWeight: 500, height: '44px' }}>
-            停用 Meta 服务
+            停用服务
           </Button>
         )}
 
-        {connectionStatus !== ConnectionStatus.CONNECTED && (
-          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', textAlign: 'center' }}>
-            请先连接 ROS Bridge
+        {/* 服务状态 */}
+        <div style={{
+          fontSize: '12px', color: 'rgba(255,255,255,0.9)',
+          padding: '8px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+            <StatusDot state={locState} />
+            <span>定位 (Localization): {STATE_LABELS[locState]?.text || locState}</span>
           </div>
-        )}
-
-        {connectionStatus === ConnectionStatus.CONNECTED && (
-          <div style={{
-            fontSize: '12px', color: 'rgba(255,255,255,0.9)',
-            padding: '8px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-              <StatusDot state={locState} />
-              <span>定位 (Localization): {STATE_LABELS[locState]?.text || locState}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <StatusDot state={navState} />
-              <span>导航 (Navigation): {STATE_LABELS[navState]?.text || navState}</span>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <StatusDot state={navState} />
+            <span>导航 (Navigation): {STATE_LABELS[navState]?.text || navState}</span>
           </div>
-        )}
+        </div>
       </Space>
     </div>
   );

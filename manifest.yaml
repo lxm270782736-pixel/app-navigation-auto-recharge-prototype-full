@@ -11,11 +11,6 @@ dependencies:
     - "sse-starlette"
     - "uvicorn"
     - "pyyaml"
-    - "roslibpy"
 
-# 路由表
-remote_routes:
-  ros_bridge: "ws://localhost:9090"
-  # Meta 服务通过 UDS 自动发现，无需配置地址
-  # meta.localization: "127.0.0.1:50052"
-  # meta.astribot_navigation: "127.0.0.1:50053"
+# Meta 服务通过 UDS 自动发现（/dev/shm/astribot_bus/）
+# 无需配置 remote_routes
