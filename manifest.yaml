@@ -12,5 +12,9 @@ dependencies:
     - "uvicorn"
     - "pyyaml"
 
+requiredMetas:
+  - localization
+  - astribot_navigation
+
 # Meta 服务通过 UDS 自动发现（/dev/shm/astribot_bus/）
 # 无需配置 remote_routes

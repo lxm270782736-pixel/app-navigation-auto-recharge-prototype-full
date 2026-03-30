@@ -41,7 +41,12 @@ class MetaBridgeMixin:
         self._nav_state = META_DISCONNECTED
 
     def connect_meta(self) -> dict:
-        """Connect to Meta services via astribot_link."""
+        """Connect to Meta localization and navigation services via astribot_link.
+
+        Returns:
+            dict: {"success": bool, "message": str}
+            success is True if at least one service connected.
+        """
         try:
             from astribot_link import connect
         except ImportError:
@@ -108,7 +113,18 @@ class MetaBridgeMixin:
 
     def configure_meta(self, loc_config: dict | None = None,
                        nav_config: dict | None = None) -> dict:
-        """Configure Meta services — only if in connected state."""
+        """Configure Meta services with the given parameters.
+
+        Only takes effect when services are in the connected (unconfigured) state.
+        Merges provided values on top of _DEFAULT_LOC_CONFIG / _DEFAULT_NAV_CONFIG.
+
+        Args:
+            loc_config: Override keys for localization config (e.g. map_folder, voxel_size).
+            nav_config: Override keys for navigation config (e.g. max_linear_velocity).
+
+        Returns:
+            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
+        """
         if not self.meta_connected:
             return {"success": False, "message": "Meta not connected"}
 
@@ -148,7 +164,19 @@ class MetaBridgeMixin:
 
     def activate_meta(self, loc_config: dict | None = None,
                       nav_config: dict | None = None) -> dict:
-        """Configure (if needed) + Activate Meta services."""
+        """Configure (if needed) then activate Meta services.
+
+        Skips configure if services are already in inactive/active state.
+        Idempotent — safe to call when already active.
+
+        Args:
+            loc_config: Optional localization config overrides passed to configure_meta.
+            nav_config: Optional navigation config overrides passed to configure_meta.
+
+        Returns:
+            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
+            success is True if at least one service reached active state.
+        """
         if not self.meta_connected:
             return {"success": False, "message": "Meta not connected"}
 
@@ -201,7 +229,11 @@ class MetaBridgeMixin:
         return {"success": ok, "results": results}
 
     def deactivate_meta(self) -> dict:
-        """Deactivate Meta services — on_deactivate()."""
+        """Deactivate active Meta services (localization and navigation).
+
+        Returns:
+            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
+        """
         results = {}
 
         if self._loc and self._loc_state == META_ACTIVE:
@@ -227,7 +259,12 @@ class MetaBridgeMixin:
         return {"success": True, "results": results}
 
     def start_meta(self) -> dict:
-        """一键启动：connect → configure → activate。"""
+        """One-shot startup: connect → configure → activate.
+
+        Returns:
+            dict: {"success": bool, "results": {...}} from activate_meta,
+            or {"success": False, "message": str} if connect fails.
+        """
         # Step 1: connect
         if not self.meta_connected:
             result = self.connect_meta()
@@ -238,7 +275,12 @@ class MetaBridgeMixin:
         return self.activate_meta()
 
     def get_meta_status(self) -> dict:
-        """Return Meta service status for SSE/API."""
+        """Return current Meta service lifecycle states.
+
+        Returns:
+            dict: {"meta_connected": bool, "loc_state": str, "nav_state": str}
+            State values: "disconnected" | "connected" | "inactive" | "active"
+        """
         return {
             "meta_connected": self.meta_connected,
             "loc_state": self._loc_state,
@@ -247,4 +289,5 @@ class MetaBridgeMixin:
 
     @property
     def meta_connected(self) -> bool:
+        """True if at least one Meta service has been connected (not disconnected)."""
         return self._loc_state != META_DISCONNECTED or self._nav_state != META_DISCONNECTED

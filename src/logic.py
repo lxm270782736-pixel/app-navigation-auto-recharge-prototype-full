@@ -44,7 +44,12 @@ class BusinessLogic(
     RoomPatrolMixin,
     CustomStepsMixin,
 ):
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize BusinessLogic and all Meta service connections.
+
+        Sets up internal state for navigation, patrol, and room patrol,
+        then restores any in-progress patrol from disk.
+        """
         self._lock = threading.Lock()
 
         # Meta link proxies
@@ -88,7 +93,12 @@ class BusinessLogic(
     # ------ SSE State ------
 
     def get_state(self) -> dict:
-        """Return state for SSE push."""
+        """Return full application state snapshot for SSE push (every 500 ms).
+
+        Returns:
+            dict with keys: meta_connected, loc_state, nav_state, nav_status,
+            nav_feedback, current_map_name, pose, patrol, room_patrol.
+        """
         # Poll Meta pose if localization is active
         pose = None
         if self._loc_state == "active" and self._loc:

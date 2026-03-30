@@ -7,8 +7,11 @@ Serves the built frontend SPA from ui/dist/ when available.
 """
 import json
 import asyncio
+import logging
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -170,7 +173,10 @@ def load_map(map_name: str):
 
 @app.post("/api/maps/apply")
 def apply_map(req: MapNameRequest):
-    return logic.apply_map(req.map_name)
+    logger.warning("[api] apply_map request: map_name=%r", req.map_name)
+    result = logic.apply_map(req.map_name)
+    logger.warning("[api] apply_map response: %s", result)
+    return result
 
 
 class SaveMapRequest(BaseModel):

@@ -89,12 +89,13 @@ class CustomStepsMixin:
 
     def _save_custom_steps_file(self, data: dict) -> dict:
         """Atomic write to disk."""
+        tmp = _CUSTOM_STEPS_FILE.with_suffix(".tmp")
         try:
             _CUSTOM_STEPS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            tmp = _CUSTOM_STEPS_FILE.with_suffix(".tmp")
             with open(tmp, "w") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             tmp.rename(_CUSTOM_STEPS_FILE)
             return {"success": True, "message": "Saved"}
         except Exception as e:
+            tmp.unlink(missing_ok=True)
             return {"success": False, "message": str(e)}
