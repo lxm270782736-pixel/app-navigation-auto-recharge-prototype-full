@@ -524,8 +524,8 @@ class ROSService {
   async getCurrentMapName(): Promise<string | null> {
     try {
       const result = await this._get('/api/maps/current');
-      if (result.success && result.message) {
-        return result.message;
+      if (result.success && (result.map_name || result.message)) {
+        return result.map_name || result.message;
       }
       return null;
     } catch {

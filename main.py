@@ -2,8 +2,8 @@
 Navigation App — root entry point.
 
 Usage:
-    python main.py              # API + 前端（需先 cd ui && npm run build:mock）
-    python main.py --dev        # 仅 API（前端用 npm run dev:mock 单独启动）
+    python main.py              # API + 前端（需先 cd ui && npm run build）
+    python main.py --dev        # 仅 API（前端用 npm run dev 单独启动）
 """
 import uvicorn
 

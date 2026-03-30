@@ -3,7 +3,7 @@ Navigation App — FastAPI entry point
 
 Exposes REST + SSE endpoints for navigation control.
 All ROS communication goes through logic.py — frontend never touches ROS directly.
-Serves the built frontend SPA from ui/dist-mock/ when available.
+Serves the built frontend SPA from ui/dist/ when available.
 """
 import json
 import asyncio
@@ -527,7 +527,7 @@ def meta_status():
 
 # ==================== 前端静态文件 ====================
 
-_UI_DIR = Path(__file__).parent.parent / "ui" / "dist-mock"
+_UI_DIR = Path(__file__).parent.parent / "ui" / "dist"
 
 if _UI_DIR.exists():
     # Serve built assets (JS, CSS)
@@ -543,10 +543,10 @@ if _UI_DIR.exists():
         if file_path.is_file():
             return FileResponse(str(file_path))
         # Otherwise serve index.html for SPA routing
-        index = _UI_DIR / "index.mock.html"
+        index = _UI_DIR / "index.html"
         if index.exists():
             return FileResponse(str(index))
-        return {"error": "Frontend not built. Run: cd ui && npm run build:mock"}
+        return {"error": "Frontend not built. Run: cd ui && npm run build"}
 
 
 # ==================== Standalone runner ====================

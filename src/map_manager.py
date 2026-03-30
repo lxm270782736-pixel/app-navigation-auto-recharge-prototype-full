@@ -27,14 +27,9 @@ class MapManagerMixin:
         return result
 
     def list_maps(self) -> dict:
-        result = self._loc_call("list_maps")
-        logger.warning("[map] list_maps result: %s", result)
-        if result.get("success") and "maps" in result:
-            logger.warning("[map] Found %d maps with metadata", len(result.get("maps", [])))
-        return result
+        return self._loc_call("list_maps")
 
     def apply_map(self, map_name: str) -> dict:
-        logger.warning("[map] apply_map called with map_name=%s", map_name)
         # apply_map loads map data — needs a longer timeout than the default 5s
         try:
             from astribot_link import connect
@@ -45,7 +40,6 @@ class MapManagerMixin:
         except Exception as e:
             logger.error("[map] apply_map failed: %s", e)
             result = {"success": False, "message": str(e)}
-        logger.warning("[map] apply_map result: %s", result)
         if result.get("success"):
             with self._lock:
                 self._current_map_name = map_name

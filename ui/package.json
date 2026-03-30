@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "build:mock": "VITE_MOCK=true vite build",
     "dev": "vite build --watch",
-    "dev:mock": "VITE_MOCK=true vite dev --open"
+    "preview": "vite preview"
   },
   "peerDependencies": {
     "react": "^18.0.0",
