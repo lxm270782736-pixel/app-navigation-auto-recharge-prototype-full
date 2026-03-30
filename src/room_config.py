@@ -80,19 +80,21 @@ class RoomConfigMixin:
         if waypoint_type not in valid_types:
             return {"success": False, "message": f"Invalid type: {waypoint_type}. Must be one of {valid_types}"}
 
-        # Grab current robot pose from /loc_high_freq topic
-        with self._lock:
-            odom = self._topic_data.get("/loc_high_freq")
-
-        if not odom:
-            return {"success": False, "message": "No robot pose available (no /loc_high_freq data)"}
+        # Grab current robot pose via Meta localization
+        pose_result = self.get_pose()
+        if not pose_result.get("success"):
+            return {"success": False, "message": "No robot pose available"}
 
         try:
-            pos = odom["pose"]["pose"]["position"]
-            ori = odom["pose"]["pose"]["orientation"]
+            pos = pose_result["position"]
+            quat = pose_result.get("quaternion", {})
+            qz = quat.get("z", 0)
+            qw = quat.get("w", 1)
+            qx = quat.get("x", 0)
+            qy = quat.get("y", 0)
             theta = math.atan2(
-                2.0 * (ori["w"] * ori["z"] + ori["x"] * ori["y"]),
-                1.0 - 2.0 * (ori["y"] ** 2 + ori["z"] ** 2),
+                2.0 * (qw * qz + qx * qy),
+                1.0 - 2.0 * (qy ** 2 + qz ** 2),
             )
             pose = {"x": round(pos["x"], 4), "y": round(pos["y"], 4), "theta": round(theta, 4)}
         except (KeyError, TypeError) as e:
