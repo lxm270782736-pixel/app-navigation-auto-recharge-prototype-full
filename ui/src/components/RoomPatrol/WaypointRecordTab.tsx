@@ -158,6 +158,17 @@ export const WaypointRecordTab: React.FC = () => {
     const unsubscribe = rosService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
     });
+    // 主动加载当前地图，不等 /map 话题推送
+    rosService.getCurrentMapName().then(async (name) => {
+      if (name) {
+        try {
+          const mapData = await rosService.loadMapFromROS(name);
+          if (mapData) setCurrentMap(mapData);
+        } catch (e) {
+          console.warn('[巡房] 加载地图失败:', e);
+        }
+      }
+    });
     return () => unsubscribe();
   }, [connectionStatus]);
 

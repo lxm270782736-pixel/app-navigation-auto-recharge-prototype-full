@@ -87,6 +87,17 @@ export const RoomConfig: React.FC = () => {
     const unsubscribe = rosService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
     });
+    // 主动加载当前地图，不等 /map 话题推送
+    rosService.getCurrentMapName().then(async (name) => {
+      if (name) {
+        try {
+          const mapData = await rosService.loadMapFromROS(name);
+          if (mapData) setCurrentMap(mapData);
+        } catch (e) {
+          console.warn('[房间配置] 加载地图失败:', e);
+        }
+      }
+    });
     return () => unsubscribe();
   }, [connectionStatus]);
 
