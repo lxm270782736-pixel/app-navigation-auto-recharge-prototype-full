@@ -18,8 +18,6 @@ class AlertMixin:
     """Alert CRUD with JsonDayStorage backend."""
 
     def _get_storage(self) -> JsonDayStorage:
-        if not hasattr(self, '_storage'):
-            self._storage = JsonDayStorage()
         return self._storage
 
     def create_alert(self, patrol_id: str, room_id: str, alert_type: str,

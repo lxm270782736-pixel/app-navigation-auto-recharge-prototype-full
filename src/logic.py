@@ -21,6 +21,7 @@ import threading
 from .meta_bridge import MetaBridgeMixin
 from .localization import LocalizationMixin
 from .map_manager import MapManagerMixin
+from .storage import JsonDayStorage
 from .chassis import ChassisMixin
 from .navigation import NavigationMixin
 from .patrol import PatrolMixin
@@ -51,6 +52,9 @@ class BusinessLogic(
         then restores any in-progress patrol from disk.
         """
         self._lock = threading.Lock()
+
+        # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
+        self._storage = JsonDayStorage()
 
         # Meta link proxies
         self._init_meta()

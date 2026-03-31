@@ -35,30 +35,39 @@ class NavigationMixin:
             return {"success": False, "message": str(e)}
 
     def _start_nav_status_poller(self):
-        """Poll Meta navigation status until terminal state."""
+        """Poll Meta navigation status until terminal state. No-op if already polling."""
+        with self._lock:
+            if getattr(self, '_nav_polling', False):
+                return
+            self._nav_polling = True
+
         def _poll():
-            while True:
-                time.sleep(0.5)
-                if not self._nav:
-                    break
-                with self._lock:
-                    if self._nav_status not in ("navigating",):
+            try:
+                while True:
+                    time.sleep(0.5)
+                    if not self._nav:
                         break
-                try:
-                    status = self._nav.get_navigation_status()
-                except Exception as e:
-                    logger.warning("[nav] Meta status poll error: %s", e)
-                    continue
+                    with self._lock:
+                        if self._nav_status not in ("navigating",):
+                            break
+                    try:
+                        status = self._nav.get_navigation_status()
+                    except Exception as e:
+                        logger.warning("[nav] Meta status poll error: %s", e)
+                        continue
 
-                state = status.get("state", "idle")
+                    state = status.get("state", "idle")
+                    with self._lock:
+                        self._nav_feedback = status
+
+                    if state in ("reached", "failed"):
+                        success = state == "reached"
+                        logger.info("[nav] %s Meta nav result: state=%s", _ts(), state)
+                        self._on_nav_completed(success, status)
+                        break
+            finally:
                 with self._lock:
-                    self._nav_feedback = status
-
-                if state in ("reached", "failed"):
-                    success = state == "reached"
-                    logger.info("[nav] %s Meta nav result: state=%s", _ts(), state)
-                    self._on_nav_completed(success, status)
-                    break
+                    self._nav_polling = False
 
         threading.Thread(target=_poll, daemon=True, name="nav-meta-poller").start()
 

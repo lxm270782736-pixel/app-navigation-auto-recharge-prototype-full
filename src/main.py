@@ -40,10 +40,9 @@ logic = BusinessLogic()
 @app.get("/api/state")
 async def state_stream():
     """Push full state every 500ms — includes raw ROS topic data."""
-    loop = asyncio.get_event_loop()
     async def generate():
+        loop = asyncio.get_running_loop()
         while True:
-            # Run get_state() in thread pool to avoid blocking the event loop
             state = await loop.run_in_executor(None, logic.get_state)
             yield {"data": json.dumps(state)}
             await asyncio.sleep(0.5)
@@ -143,32 +142,7 @@ class MapNameRequest(BaseModel):
 
 @app.get("/api/maps/{map_name}")
 def load_map(map_name: str):
-    result = logic.load_map(map_name)
-    if not isinstance(result, dict) or not result.get("success"):
-        return result if isinstance(result, dict) else {"success": False, "message": str(result)}
-    # Serialize OccupancyGrid from result["map_data"]
-    og = result.get("map_data")
-    if og is None:
-        return {"success": False, "message": "No map_data in response"}
-    try:
-        info = og.info
-        origin = info.origin
-        return {
-            "success": True,
-            "name": map_name,
-            "resolution": float(info.resolution),
-            "width": int(info.width),
-            "height": int(info.height),
-            "origin": {
-                "x": float(origin.position.x),
-                "y": float(origin.position.y),
-                "orientation": float(origin.orientation.z),
-            },
-            "data": list(og.data),
-            "zones_json": result.get("zones_json", ""),
-        }
-    except Exception as e:
-        return {"success": False, "message": f"Failed to serialize map: {e}"}
+    return logic.load_map(map_name)
 
 
 @app.post("/api/maps/apply")
@@ -544,10 +518,11 @@ if _UI_DIR.exists():
     # SPA catch-all: non-API routes serve index.html
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
-        # Try serving the exact file first
-        file_path = _UI_DIR / path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
+        # Guard against path traversal (e.g. GET /../../etc/passwd)
+        ui_root = _UI_DIR.resolve()
+        resolved = (ui_root / path).resolve()
+        if resolved.is_file() and resolved.is_relative_to(ui_root):
+            return FileResponse(str(resolved))
         # Otherwise serve index.html for SPA routing
         index = _UI_DIR / "index.html"
         if index.exists():

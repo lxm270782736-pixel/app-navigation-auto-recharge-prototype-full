@@ -40,6 +40,66 @@ class MetaBridgeMixin:
         self._loc_state = META_DISCONNECTED
         self._nav_state = META_DISCONNECTED
 
+    def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
+        """Call a method on the localization Meta proxy.
+
+        Args:
+            method_name: Name of the method to call on self._loc.
+            *args, **kwargs: Forwarded to the method.
+
+        Returns:
+            dict: {"success": bool, ...} — error dict if Meta not active.
+        """
+        if self._loc_state != "active" or not self._loc:
+            return {"success": False, "message": f"Localization Meta not active (state={self._loc_state})"}
+        try:
+            result = getattr(self._loc, method_name)(*args, **kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            logger.error("[loc] %s failed: %s", method_name, e)
+            return {"success": False, "message": str(e)}
+
+    def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
+        """Call a slow localization method using a dedicated connection with extended timeout.
+
+        Use this instead of _loc_call for operations known to take longer than the
+        default connection timeout (e.g. apply_map which reloads map data).
+        The temporary connection is always closed in a finally block to prevent leaks.
+
+        Args:
+            method_name: Name of the method to call on the localization proxy.
+            timeout: Per-connection timeout in seconds.
+            *args, **kwargs: Forwarded to the method.
+
+        Returns:
+            dict: {"success": bool, ...} — error dict if Meta not active or call fails.
+        """
+        if self._loc_state != "active":
+            return {"success": False, "message": f"Localization Meta not active (state={self._loc_state})"}
+        try:
+            from astribot_link import connect
+        except ImportError:
+            return {"success": False, "message": "astribot_link not installed"}
+
+        loc = None
+        try:
+            loc = connect("localization", timeout=timeout)
+            result = getattr(loc, method_name)(*args, **kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            logger.error("[loc] %s (timeout=%.0fs) failed: %s", method_name, timeout, e)
+            return {"success": False, "message": str(e)}
+        finally:
+            if loc is not None:
+                try:
+                    loc.close()
+                except Exception:
+                    pass
+
     def connect_meta(self) -> dict:
         """Connect to Meta localization and navigation services via astribot_link.
 
@@ -62,7 +122,7 @@ class MetaBridgeMixin:
         except Exception as e:
             self._loc = None
             errors.append(f"localization: {e}")
-            logger.warning(f"[meta] Failed to connect localization: {e}")
+            logger.warning("[meta] Failed to connect localization: %s", e)
 
         try:
             self._nav = connect("astribot_navigation")
@@ -71,7 +131,7 @@ class MetaBridgeMixin:
         except Exception as e:
             self._nav = None
             errors.append(f"navigation: {e}")
-            logger.warning(f"[meta] Failed to connect astribot_navigation: {e}")
+            logger.warning("[meta] Failed to connect astribot_navigation: %s", e)
 
         # Sync local state with actual Meta state
         if self.meta_connected:
@@ -106,10 +166,10 @@ class MetaBridgeMixin:
         """Sync local state with actual Meta service state after connect."""
         if self._loc:
             self._loc_state = self._probe_service_state(self._loc, "localization")
-            logger.info(f"[meta] Localization actual state: {self._loc_state}")
+            logger.info("[meta] Localization actual state: %s", self._loc_state)
         if self._nav:
             self._nav_state = self._probe_service_state(self._nav, "navigation")
-            logger.info(f"[meta] Navigation actual state: {self._nav_state}")
+            logger.info("[meta] Navigation actual state: %s", self._nav_state)
 
     def configure_meta(self, loc_config: dict | None = None,
                        nav_config: dict | None = None) -> dict:
@@ -140,10 +200,10 @@ class MetaBridgeMixin:
                     logger.info("[meta] Localization configured")
                 else:
                     results["localization"] = f"failed: {result}"
-                    logger.warning(f"[meta] Localization configure returned: {result}")
+                    logger.warning("[meta] Localization configure returned: %s", result)
             except Exception as e:
                 results["localization"] = f"failed: {e}"
-                logger.warning(f"[meta] Localization configure failed: {e}")
+                logger.warning("[meta] Localization configure failed: %s", e)
 
         if self._nav and self._nav_state == META_CONNECTED:
             try:
@@ -155,10 +215,10 @@ class MetaBridgeMixin:
                     logger.info("[meta] Navigation configured")
                 else:
                     results["navigation"] = f"failed: {result}"
-                    logger.warning(f"[meta] Navigation configure returned: {result}")
+                    logger.warning("[meta] Navigation configure returned: %s", result)
             except Exception as e:
                 results["navigation"] = f"failed: {e}"
-                logger.warning(f"[meta] Navigation configure failed: {e}")
+                logger.warning("[meta] Navigation configure failed: %s", e)
 
         return {"success": True, "results": results}
 
@@ -206,7 +266,7 @@ class MetaBridgeMixin:
                     results["localization"] = f"failed: {result}"
             except Exception as e:
                 results["localization"] = f"failed: {e}"
-                logger.warning(f"[meta] Localization activate failed: {e}")
+                logger.warning("[meta] Localization activate failed: %s", e)
         elif self._loc and self._loc_state == META_ACTIVE:
             results["localization"] = "already active"
 
@@ -221,7 +281,7 @@ class MetaBridgeMixin:
                     results["navigation"] = f"failed: {result}"
             except Exception as e:
                 results["navigation"] = f"failed: {e}"
-                logger.warning(f"[meta] Navigation activate failed: {e}")
+                logger.warning("[meta] Navigation activate failed: %s", e)
         elif self._nav and self._nav_state == META_ACTIVE:
             results["navigation"] = "already active"
 
@@ -244,7 +304,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Localization deactivated")
             except Exception as e:
                 results["localization"] = f"failed: {e}"
-                logger.warning(f"[meta] Localization deactivate failed: {e}")
+                logger.warning("[meta] Localization deactivate failed: %s", e)
 
         if self._nav and self._nav_state == META_ACTIVE:
             try:
@@ -254,7 +314,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Navigation deactivated")
             except Exception as e:
                 results["navigation"] = f"failed: {e}"
-                logger.warning(f"[meta] Navigation deactivate failed: {e}")
+                logger.warning("[meta] Navigation deactivate failed: %s", e)
 
         return {"success": True, "results": results}
 
