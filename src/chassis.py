@@ -17,9 +17,6 @@ class ChassisMixin:
     def send_velocity(self, linear_x: float, angular_z: float) -> dict:
         return {"success": False, "message": "Velocity control not available via Meta"}
 
-    def set_initial_pose(self, x: float, y: float, theta: float) -> dict:
-        return {"success": False, "message": "Initial pose not available via Meta"}
-
     def send_dock_goal(self, force_retry: bool = False) -> dict:
         return {"success": False, "message": "Dock not available via Meta"}
 

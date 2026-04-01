@@ -39,6 +39,32 @@ class MetaBridgeMixin:
         self._nav = None
         self._loc_state = META_DISCONNECTED
         self._nav_state = META_DISCONNECTED
+        self._recovery_in_progress = False
+
+    def _trigger_auto_recovery(self):
+        """Spawn a background thread to re-run start_meta() after a brief delay.
+
+        No-op if a recovery is already in progress.
+        """
+        import threading
+        with self._lock:
+            if self._recovery_in_progress:
+                logger.info("[meta] Auto-recovery already in progress, skipping")
+                return
+            self._recovery_in_progress = True
+
+        def _recover():
+            import time
+            try:
+                time.sleep(1.0)
+                logger.info("[meta] Auto-recovery: calling start_meta()")
+                result = self.start_meta()
+                logger.info("[meta] Auto-recovery result: %s", result)
+            finally:
+                with self._lock:
+                    self._recovery_in_progress = False
+
+        threading.Thread(target=_recover, daemon=True, name="meta-auto-recovery").start()
 
     def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
         """Call a method on the localization Meta proxy.
@@ -58,8 +84,20 @@ class MetaBridgeMixin:
                 return {"success": False, "message": f"{method_name} returned None"}
             return result
         except Exception as e:
-            logger.error("[loc] %s failed: %s", method_name, e)
-            return {"success": False, "message": str(e)}
+            msg = str(e)
+            # Sync local state if Meta service was restarted externally,
+            # then auto-recover in background.
+            if "unconfigured" in msg:
+                logger.warning("[loc] %s: service went back to unconfigured, triggering auto-recovery", method_name)
+                self._loc_state = META_CONNECTED
+                self._trigger_auto_recovery()
+            elif "inactive" in msg:
+                logger.warning("[loc] %s: service is inactive, triggering auto-recovery", method_name)
+                self._loc_state = META_INACTIVE
+                self._trigger_auto_recovery()
+            else:
+                logger.error("[loc] %s failed: %s", method_name, e)
+            return {"success": False, "message": msg}
 
     def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
         """Call a slow localization method using a dedicated connection with extended timeout.
@@ -143,23 +181,29 @@ class MetaBridgeMixin:
         return {"success": True, "message": "Meta connected"}
 
     def _probe_service_state(self, proxy, name: str) -> str:
-        """Probe a Meta service's actual lifecycle state by calling a business method."""
+        """Probe a Meta service's actual lifecycle state.
+
+        For localization: uses get_status().is_running (not require_active protected,
+        but is_running reliably reflects whether on_activate() has been called).
+        For navigation: uses get_navigation_status() which is require_active protected.
+        """
         if proxy is None:
             return META_DISCONNECTED
         try:
-            # Try a read-only business method — only works when active
             if name == "localization":
-                proxy.get_status()
+                status = proxy.get_status()
+                is_active = status.get("is_running", False)
+                logger.info("[meta] probe localization: is_running=%s", is_active)
+                return META_ACTIVE if is_active else META_CONNECTED
             else:
                 proxy.get_navigation_status()
-            return META_ACTIVE
+                logger.info("[meta] probe navigation → active")
+                return META_ACTIVE
         except Exception as e:
             msg = str(e)
-            if "unconfigured" in msg:
-                return META_CONNECTED
+            logger.info("[meta] probe %s → %s", name, msg)
             if "inactive" in msg:
                 return META_INACTIVE
-            # Other errors — assume connected but not active
             return META_CONNECTED
 
     def _sync_meta_state(self):
@@ -189,11 +233,14 @@ class MetaBridgeMixin:
             return {"success": False, "message": "Meta not connected"}
 
         results = {}
+        logger.info("[meta] configure_meta: loc_state=%s nav_state=%s", self._loc_state, self._nav_state)
 
         if self._loc and self._loc_state == META_CONNECTED:
             try:
                 cfg = {**_DEFAULT_LOC_CONFIG, **(loc_config or {})}
+                logger.info("[meta] Configuring localization with: %s", cfg)
                 result = self._loc.configure(cfg)
+                logger.info("[meta] Localization configure result: %s", result)
                 if hasattr(result, 'value') and result.value == "success":
                     self._loc_state = META_INACTIVE
                     results["localization"] = "configured"
@@ -208,7 +255,9 @@ class MetaBridgeMixin:
         if self._nav and self._nav_state == META_CONNECTED:
             try:
                 cfg = {**_DEFAULT_NAV_CONFIG, **(nav_config or {})}
+                logger.info("[meta] Configuring navigation with: %s", cfg)
                 result = self._nav.configure(cfg)
+                logger.info("[meta] Navigation configure result: %s", result)
                 if hasattr(result, 'value') and result.value == "success":
                     self._nav_state = META_INACTIVE
                     results["navigation"] = "configured"
@@ -254,10 +303,13 @@ class MetaBridgeMixin:
                 return {"success": False, "message": f"Configure failed: {cfg_failures}"}
 
         results = {}
+        logger.info("[meta] activate_meta: loc_state=%s nav_state=%s", self._loc_state, self._nav_state)
 
         if self._loc and self._loc_state == META_INACTIVE:
             try:
+                logger.info("[meta] Activating localization...")
                 result = self._loc.activate()
+                logger.info("[meta] Localization activate result: %s", result)
                 if hasattr(result, 'value') and result.value == "success":
                     self._loc_state = META_ACTIVE
                     results["localization"] = "activated"
@@ -272,7 +324,9 @@ class MetaBridgeMixin:
 
         if self._nav and self._nav_state == META_INACTIVE:
             try:
+                logger.info("[meta] Activating navigation...")
                 result = self._nav.activate()
+                logger.info("[meta] Navigation activate result: %s", result)
                 if hasattr(result, 'value') and result.value == "success":
                     self._nav_state = META_ACTIVE
                     results["navigation"] = "activated"
