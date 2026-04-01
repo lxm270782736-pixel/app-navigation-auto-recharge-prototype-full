@@ -3,13 +3,20 @@ Navigation App — FastAPI entry point
 
 Exposes REST + SSE endpoints for navigation control.
 All ROS communication goes through logic.py — frontend never touches ROS directly.
+Serves the built frontend SPA from ui/dist/ when available.
 """
 import json
 import asyncio
+import logging
+from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -34,8 +41,10 @@ logic = BusinessLogic()
 async def state_stream():
     """Push full state every 500ms — includes raw ROS topic data."""
     async def generate():
+        loop = asyncio.get_running_loop()
         while True:
-            yield {"data": json.dumps(logic.get_state())}
+            state = await loop.run_in_executor(None, logic.get_state)
+            yield {"data": json.dumps(state)}
             await asyncio.sleep(0.5)
     return EventSourceResponse(generate())
 
@@ -71,6 +80,16 @@ def start_obstacle_avoidance():
 @app.post("/api/localization/stop")
 def stop_localization():
     return logic.stop_localization()
+
+
+@app.get("/api/localization/status")
+def get_localization_status():
+    return logic.get_localization_status()
+
+
+@app.get("/api/localization/pose")
+def get_pose():
+    return logic.get_pose()
 
 
 @app.post("/api/localization/shutdown")
@@ -265,6 +284,73 @@ def record_start_position():
     return logic.record_room_waypoint("", "start_position")
 
 
+# ==================== 巡房任务 ====================
+
+
+class StartRoomPatrolRequest(BaseModel):
+    task_config: Optional[dict] = None
+
+
+@app.post("/api/room-patrol/start")
+def start_room_patrol(req: StartRoomPatrolRequest):
+    return logic.start_room_patrol(req.task_config)
+
+
+@app.post("/api/room-patrol/stop")
+def stop_room_patrol():
+    return logic.stop_room_patrol()
+
+
+@app.get("/api/room-patrol/status")
+def get_room_patrol_status():
+    return logic.get_room_patrol_status()
+
+
+@app.get("/api/room-patrol/task-config")
+def get_task_config():
+    return logic.get_task_config()
+
+
+class SaveTaskConfigRequest(BaseModel):
+    config: dict
+
+
+@app.post("/api/room-patrol/task-config")
+def save_task_config(req: SaveTaskConfigRequest):
+    return logic.save_task_config(req.config)
+
+
+# ==================== 告警 ====================
+
+
+@app.get("/api/alerts")
+def get_alerts(status: Optional[str] = None, date: Optional[str] = None):
+    return logic.get_alerts(status=status, date=date)
+
+
+@app.post("/api/alerts/{date}/{alert_id}/confirm")
+def confirm_alert(date: str, alert_id: str):
+    return logic.confirm_alert(alert_id, date)
+
+
+@app.post("/api/alerts/{date}/{alert_id}/close")
+def close_alert(date: str, alert_id: str):
+    return logic.close_alert(alert_id, date)
+
+
+# ==================== 巡房记录 ====================
+
+
+@app.get("/api/patrol-records")
+def get_patrol_records():
+    return logic.get_patrol_records()
+
+
+@app.get("/api/patrol-records/{date}/{record_id}")
+def get_patrol_record(date: str, record_id: str):
+    return logic.get_patrol_record(record_id, date)
+
+
 # ==================== 底盘控制 ====================
 
 
@@ -329,41 +415,121 @@ def cancel_dock():
     return logic.cancel_dock()
 
 
-# ==================== 通用透传 ====================
+# ==================== 任务预设 ====================
 
 
-class ServiceCallRequest(BaseModel):
-    service_name: str
-    service_type: str
-    request: dict = {}
+class SavePresetRequest(BaseModel):
+    preset: dict
 
 
-@app.post("/api/ros/service")
-def call_ros_service(req: ServiceCallRequest):
-    """Generic ROS service passthrough."""
-    return logic.call_ros_service(req.service_name, req.service_type, req.request)
+class DuplicatePresetRequest(BaseModel):
+    new_name: str
 
 
-class TopicPublishRequest(BaseModel):
-    topic_name: str
-    msg_type: str
-    message: dict
+@app.get("/api/task-presets")
+def get_task_presets():
+    return logic.get_task_presets()
 
 
-@app.post("/api/ros/publish")
-def publish_topic(req: TopicPublishRequest):
-    """Generic ROS topic publish passthrough."""
-    return logic.publish_topic(req.topic_name, req.msg_type, req.message)
+@app.post("/api/task-presets")
+def save_task_preset(req: SavePresetRequest):
+    return logic.save_task_preset(req.preset)
 
 
-@app.get("/api/ros/topic/{topic_path:path}")
-def get_topic(topic_path: str):
-    """Get latest message for a topic (for heavy data like /map, /scan)."""
-    topic_name = "/" + topic_path
-    data = logic.get_topic(topic_name)
-    if data is None:
-        return {"success": False, "message": f"No data for {topic_name}"}
-    return {"success": True, "data": data}
+@app.delete("/api/task-presets/{preset_id}")
+def delete_task_preset(preset_id: str):
+    return logic.delete_task_preset(preset_id)
+
+
+@app.post("/api/task-presets/{preset_id}/duplicate")
+def duplicate_task_preset(preset_id: str, req: DuplicatePresetRequest):
+    return logic.duplicate_task_preset(preset_id, req.new_name)
+
+
+@app.post("/api/task-presets/{preset_id}/default")
+def set_default_preset(preset_id: str):
+    return logic.set_default_preset(preset_id)
+
+
+# ==================== 自定义步骤类型 ====================
+
+
+class SaveCustomStepTypeRequest(BaseModel):
+    definition: dict
+
+
+@app.get("/api/custom-step-types")
+def get_custom_step_types():
+    return logic.get_custom_step_types()
+
+
+@app.post("/api/custom-step-types")
+def save_custom_step_type(req: SaveCustomStepTypeRequest):
+    return logic.save_custom_step_type(req.definition)
+
+
+@app.delete("/api/custom-step-types/{step_id}")
+def delete_custom_step_type(step_id: str):
+    return logic.delete_custom_step_type(step_id)
+
+
+# ==================== Meta 服务管理 ====================
+
+
+@app.post("/api/meta/start")
+def start_meta():
+    """一键启动：connect → configure → activate"""
+    return logic.start_meta()
+
+
+@app.post("/api/meta/connect")
+def connect_meta():
+    return logic.connect_meta()
+
+
+@app.post("/api/meta/activate")
+def activate_meta():
+    return logic.activate_meta()
+
+
+@app.post("/api/meta/deactivate")
+def deactivate_meta():
+    return logic.deactivate_meta()
+
+
+@app.get("/api/meta/status")
+def meta_status():
+    return logic.get_meta_status()
+
+
+# ==================== 前端静态文件 ====================
+
+_UI_DIR = Path(__file__).parent.parent / "ui" / "dist"
+
+if _UI_DIR.exists():
+    # Serve built assets (JS, CSS)
+    _ASSETS_DIR = _UI_DIR / "assets"
+    if _ASSETS_DIR.exists():
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+
+    # SPA catch-all: non-API routes serve index.html
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        # Return 404 JSON for unknown API paths instead of silently serving HTML
+        if path.startswith("api/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": f"API not found: /{path}"}, status_code=404)
+        # Guard against path traversal (e.g. GET /../../etc/passwd)
+        ui_root = _UI_DIR.resolve()
+        resolved = (ui_root / path).resolve()
+        if resolved.is_file() and resolved.is_relative_to(ui_root):
+            return FileResponse(str(resolved))
+        # Otherwise serve index.html for SPA routing
+        index = _UI_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"error": "Frontend not built. Run: cd ui && npm run build"}
+
 
 # ==================== Standalone runner ====================
 

@@ -220,3 +220,115 @@ export interface RoomPatrolConfig {
   detection_types: string[];
   updated_at?: string;
 }
+
+// 巡房任务步骤
+export interface RoomTaskStep {
+  type: string;  // 内置类型 或 'custom:xxx'
+  target?: string;
+  label?: string;
+  duration?: number;
+  params?: Record<string, any>;  // 自定义步骤参数
+}
+
+// 自定义步骤参数定义
+export interface CustomStepParamDef {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  default_value?: any;
+  required?: boolean;
+  options?: { value: string; label: string }[];
+}
+
+// 自定义步骤动作配置
+export interface CustomStepAction {
+  type: 'ros_service' | 'ros_topic' | 'wait';
+  service_name?: string;
+  service_type?: string;
+  request?: Record<string, any>;
+  topic_name?: string;
+  msg_type?: string;
+  message?: Record<string, any>;
+  duration?: number;
+}
+
+// 自定义步骤类型定义
+export interface CustomStepDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon_color?: string;
+  action: CustomStepAction;
+  parameters: CustomStepParamDef[];
+  timeout?: number;
+  created_at?: string;
+}
+
+// 单房间任务配置
+export interface RoomTaskConfig {
+  room_id: string;
+  room_name: string;
+  enabled: boolean;
+  steps: RoomTaskStep[];
+}
+
+// 巡房任务编排配置
+export interface PatrolTaskConfig {
+  rooms: RoomTaskConfig[];
+  retry_limit: number;
+  updated_at?: string;
+}
+
+// 任务预设
+export interface TaskPreset {
+  id: string;
+  name: string;
+  description?: string;
+  is_default: boolean;
+  rooms: RoomTaskConfig[];
+  retry_limit: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// 告警
+export interface Alert {
+  id: string;
+  patrol_id: string;
+  room_id: string;
+  alert_type: string;
+  status: 'new' | 'processing' | 'closed';
+  message: string;
+  confidence: number;
+  photo: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  closed_at: string | null;
+}
+
+// 巡房记录
+export interface PatrolRecord {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  rooms_total: number;
+  rooms_completed: number;
+  rooms_failed: number;
+  room_results: any[];
+}
+
+// 巡房实时状态 (SSE)
+export interface RoomPatrolState {
+  active: boolean;
+  status: string;
+  patrol_id: string;
+  current_room: string;
+  current_step: string;
+  current_step_index: number;
+  rooms_completed: string[];
+  rooms_failed: string[];
+  rooms_total: number;
+  progress: number;
+  error: string;
+}

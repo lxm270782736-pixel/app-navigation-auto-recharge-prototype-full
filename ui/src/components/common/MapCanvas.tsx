@@ -241,14 +241,15 @@ const InitialPoseMarker: React.FC<{
 
 /** 路径点标记 - 带序号的圆形 */
 const WaypointMarker: React.FC<{
-  pose: Pose; index: number; mapData: MapData; scale: number;
+  pose: Pose; index: number; label?: string; customColor?: string; mapData: MapData; scale: number;
   isCurrent: boolean; isCompleted: boolean; isSelected: boolean; isHovered: boolean;
-}> = React.memo(({ pose, index, mapData, scale, isCurrent, isCompleted, isSelected, isHovered }) => {
+}> = React.memo(({ pose, index, label, customColor, mapData, scale, isCurrent, isCompleted, isSelected, isHovered }) => {
   const pos = worldToMap(pose.x, pose.y, mapData);
   let s = isCompleted ? 14 : isCurrent ? 16 : 14;
   if (isSelected || isHovered) s *= 1.2;
   s /= scale;
-  const color = isCompleted ? '#999' : isCurrent ? '#52c41a' : '#1890ff';
+  const baseColor = customColor || '#1890ff';
+  const color = isCompleted ? '#999' : isCurrent ? '#52c41a' : baseColor;
   const deg = -(pose.theta * 180) / Math.PI;
   const fs = Math.max(s * 1.2, 12 / scale);
   return (
@@ -256,7 +257,7 @@ const WaypointMarker: React.FC<{
       {(isCurrent || isSelected || isHovered) && <circle r={s * 1.4} fill={color} opacity={0.2} />}
       <circle r={s} fill={color} stroke={isSelected ? '#faad14' : '#fff'} strokeWidth={s * 0.15} />
       <text x={0} y={0} fill="#fff" fontSize={fs} fontWeight="bold" textAnchor="middle" dominantBaseline="central">
-        {index + 1}
+        {label ?? String(index + 1)}
       </text>
       {isCurrent && (
         <g transform={`rotate(${deg})`}>
@@ -356,7 +357,10 @@ interface MapCanvasProps {
   selectedWaypointIndex?: number;
   onWaypointClick?: (index: number) => void;
   onWaypointDrag?: (index: number, newPose: Pose) => void;
+  onWaypointDragEnd?: (index: number, newPose: Pose) => void;
   onWaypointDelete?: (index: number) => void;
+  waypointLabels?: string[];
+  waypointColors?: string[];
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -383,7 +387,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   selectedWaypointIndex = -1,
   onWaypointClick,
   onWaypointDrag,
+  onWaypointDragEnd,
   onWaypointDelete,
+  waypointLabels,
+  waypointColors,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -651,6 +658,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // 处理鼠标松开
   const handleMouseUp = () => {
     if (draggingWaypointIndex >= 0) {
+      if (onWaypointDragEnd) {
+        onWaypointDragEnd(draggingWaypointIndex, waypoints[draggingWaypointIndex]);
+      }
       setDraggingWaypointIndex(-1);
       return;
     }
@@ -870,6 +880,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   key={i}
                   pose={wp}
                   index={i}
+                  label={waypointLabels?.[i]}
+                  customColor={waypointColors?.[i]}
                   mapData={mapData}
                   scale={scale}
                   isCurrent={i === currentWaypointIndex}

@@ -1,17 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Card, message, Modal, Input, InputNumber, Tag, Tooltip, Empty } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Button, Card, message, Modal, Input, InputNumber, Tag, Tooltip, Empty, Switch } from 'antd';
 import {
-  ArrowLeftOutlined,
   PlusOutlined,
   DeleteOutlined,
   AimOutlined,
   EditOutlined,
   CheckCircleFilled,
-  CloseCircleFilled,
   EnvironmentOutlined,
-  HomeOutlined,
-  SaveOutlined,
+  DragOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { rosService } from '@/services/ros';
@@ -27,8 +23,7 @@ const WAYPOINT_TYPES = [
   { key: 'bed_check', label: '床位', color: '#ff4d4f' },
 ] as const;
 
-export const RoomConfig: React.FC = () => {
-  const navigate = useNavigate();
+export const WaypointRecordTab: React.FC = () => {
   const { connectionStatus } = useROS();
 
   const [config, setConfig] = useState<RoomPatrolConfig | null>(null);
@@ -47,6 +42,82 @@ export const RoomConfig: React.FC = () => {
   const [editX, setEditX] = useState<number>(0);
   const [editY, setEditY] = useState<number>(0);
   const [editTheta, setEditTheta] = useState<number>(0);
+
+  // 拖拽开关 (默认关闭)
+  const [dragEnabled, setDragEnabled] = useState(false);
+
+  // 键盘遥控
+  const [keyboardEnabled, setKeyboardEnabled] = useState(false);
+  const [velocity, setVelocity] = useState({ linear: 0, angular: 0 });
+  const [keyboardFocused, setKeyboardFocused] = useState(false);
+  const keysPressed = useRef<Set<string>>(new Set());
+  const velocityTimerRef = useRef<number | null>(null);
+  const joystickRef = useRef<HTMLDivElement>(null);
+
+  const LINEAR_SPEED = 0.3;  // m/s
+  const ANGULAR_SPEED = 0.5; // rad/s
+
+  // 键盘遥控 — 持续发送定时器
+  useEffect(() => {
+    if (!keyboardEnabled || !keyboardFocused || connectionStatus !== ConnectionStatus.CONNECTED) {
+      if (velocityTimerRef.current) { clearInterval(velocityTimerRef.current); velocityTimerRef.current = null; }
+      return;
+    }
+
+    velocityTimerRef.current = window.setInterval(() => {
+      const keys = keysPressed.current;
+      if (keys.size > 0) {
+        let linear = 0, angular = 0;
+        if (keys.has('ArrowUp')) linear += LINEAR_SPEED;
+        if (keys.has('ArrowDown')) linear -= LINEAR_SPEED;
+        if (keys.has('ArrowLeft')) angular += ANGULAR_SPEED;
+        if (keys.has('ArrowRight')) angular -= ANGULAR_SPEED;
+        rosService.sendVelocity(linear, angular);
+      }
+    }, 100);
+
+    return () => {
+      if (velocityTimerRef.current) { clearInterval(velocityTimerRef.current); velocityTimerRef.current = null; }
+    };
+  }, [keyboardEnabled, keyboardFocused, connectionStatus]);
+
+  const handleJoystickKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      if (!keysPressed.current.has(e.key)) {
+        keysPressed.current.add(e.key);
+        let linear = 0, angular = 0;
+        const keys = keysPressed.current;
+        if (keys.has('ArrowUp')) linear += LINEAR_SPEED;
+        if (keys.has('ArrowDown')) linear -= LINEAR_SPEED;
+        if (keys.has('ArrowLeft')) angular += ANGULAR_SPEED;
+        if (keys.has('ArrowRight')) angular -= ANGULAR_SPEED;
+        setVelocity({ linear, angular });
+        rosService.sendVelocity(linear, angular);
+      }
+    }
+  }, []);
+
+  const handleJoystickKeyUp = useCallback((e: React.KeyboardEvent) => {
+    if (keysPressed.current.has(e.key)) {
+      keysPressed.current.delete(e.key);
+      let linear = 0, angular = 0;
+      const keys = keysPressed.current;
+      if (keys.has('ArrowUp')) linear += LINEAR_SPEED;
+      if (keys.has('ArrowDown')) linear -= LINEAR_SPEED;
+      if (keys.has('ArrowLeft')) angular += ANGULAR_SPEED;
+      if (keys.has('ArrowRight')) angular -= ANGULAR_SPEED;
+      setVelocity({ linear, angular });
+      rosService.sendVelocity(linear, angular);
+    }
+  }, []);
+
+  const handleJoystickBlur = useCallback(() => {
+    keysPressed.current.clear();
+    setVelocity({ linear: 0, angular: 0 });
+    setKeyboardFocused(false);
+    rosService.sendVelocity(0, 0);
+  }, []);
   // 加载配置（仅在连接时）
   const loadConfig = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
@@ -94,7 +165,7 @@ export const RoomConfig: React.FC = () => {
           const mapData = await rosService.loadMapFromROS(name);
           if (mapData) setCurrentMap(mapData);
         } catch (e) {
-          console.warn('[房间配置] 加载地图失败:', e);
+          console.warn('[巡房] 加载地图失败:', e);
         }
       }
     });
@@ -217,61 +288,89 @@ export const RoomConfig: React.FC = () => {
     }
   };
 
-  // 收集所有已录制的点位用于地图显示
-  const allWaypoints: Pose[] = [];
-  if (config) {
-    if (config.start_position) allWaypoints.push(config.start_position);
-    for (const room of config.rooms) {
-      if (room.door_outside) allWaypoints.push(room.door_outside);
-      if (room.door_inside) allWaypoints.push(room.door_inside);
-      if (room.bed_check) allWaypoints.push(room.bed_check);
+  // 收集所有已录制的点位用于地图显示 (起点=0, 房间从1开始编号)
+  const { allWaypoints, waypointLabels, waypointColors, waypointMeta } = useMemo(() => {
+    const wps: Pose[] = [];
+    const labels: string[] = [];
+    const colors: string[] = [];
+    const meta: { roomId: string; type: string }[] = [];
+
+    if (config) {
+      if (config.start_position) {
+        wps.push(config.start_position);
+        labels.push('0');
+        colors.push('#722ed1');
+        meta.push({ roomId: '', type: 'start_position' });
+      }
+      config.rooms.forEach((room, roomIdx) => {
+        const label = String(roomIdx + 1);
+        for (const wp of WAYPOINT_TYPES) {
+          const pose = room[wp.key as keyof RoomConfigType] as Pose | null;
+          if (pose) {
+            wps.push(pose);
+            labels.push(label);
+            colors.push(wp.color);
+            meta.push({ roomId: room.room_id, type: wp.key });
+          }
+        }
+      });
     }
-  }
+
+    return { allWaypoints: wps, waypointLabels: labels, waypointColors: colors, waypointMeta: meta };
+  }, [config]);
+
+  // Refs for stable access in drag callbacks
+  const configRef = useRef(config);
+  configRef.current = config;
+  const waypointMetaRef = useRef(waypointMeta);
+  waypointMetaRef.current = waypointMeta;
+
+  // 拖拽点位 — 实时更新本地状态
+  const handleWaypointDrag = useCallback((index: number, newPose: Pose) => {
+    const cur = configRef.current;
+    const meta = waypointMetaRef.current[index];
+    if (!cur || !meta) return;
+    const updated = { ...cur };
+    if (meta.type === 'start_position') {
+      updated.start_position = newPose;
+    } else {
+      updated.rooms = updated.rooms.map(r =>
+        r.room_id === meta.roomId ? { ...r, [meta.type]: newPose } : r
+      );
+    }
+    setConfig(updated);
+  }, []);
+
+  // 拖拽结束 — 保存到后端
+  const handleWaypointDragEnd = useCallback(async () => {
+    const cur = configRef.current;
+    if (!cur) return;
+    const result = await rosService.saveRoomConfig(cur);
+    if (result.success) {
+      message.success('点位已保存');
+    } else {
+      message.error('保存失败');
+      loadConfig();
+    }
+  }, [loadConfig]);
 
   // 判断房间是否就绪
   const isRoomReady = (room: RoomConfigType) =>
     room.door_outside && room.door_inside && room.bed_check;
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶部工具栏 */}
-      <div
-        style={{
-          padding: '16px 24px',
-          background: '#fff',
-          borderBottom: '1px solid #f0f0f0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-        }}
-      >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>
-          返回
-        </Button>
-        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          <HomeOutlined /> 点位录制
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {config?.updated_at && (
-            <span style={{ fontSize: '12px', color: '#999' }}>
-              上次保存: {config.updated_at}
-            </span>
-          )}
-          <Tag color={connectionStatus === ConnectionStatus.CONNECTED ? 'green' : 'red'}>
-            {connectionStatus === ConnectionStatus.CONNECTED ? '已连接' : '未连接'}
-          </Tag>
-        </div>
-      </div>
-
-      {/* 主内容区 */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* 左侧：地图 */}
-        <div style={{ flex: 1, position: 'relative' }}>
+    <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+      {/* 左侧：地图 */}
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', height: '100%' }}>
           {currentMap ? (
             <MapCanvas
               mapData={currentMap}
               robotPose={robotPose}
               waypoints={allWaypoints}
+              waypointLabels={waypointLabels}
+              waypointColors={waypointColors}
+              onWaypointDrag={dragEnabled ? handleWaypointDrag : undefined}
+              onWaypointDragEnd={dragEnabled ? handleWaypointDragEnd : undefined}
               showCoordinateSystem={true}
               showRobotTrail={false}
             />
@@ -299,12 +398,58 @@ export const RoomConfig: React.FC = () => {
               <AimOutlined /> x={robotPose.x.toFixed(3)} y={robotPose.y.toFixed(3)} θ={((robotPose.theta * 180) / Math.PI).toFixed(1)}°
             </div>
           )}
+
+          {/* 键盘遥控区域 — 点击聚焦后方向键生效 */}
+          {keyboardEnabled && (
+            <div
+              ref={joystickRef}
+              tabIndex={0}
+              onKeyDown={handleJoystickKeyDown}
+              onKeyUp={handleJoystickKeyUp}
+              onFocus={() => setKeyboardFocused(true)}
+              onBlur={handleJoystickBlur}
+              style={{
+                position: 'absolute',
+                bottom: '16px',
+                right: '16px',
+                background: keyboardFocused ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)',
+                color: '#fff',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                minWidth: 140,
+                textAlign: 'center',
+                cursor: 'pointer',
+                outline: keyboardFocused ? '2px solid #52c41a' : '2px solid transparent',
+                transition: 'outline 0.2s, background 0.2s',
+              }}
+              onClick={() => joystickRef.current?.focus()}
+            >
+              <div style={{ marginBottom: 6, fontWeight: 'bold', color: keyboardFocused ? '#52c41a' : '#999' }}>
+                {keyboardFocused ? '遥控中 — 方向键控制' : '点击此处开始遥控'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
+                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.linear > 0 ? '#52c41a' : '#555', borderRadius: 3 }}>↑</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.angular > 0 ? '#52c41a' : '#555', borderRadius: 3 }}>←</span>
+                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.linear < 0 ? '#52c41a' : '#555', borderRadius: 3 }}>↓</span>
+                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.angular < 0 ? '#52c41a' : '#555', borderRadius: 3 }}>→</span>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#aaa' }}>
+                v={velocity.linear.toFixed(2)} ω={velocity.angular.toFixed(2)}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 右侧：配置面板 */}
         <div
           style={{
-            width: '360px',
+            width: 320,
+            minWidth: 280,
+            flexShrink: 0,
             borderLeft: '1px solid #f0f0f0',
             background: '#fafafa',
             overflowY: 'auto',
@@ -314,8 +459,26 @@ export const RoomConfig: React.FC = () => {
             gap: '12px',
           }}
         >
+          {/* 工具开关 */}
+          <Card size="small">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 13 }}><DragOutlined /> 拖拽点位</span>
+              <Switch size="small" checked={dragEnabled} onChange={setDragEnabled} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13 }}>⌨️ 键盘遥控</span>
+              <Switch size="small" checked={keyboardEnabled} onChange={setKeyboardEnabled}
+                disabled={connectionStatus !== ConnectionStatus.CONNECTED} />
+            </div>
+          </Card>
+
           {/* 起始点位 */}
-          <Card size="small" title={<><EnvironmentOutlined /> 起始/返回点位</>}>
+          <Card size="small" title={
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#722ed1', color: '#fff', fontSize: 11, fontWeight: 'bold' }}>0</span>
+              <EnvironmentOutlined /> 起始/返回点位
+            </span>
+          }>
             {config?.start_position ? (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>
@@ -358,13 +521,14 @@ export const RoomConfig: React.FC = () => {
             <Empty description="暂无房间，点击下方按钮添加" style={{ padding: '20px 0' }} />
           )}
 
-          {config?.rooms.map((room) => (
+          {config?.rooms.map((room, roomIdx) => (
             <Card
               key={room.room_id}
               size="small"
               title={
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#1890ff', color: '#fff', fontSize: 11, fontWeight: 'bold', flexShrink: 0 }}>{roomIdx + 1}</span>
                     {room.room_name || room.room_id}
                     {isRoomReady(room) ? (
                       <Tag color="green" style={{ marginLeft: 8, fontSize: '11px' }}>就绪</Tag>
@@ -453,7 +617,6 @@ export const RoomConfig: React.FC = () => {
             新建房间
           </Button>
         </div>
-      </div>
 
       {/* 新建房间 Modal */}
       <Modal

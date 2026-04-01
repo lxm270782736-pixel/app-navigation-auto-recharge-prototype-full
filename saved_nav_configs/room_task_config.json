@@ -1,0 +1,100 @@
+{
+  "rooms": [
+    {
+      "room_id": "101",
+      "room_name": "101室",
+      "enabled": true,
+      "steps": [
+        {
+          "type": "navigate",
+          "target": "door_outside"
+        },
+        {
+          "type": "open_door"
+        },
+        {
+          "type": "navigate",
+          "target": "door_inside"
+        },
+        {
+          "type": "detect_floor"
+        },
+        {
+          "type": "photo",
+          "label": "通道"
+        },
+        {
+          "type": "navigate",
+          "target": "bed_check"
+        },
+        {
+          "type": "detect_bed"
+        },
+        {
+          "type": "photo",
+          "label": "床位"
+        },
+        {
+          "type": "navigate",
+          "target": "door_inside"
+        },
+        {
+          "type": "navigate",
+          "target": "door_outside"
+        },
+        {
+          "type": "close_door"
+        }
+      ]
+    },
+    {
+      "room_id": "102",
+      "room_name": "102室",
+      "enabled": true,
+      "steps": [
+        {
+          "type": "navigate",
+          "target": "door_outside"
+        },
+        {
+          "type": "open_door"
+        },
+        {
+          "type": "navigate",
+          "target": "door_inside"
+        },
+        {
+          "type": "detect_floor"
+        },
+        {
+          "type": "photo",
+          "label": "通道"
+        },
+        {
+          "type": "navigate",
+          "target": "bed_check"
+        },
+        {
+          "type": "detect_bed"
+        },
+        {
+          "type": "photo",
+          "label": "床位"
+        },
+        {
+          "type": "navigate",
+          "target": "door_inside"
+        },
+        {
+          "type": "navigate",
+          "target": "door_outside"
+        },
+        {
+          "type": "close_door"
+        }
+      ]
+    }
+  ],
+  "retry_limit": 3,
+  "updated_at": "2026-03-25T18:57:52"
+}

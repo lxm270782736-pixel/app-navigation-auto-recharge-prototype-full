@@ -139,12 +139,25 @@ export const Navigation: React.FC = () => {
 
     const unsubscribe = rosService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
-      setIsMapRealtime(true); // 接收到实时地图数据
+      setIsMapRealtime(true);
     });
 
-    // 获取当前地图名称
-    rosService.getCurrentMapName().then((name) => {
-      if (name) setCurrentMapName(name);
+    // 获取当前地图名称，并主动加载地图数据
+    rosService.getCurrentMapName().then(async (name) => {
+      if (name) {
+        setCurrentMapName(name);
+        if (!currentMap) {
+          try {
+            const mapData = await rosService.loadMapFromROS(name);
+            if (mapData) {
+              setCurrentMap(mapData);
+              setIsMapRealtime(false);
+            }
+          } catch (e) {
+            console.warn('[导航] 加载地图数据失败:', e);
+          }
+        }
+      }
     });
 
     return () => {
@@ -159,7 +172,6 @@ export const Navigation: React.FC = () => {
       return;
     }
 
-    // 如果已经有地图数据，不需要等待
     if (currentMap) {
       return;
     }
@@ -167,7 +179,6 @@ export const Navigation: React.FC = () => {
     // 没有地图数据，等待2秒让/map话题有机会发布
     const timer = setTimeout(() => {
       if (!currentMap && connectionStatus === ConnectionStatus.CONNECTED) {
-        // 2秒后仍无地图数据，自动打开地图选择modal
         handleOpenApplyMapModal();
       }
     }, 2000);

@@ -36,8 +36,10 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — same host, port 8080
-const API_BASE = `http://${window.location.hostname}:8080`;
+// Backend base URL — same origin when served from FastAPI, or port 8080 for dev
+const API_BASE = window.location.port === '8080'
+  ? ''  // same origin, no prefix needed
+  : `http://${window.location.hostname}:8080`;
 
 class ROSService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
@@ -73,20 +75,25 @@ class ROSService {
     es.onmessage = (event) => {
       try {
         const state = JSON.parse(event.data);
-        // Update connection status from backend's ROS connection
-        const wasConnected = this._connected;
-        this._connected = state.connected;
-        if (wasConnected !== state.connected) {
-          this.emit('connection', { connected: state.connected });
-        }
 
-        // Dispatch raw topic data to subscribers
-        if (state.topics) {
-          for (const [topicName, msg] of Object.entries(state.topics)) {
-            const callbacks = this.topicCallbacks.get(topicName);
-            if (callbacks) {
-              callbacks.forEach((cb) => cb(msg));
-            }
+        // Emit full state for MetaLauncher etc.
+        this.emit('state', state);
+
+        // Dispatch pose to topic subscribers (Meta get_pose → /loc_high_freq format)
+        if (state.pose && state.pose.success) {
+          const poseData = state.pose;
+          // Convert Meta pose to Odometry-like format for existing components
+          const odomMsg = {
+            pose: {
+              pose: {
+                position: poseData.position || { x: 0, y: 0, z: 0 },
+                orientation: poseData.quaternion || { x: 0, y: 0, z: 0, w: 1 },
+              },
+            },
+          };
+          const callbacks = this.topicCallbacks.get('/loc_high_freq');
+          if (callbacks) {
+            callbacks.forEach((cb) => cb(odomMsg));
           }
         }
 
@@ -118,6 +125,11 @@ class ROSService {
         // Dispatch patrol state
         if (state.patrol) {
           this.emit('patrol-state', state.patrol);
+        }
+
+        // Dispatch room patrol state
+        if (state.room_patrol) {
+          this.emit('room-patrol-state', state.room_patrol);
         }
       } catch (e) {
         console.error('[ROS-HTTP] SSE parse error:', e);
@@ -338,6 +350,118 @@ class ROSService {
     return this._post('/api/room-config/record-start', {});
   }
 
+  // ------ Room Patrol (巡房任务) ------
+
+  async startRoomPatrol(taskConfig?: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/start', { task_config: taskConfig || null });
+  }
+
+  async stopRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/stop', {});
+  }
+
+  async getRoomPatrolStatus(): Promise<any> {
+    return this._get('/api/room-patrol/status');
+  }
+
+  async getTaskConfig(): Promise<any> {
+    return this._get('/api/room-patrol/task-config');
+  }
+
+  async saveTaskConfig(config: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/task-config', { config });
+  }
+
+  // ------ Alerts (告警) ------
+
+  async getAlerts(filter?: { status?: string; date?: string }): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (filter?.status) params.set('status', filter.status);
+    if (filter?.date) params.set('date', filter.date);
+    const query = params.toString() ? `?${params}` : '';
+    return this._get(`/api/alerts${query}`);
+  }
+
+  async confirmAlert(date: string, alertId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/alerts/${date}/${alertId}/confirm`, {});
+  }
+
+  async closeAlert(date: string, alertId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/alerts/${date}/${alertId}/close`, {});
+  }
+
+  // ------ Patrol Records (巡房记录) ------
+
+  async getPatrolRecords(): Promise<any[]> {
+    return this._get('/api/patrol-records');
+  }
+
+  async getPatrolRecord(date: string, recordId: string): Promise<any> {
+    return this._get(`/api/patrol-records/${date}/${recordId}`);
+  }
+
+  // ------ Task Presets (任务预设) ------
+
+  async getTaskPresets(): Promise<{ presets: any[] }> {
+    return this._get('/api/task-presets');
+  }
+
+  async saveTaskPreset(preset: any): Promise<{ success: boolean; message: string; preset_id?: string }> {
+    return this._post('/api/task-presets', { preset });
+  }
+
+  async deleteTaskPreset(presetId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/api/task-presets/${encodeURIComponent(presetId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async duplicateTaskPreset(presetId: string, newName: string): Promise<{ success: boolean; message: string; preset?: any }> {
+    return this._post(`/api/task-presets/${encodeURIComponent(presetId)}/duplicate`, { new_name: newName });
+  }
+
+  async setDefaultPreset(presetId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/task-presets/${encodeURIComponent(presetId)}/default`, {});
+  }
+
+  // ------ Meta 服务管理 ------
+
+  async startMeta(): Promise<{ success: boolean; results?: Record<string, string>; message?: string }> {
+    return this._post('/api/meta/start', {});
+  }
+
+  async connectMeta(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/meta/connect', {});
+  }
+
+  async activateMeta(): Promise<{ success: boolean; results: Record<string, string> }> {
+    return this._post('/api/meta/activate', {});
+  }
+
+  async deactivateMeta(): Promise<{ success: boolean; results: Record<string, string> }> {
+    return this._post('/api/meta/deactivate', {});
+  }
+
+  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string }> {
+    return this._get('/api/meta/status');
+  }
+
+  // ------ Custom Step Types (自定义步骤类型) ------
+
+  async getCustomStepTypes(): Promise<{ custom_step_types: any[] }> {
+    return this._get('/api/custom-step-types');
+  }
+
+  async saveCustomStepType(definition: any): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/custom-step-types', { definition });
+  }
+
+  async deleteCustomStepType(stepId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/api/custom-step-types/${encodeURIComponent(stepId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
   // ------ Localization Service ------
 
   async startJoystick(): Promise<{ success: boolean; message: string }> {
@@ -346,6 +470,10 @@ class ROSService {
 
   async stopJoystick(): Promise<{ success: boolean; message: string }> {
     return this._post('/api/joystick/stop', {});
+  }
+
+  async sendVelocity(linearX: number, angularZ: number): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/chassis/velocity', { linear_x: linearX, angular_z: angularZ });
   }
 
   async startMapping(): Promise<{ success: boolean; message: string }> {
@@ -396,8 +524,8 @@ class ROSService {
   async getCurrentMapName(): Promise<string | null> {
     try {
       const result = await this._get('/api/maps/current');
-      if (result.success && result.message) {
-        return result.message;
+      if (result.success && (result.map_name || result.message)) {
+        return result.map_name || result.message;
       }
       return null;
     } catch {
@@ -431,8 +559,9 @@ class ROSService {
   async loadMapFromROS(mapName: string): Promise<MapData | null> {
     try {
       const result = await this._get(`/api/maps/${encodeURIComponent(mapName)}`);
-      if (result.success && result.map_data) {
-        return normalizeMapData({ ...result.map_data, id: mapName, name: mapName });
+      if (result.success) {
+        // Backend returns flat format: {name, resolution, width, height, origin, data}
+        return normalizeMapData({ ...result, id: mapName, name: mapName });
       }
       return null;
     } catch {

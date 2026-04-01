@@ -1,41 +1,34 @@
-"""Localization, joystick, and system node control."""
+"""Localization control — all calls go through Meta localization service."""
 
 
 class LocalizationMixin:
-    """Localization / mapping / joystick / system-node methods."""
+    """Localization / mapping methods via Meta link."""
 
-    # Localization
     def start_mapping(self) -> dict:
-        return self._call_trigger("/localization/start_mapping")
+        return self._loc_call("start_mapping")
 
     def stop_mapping(self) -> dict:
-        return self._call_trigger("/localization/stop")
+        return self._loc_call("stop")
 
     def start_localization(self) -> dict:
-        return self._call_trigger("/localization/start_localization")
+        return self._loc_call("start_localization")
 
     def start_localization_auto(self) -> dict:
-        return self._call_trigger("/localization/start_localization_auto")
+        return self._loc_call("start_localization_auto")
 
     def start_obstacle_avoidance(self) -> dict:
-        return self._call_trigger("/localization/start_obstacle_avoidance")
+        # Meta 未暴露，返回提示
+        return {"success": False, "message": "Obstacle avoidance not available via Meta"}
 
     def stop_localization(self) -> dict:
-        return self._call_trigger("/localization/stop")
+        return self._loc_call("stop")
 
     def shutdown_localization(self) -> dict:
-        return self._call_trigger("/localization/shutdown")
+        # Meta 用 deactivate 管理生命周期
+        return self.deactivate_meta()
 
-    # Joystick
-    def start_joystick(self) -> dict:
-        return self._call_trigger("/joystick/start")
+    def get_localization_status(self) -> dict:
+        return self._loc_call("get_status")
 
-    def stop_joystick(self) -> dict:
-        return self._call_trigger("/joystick/stop")
-
-    # System nodes
-    def start_slam_node(self) -> dict:
-        return self._call_trigger("/system/start_slam_node")
-
-    def start_navigation_node(self) -> dict:
-        return self._call_trigger("/system/start_navigation_node")
+    def get_pose(self) -> dict:
+        return self._loc_call("get_pose")
