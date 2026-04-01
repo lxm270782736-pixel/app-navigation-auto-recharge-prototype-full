@@ -35,7 +35,16 @@ class MapManagerMixin:
         return result
 
     def save_map(self, map_name: str, map_data: dict | None = None) -> dict:
-        return self._loc_call("save_map", map_name, map_data)
+        # Frontend sends map_data as a wrapper dict containing the actual OccupancyGrid
+        # plus created_at and thumbnail — extract them before forwarding to Meta
+        created_at = 0
+        thumbnail = ""
+        og_data = map_data
+        if isinstance(map_data, dict):
+            created_at = map_data.get("created_at", 0)
+            thumbnail = map_data.get("thumbnail", "")
+            og_data = map_data.get("map_data", map_data)
+        return self._loc_call("save_map", map_name, og_data, created_at, thumbnail)
 
     def load_map(self, map_name: str) -> dict:
         result = self._loc_call("load_map", map_name)

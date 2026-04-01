@@ -32,3 +32,6 @@ class LocalizationMixin:
 
     def get_pose(self) -> dict:
         return self._loc_call("get_pose")
+
+    def set_initial_pose(self, x: float, y: float, theta: float) -> dict:
+        return self._loc_call("set_initial_pose", x, y, theta)
