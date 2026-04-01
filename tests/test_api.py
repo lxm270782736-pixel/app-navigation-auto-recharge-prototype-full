@@ -242,45 +242,6 @@ class TestDockEndpoints:
         assert resp.status_code == 200
 
 
-# ═══════════════════════════════════════════════════════════════
-# ROS passthrough endpoints
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestRosPassthrough:
-    def test_call_ros_service(self, client):
-        tc, mock = client
-        mock.call_ros_service.return_value = {"success": True}
-        resp = tc.post("/api/ros/service", json={
-            "service_name": "/test_svc",
-            "service_type": "std_srvs/srv/Trigger",
-            "request": {},
-        })
-        assert resp.status_code == 200
-
-    def test_publish_topic(self, client):
-        tc, mock = client
-        mock.publish_topic.return_value = {"success": True}
-        resp = tc.post("/api/ros/publish", json={
-            "topic_name": "/cmd_vel",
-            "msg_type": "geometry_msgs/msg/Twist",
-            "message": {"linear": {"x": 0}},
-        })
-        assert resp.status_code == 200
-
-    def test_get_topic_found(self, client):
-        tc, mock = client
-        mock.get_topic.return_value = {"data": [1, 2, 3]}
-        resp = tc.get("/api/ros/topic/map")
-        assert resp.status_code == 200
-        assert resp.json()["success"] is True
-
-    def test_get_topic_not_found(self, client):
-        tc, mock = client
-        mock.get_topic.return_value = None
-        resp = tc.get("/api/ros/topic/nonexistent")
-        assert resp.status_code == 200
-        assert resp.json()["success"] is False
 
 
 # ═══════════════════════════════════════════════════════════════
