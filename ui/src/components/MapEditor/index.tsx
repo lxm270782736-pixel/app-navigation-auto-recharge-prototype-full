@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Button, message, Input, Space, Radio, Slider, Modal, Tag, Alert, Tooltip, Switch, Select } from 'antd';
+import { Card, Button, message, Input, Space, Radio, Slider, Modal, Alert, Tooltip, Switch, Select } from 'antd';
 import {
   ArrowLeftOutlined,
   SaveOutlined,
@@ -285,25 +285,14 @@ export const MapEditor: React.FC = () => {
     }
 
     try {
-      // 生成缩略图
-      const thumbnail = mapStorageService.generateThumbnail(
-        mapData.data,
-        mapData.width,
-        mapData.height
-      );
-
       const updatedMap: MapData = {
         ...mapData,
-        id: sanitizedName, // 更新 id
-        name: sanitizedName, // 使用规范化后的名称
-        thumbnail, // 保存缩略图
+        id: sanitizedName,
+        name: sanitizedName,
       };
 
       // 保存到 ROS 服务
       await rosService.saveMapToROS(updatedMap);
-
-      // 同时保存到本地缓存
-      mapStorageService.saveMapToLocalCache(updatedMap);
 
       message.success('地图已保存');
       setIsEditing(false);
@@ -346,11 +335,7 @@ export const MapEditor: React.FC = () => {
         <div>
           <Alert
             message="警告：此操作不可恢复！"
-            description={
-              mapData.localOnly
-                ? '该地图仅存在于本地缓存，删除后将无法恢复。'
-                : '该地图将从本地缓存和ROS后端同时删除，删除后将无法恢复。'
-            }
+            description="该地图将从 ROS 后端删除，删除后将无法恢复。"
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
@@ -393,22 +378,13 @@ export const MapEditor: React.FC = () => {
                 <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
                   {mapData.name}
                 </div>
-                {mapData.localOnly && (
-                  <Tag color="orange" style={{ margin: 0 }}>仅本地</Tag>
-                )}
               </div>
 
               <div style={{ fontSize: 13, color: '#666', lineHeight: '22px' }}>
                 <div>创建时间：{dayjs(mapData.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
                 <div>地图尺寸：{mapData.width} × {mapData.height} 像素</div>
                 <div>分辨率：{mapData.resolution.toFixed(3)} m/px</div>
-                <div>存储位置：
-                  {mapData.localOnly ? (
-                    <span style={{ color: '#fa8c16' }}> 仅本地缓存</span>
-                  ) : (
-                    <span style={{ color: '#52c41a' }}> 本地缓存 + ROS后端</span>
-                  )}
-                </div>
+                <div>存储位置：<span style={{ color: '#52c41a' }}> ROS后端</span></div>
               </div>
             </div>
           </div>

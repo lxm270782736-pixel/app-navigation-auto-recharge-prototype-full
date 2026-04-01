@@ -185,20 +185,15 @@ class MetaBridgeMixin:
 
         For localization: uses get_status().is_running (not require_active protected,
         but is_running reliably reflects whether on_activate() has been called).
-        For navigation: uses get_navigation_status() which is require_active protected.
+        For navigation: also uses get_status().is_running for consistency.
         """
         if proxy is None:
             return META_DISCONNECTED
         try:
-            if name == "localization":
-                status = proxy.get_status()
-                is_active = status.get("is_running", False)
-                logger.info("[meta] probe localization: is_running=%s", is_active)
-                return META_ACTIVE if is_active else META_CONNECTED
-            else:
-                proxy.get_navigation_status()
-                logger.info("[meta] probe navigation → active")
-                return META_ACTIVE
+            status = proxy.get_status()
+            is_active = status.get("is_running", False)
+            logger.info("[meta] probe %s: is_running=%s", name, is_active)
+            return META_ACTIVE if is_active else META_CONNECTED
         except Exception as e:
             msg = str(e)
             logger.info("[meta] probe %s → %s", name, msg)
