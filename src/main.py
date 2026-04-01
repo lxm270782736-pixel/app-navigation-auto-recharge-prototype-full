@@ -147,10 +147,7 @@ def load_map(map_name: str):
 
 @app.post("/api/maps/apply")
 def apply_map(req: MapNameRequest):
-    logger.warning("[api] apply_map request: map_name=%r", req.map_name)
-    result = logic.apply_map(req.map_name)
-    logger.warning("[api] apply_map response: %s", result)
-    return result
+    return logic.apply_map(req.map_name)
 
 
 class SaveMapRequest(BaseModel):
@@ -518,6 +515,10 @@ if _UI_DIR.exists():
     # SPA catch-all: non-API routes serve index.html
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
+        # Return 404 JSON for unknown API paths instead of silently serving HTML
+        if path.startswith("api/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": f"API not found: /{path}"}, status_code=404)
         # Guard against path traversal (e.g. GET /../../etc/passwd)
         ui_root = _UI_DIR.resolve()
         resolved = (ui_root / path).resolve()

@@ -19,8 +19,6 @@ class MapManagerMixin:
 
     def apply_map(self, map_name: str) -> dict:
         # apply_map reloads map data — needs a longer timeout than the default 5 s
-        logger.warning("[map] apply_map called: map_name=%r (type=%s)", map_name, type(map_name).__name__)
-
         if not isinstance(map_name, str):
             return {"success": False, "message": f"Invalid map_name type: {type(map_name)}"}
 
@@ -28,6 +26,7 @@ class MapManagerMixin:
         if not map_name_clean:
             return {"success": False, "message": "Empty map name"}
 
+        logger.warning("[map] apply_map: %r", map_name_clean)
         result = self._loc_call_timeout("apply_map", 60.0, map_name_clean)
         logger.warning("[map] apply_map result: %s", result)
         if result.get("success"):
@@ -42,9 +41,14 @@ class MapManagerMixin:
         result = self._loc_call("load_map", map_name)
         if not result.get("success"):
             return result
+        # map_data is a ROS OccupancyGrid object returned by astribot_link
         og = result.get("map_data")
         if og is None:
             return {"success": False, "message": "No map_data in response"}
+        if isinstance(og, dict):
+            # astribot_link unexpectedly returned a dict instead of OccupancyGrid
+            logger.error("[map] load_map: map_data is dict, expected OccupancyGrid: %s", og)
+            return {"success": False, "message": "map_data has unexpected type (dict)"}
         try:
             info = og.info
             origin = info.origin
@@ -62,7 +66,11 @@ class MapManagerMixin:
                 "data": list(og.data),
                 "zones_json": result.get("zones_json", ""),
             }
+        except AttributeError as e:
+            logger.error("[map] load_map: OccupancyGrid attribute missing: %s", e)
+            return {"success": False, "message": f"Failed to read OccupancyGrid fields: {e}"}
         except Exception as e:
+            logger.error("[map] load_map: serialization failed: %s", e)
             return {"success": False, "message": f"Failed to serialize map: {e}"}
 
     def delete_map(self, map_name: str) -> dict:
