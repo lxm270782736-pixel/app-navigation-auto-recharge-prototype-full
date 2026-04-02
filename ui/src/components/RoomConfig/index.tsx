@@ -14,9 +14,9 @@ import {
   SaveOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, RoomConfig as RoomConfigType, RoomPatrolConfig } from '@/types';
 
@@ -29,7 +29,7 @@ const WAYPOINT_TYPES = [
 
 export const RoomConfig: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
 
   const [config, setConfig] = useState<RoomPatrolConfig | null>(null);
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
@@ -51,7 +51,7 @@ export const RoomConfig: React.FC = () => {
   const loadConfig = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
-      const data = await rosService.getRoomConfig();
+      const data = await apiService.getRoomConfig();
       setConfig(data);
     } catch (e) {
       console.warn('Failed to load room config:', e);
@@ -65,9 +65,9 @@ export const RoomConfig: React.FC = () => {
   // 订阅机器人位置
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/loc_high_freq',
-      ROS2_MESSAGE_TYPES.ODOMETRY,
+      MESSAGE_TYPES.ODOMETRY,
       (msg) => {
         const pos = msg.pose.pose.position;
         const ori = msg.pose.pose.orientation;
@@ -84,14 +84,14 @@ export const RoomConfig: React.FC = () => {
   // 订阅地图
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
-    const unsubscribe = rosService.subscribeMap((mapData) => {
+    const unsubscribe = apiService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
     });
     // 主动加载当前地图，不等 /map 话题推送
-    rosService.getCurrentMapName().then(async (name) => {
+    apiService.getCurrentMapName().then(async (name) => {
       if (name) {
         try {
-          const mapData = await rosService.loadMapFromROS(name);
+          const mapData = await apiService.loadMap(name);
           if (mapData) setCurrentMap(mapData);
         } catch (e) {
           console.warn('[房间配置] 加载地图失败:', e);
@@ -107,7 +107,7 @@ export const RoomConfig: React.FC = () => {
       message.error('请输入房间号');
       return;
     }
-    const result = await rosService.addRoom(
+    const result = await apiService.addRoom(
       newRoomId.trim(),
       newRoomName.trim() || `${newRoomId.trim()}室`,
     );
@@ -128,7 +128,7 @@ export const RoomConfig: React.FC = () => {
       title: `删除房间 ${roomId}？`,
       content: '删除后该房间的所有点位数据将丢失',
       onOk: async () => {
-        const result = await rosService.deleteRoom(roomId);
+        const result = await apiService.deleteRoom(roomId);
         if (result.success) {
           message.success(`已删除房间 ${roomId}`);
           loadConfig();
@@ -147,7 +147,7 @@ export const RoomConfig: React.FC = () => {
     }
     setLoading(true);
     try {
-      const result = await rosService.recordRoomWaypoint(roomId, waypointType);
+      const result = await apiService.recordRoomWaypoint(roomId, waypointType);
       if (result.success) {
         const p = result.pose;
         message.success(`已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
@@ -168,7 +168,7 @@ export const RoomConfig: React.FC = () => {
     }
     setLoading(true);
     try {
-      const result = await rosService.recordStartPosition();
+      const result = await apiService.recordStartPosition();
       if (result.success) {
         const p = result.pose;
         message.success(`起始点位已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
@@ -207,7 +207,7 @@ export const RoomConfig: React.FC = () => {
       );
     }
 
-    const result = await rosService.saveRoomConfig(updated);
+    const result = await apiService.saveRoomConfig(updated);
     if (result.success) {
       message.success(`${editTarget.label} 已更新`);
       setEditModalVisible(false);
@@ -277,7 +277,7 @@ export const RoomConfig: React.FC = () => {
             />
           ) : (
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-              {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 ROS'}
+              {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
             </div>
           )}
 

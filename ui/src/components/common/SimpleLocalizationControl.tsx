@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useROS } from '@/contexts/ROSContext';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus, Pose } from '@/types';
 import { Card, Button, Space, message, Modal, Tag, Descriptions, Radio } from 'antd';
 import {
@@ -8,8 +8,8 @@ import {
   CloseCircleOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
 
 interface SimpleLocalizationControlProps {
   onModeChange?: (mode: string) => void;
@@ -20,7 +20,7 @@ interface SimpleLocalizationControlProps {
 type LocalizationMode = 'idle' | 'localization' | 'localization_auto';
 
 export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({ onModeChange, onRelocalizationStart, robotPose }) => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [currentMode, setCurrentMode] = useState<LocalizationMode>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('未启动');
   const [loading, setLoading] = useState<string | null>(null);
@@ -39,9 +39,9 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<{ data: number }>(
+    const unsubscribe = apiService.subscribeTopic<{ data: number }>(
       '/localization/mode',
-      ROS2_MESSAGE_TYPES.INT32,
+      MESSAGE_TYPES.INT32,
       (msg) => {
         const modeValue = msg.data;
         console.debug('[定位控制] 收到后端模式状态:', modeValue);
@@ -103,7 +103,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
 
       // 3. 调用 startLocalization 服务（会阻塞等待 /initialpose 话题）
       // 这个调用会等待用户在地图上点击并发布 /initialpose 后，后端完成重定位才返回
-      const result = await rosService.startLocalization();
+      const result = await apiService.startLocalization();
 
       console.log('[重定位] 服务返回结果:', result);
 
@@ -145,7 +145,7 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     }, 2000);
 
     try {
-      const result = await rosService.startLocalizationAuto();
+      const result = await apiService.startLocalizationAuto();
 
       // 服务返回后，根据结果显示成功/失败Modal
       if (result.success) {

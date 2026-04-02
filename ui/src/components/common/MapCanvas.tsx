@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 
 // ========== 坐标转换工具函数（模块级别，供 SVG 组件使用） ==========
@@ -394,7 +394,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
 
   // 缩放和平移状态
   const [scale, setScale] = useState(1);
@@ -448,9 +448,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // 订阅机器人位姿（当 showRobotPose 为 true 时）
   useEffect(() => {
     if (!showRobotPose || connectionStatus !== ConnectionStatus.CONNECTED) return;
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/loc_high_freq',
-      ROS2_MESSAGE_TYPES.ODOMETRY,
+      MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;

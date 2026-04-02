@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Tabs, Tag } from 'antd';
 import { ArrowLeftOutlined, EnvironmentOutlined, ToolOutlined, SendOutlined, HistoryOutlined } from '@ant-design/icons';
-import { useROS } from '@/contexts/ROSContext';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import { WaypointRecordTab } from './WaypointRecordTab';
 import { TaskConfigTab } from './TaskConfigTab';
@@ -11,7 +11,7 @@ import { HistoryTab } from './HistoryTab';
 
 export const RoomPatrol: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [activeTab, setActiveTab] = useState('waypoints');
 
   return (

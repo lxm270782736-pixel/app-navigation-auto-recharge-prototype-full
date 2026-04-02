@@ -2,12 +2,12 @@
  * Navigation App — standard App component entry point.
  *
  * Follows the standard AppComponentProps interface required by app-shell.
- * ROS connection is managed internally via ROSProvider + useApp() hook.
+ * Connection is managed internally via RobotProvider + useApp() hook.
  */
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { ROSProvider } from '@/contexts/ROSContext';
+import { RobotProvider } from '@/contexts/RobotContext';
 import { Dashboard } from '@/components/Dashboard';
 import { MapManager } from '@/components/MapManager';
 import { MapEditor } from '@/components/MapEditor';
@@ -51,7 +51,7 @@ function AppContent() {
 export default function NavigationApp({ appId: _appId, onExit: _onExit }: AppComponentProps) {
   return (
     <ConfigProvider locale={zhCN}>
-      <ROSProvider autoConnect={true}>
+      <RobotProvider autoConnect={true}>
         <BrowserRouter
           future={{
             v7_startTransition: true,
@@ -60,7 +60,7 @@ export default function NavigationApp({ appId: _appId, onExit: _onExit }: AppCom
         >
           <AppContent />
         </BrowserRouter>
-      </ROSProvider>
+      </RobotProvider>
     </ConfigProvider>
   );
 }

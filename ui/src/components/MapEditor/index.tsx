@@ -14,9 +14,9 @@ import {
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
-import { rosService } from '@/services/ros';
+import { apiService } from '@/services/api';
 import { mapStorageService } from '@/services/storage';
-import { useROS } from '@/contexts/ROSContext';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
 import dayjs from 'dayjs';
@@ -39,7 +39,7 @@ export const MapEditor: React.FC = () => {
   const { mapId } = useParams<{ mapId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
 
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [mapName, setMapName] = useState('');
@@ -82,17 +82,17 @@ export const MapEditor: React.FC = () => {
         return;
       }
 
-      // 如果没有传递数据，或者数据不匹配，则从 ROS 加载
+      // 如果没有传递数据，或者数据不匹配，则从后端加载
       if (connectionStatus !== ConnectionStatus.CONNECTED) {
-        message.warning('请先连接 ROS');
+        message.warning('请先连接 后端');
         navigate('/maps');
         return;
       }
 
       try {
-        console.log('[地图编辑器] 从 ROS 加载地图数据');
-        // 从 ROS 加载地图数据
-        const map = await rosService.loadMapFromROS(mapId);
+        console.log('[地图编辑器] 从后端加载地图数据');
+        // 从后端加载地图数据
+        const map = await apiService.loadMap(mapId);
         if (!map) {
           message.error('地图不存在');
           navigate('/maps');
@@ -274,7 +274,7 @@ export const MapEditor: React.FC = () => {
     }
 
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
 
@@ -291,8 +291,8 @@ export const MapEditor: React.FC = () => {
         name: sanitizedName,
       };
 
-      // 保存到 ROS 服务
-      await rosService.saveMapToROS(updatedMap);
+      // 保存到后端
+      await apiService.saveMap(updatedMap);
 
       message.success('地图已保存');
       setIsEditing(false);
@@ -411,15 +411,15 @@ export const MapEditor: React.FC = () => {
             console.error('[地图删除] 本地缓存删除失败:', error);
           }
 
-          // 2. 尝试删除ROS后端（如果已连接）
+          // 2. 尝试删除后端（如果已连接）
           if (connectionStatus === ConnectionStatus.CONNECTED) {
             try {
-              await rosService.deleteMapFromROS(mapData.id);
+              await apiService.deleteMap(mapData.id);
               rosDeleteSuccess = true;
-              console.log('[地图删除] ROS后端已删除');
+              console.log('[地图删除] 后端已删除');
             } catch (error) {
-              console.error('[地图删除] ROS后端删除失败:', error);
-              // ROS删除失败不阻止本地删除
+              console.error('[地图删除] 后端删除失败:', error);
+              // 后端删除失败不阻止本地删除
             }
           }
 

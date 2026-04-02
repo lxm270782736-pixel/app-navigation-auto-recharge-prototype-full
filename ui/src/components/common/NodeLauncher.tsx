@@ -8,9 +8,9 @@ import {
   ThunderboltOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 
 interface NodeStatus {
@@ -22,7 +22,7 @@ interface NodeStatus {
 }
 
 export const NodeLauncher: React.FC = () => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [isLaunching, setIsLaunching] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [nodes, setNodes] = useState<NodeStatus[]>([
@@ -37,9 +37,9 @@ export const NodeLauncher: React.FC = () => {
     }
 
     // 订阅SLAM状态
-    const unsubscribeSlam = rosService.subscribeTopic<{ data: boolean }>(
+    const unsubscribeSlam = apiService.subscribeTopic<{ data: boolean }>(
       '/slam/status',
-      ROS2_MESSAGE_TYPES.BOOL,
+      MESSAGE_TYPES.BOOL,
       (msg) => {
         setNodes((prevNodes) =>
           prevNodes.map((node) =>
@@ -50,9 +50,9 @@ export const NodeLauncher: React.FC = () => {
     );
 
     // 订阅导航状态
-    const unsubscribeNav = rosService.subscribeTopic<{ data: boolean }>(
+    const unsubscribeNav = apiService.subscribeTopic<{ data: boolean }>(
       '/navigation/status',
-      ROS2_MESSAGE_TYPES.BOOL,
+      MESSAGE_TYPES.BOOL,
       (msg) => {
         setNodes((prevNodes) =>
           prevNodes.map((node) =>
@@ -86,9 +86,9 @@ export const NodeLauncher: React.FC = () => {
         navigation: '/system/start_navigation_node',
       };
 
-      const result = await rosService.callService<{}, { success: boolean; message: string }>(
+      const result = await apiService.callService<{}, { success: boolean; message: string }>(
         serviceMap[nodeName],
-        ROS2_MESSAGE_TYPES.TRIGGER,
+        MESSAGE_TYPES.TRIGGER,
         {}
       );
 
@@ -123,9 +123,9 @@ export const NodeLauncher: React.FC = () => {
       // 1. 启动SLAM节点
       updateNodeStatus('slam', 'launching');
       try {
-        const slamResult = await rosService.callService<{}, { success: boolean; message: string }>(
+        const slamResult = await apiService.callService<{}, { success: boolean; message: string }>(
           '/system/start_slam_node',
-          ROS2_MESSAGE_TYPES.TRIGGER,
+          MESSAGE_TYPES.TRIGGER,
           {}
         );
 
@@ -144,9 +144,9 @@ export const NodeLauncher: React.FC = () => {
       // 2. 启动导航节点
       updateNodeStatus('navigation', 'launching');
       try {
-        const navResult = await rosService.callService<{}, { success: boolean; message: string }>(
+        const navResult = await apiService.callService<{}, { success: boolean; message: string }>(
           '/system/start_navigation_node',
-          ROS2_MESSAGE_TYPES.TRIGGER,
+          MESSAGE_TYPES.TRIGGER,
           {}
         );
 
@@ -264,7 +264,7 @@ export const NodeLauncher: React.FC = () => {
 
           {connectionStatus !== ConnectionStatus.CONNECTED && (
             <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', textAlign: 'center' }}>
-              ⚠️ 请先连接ROS Bridge
+              ⚠️ 请先连接后端服务
             </div>
           )}
 

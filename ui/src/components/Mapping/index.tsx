@@ -11,17 +11,17 @@ import {
   RadarChartOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { mapStorageService } from '@/services/storage';
-import { useROS } from '@/contexts/ROSContext';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, LaserScan } from '@/types';
 import { MapCanvas } from '@/components/common/MapCanvas';
 
 export const Mapping: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [isMapping, setIsMapping] = useState(false);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [mapName, setMapName] = useState('');
@@ -58,7 +58,7 @@ export const Mapping: React.FC = () => {
   useEffect(() => {
     return () => {
       if (isMapping) {
-        rosService.stopMapping().catch(console.error);
+        apiService.stopMapping().catch(console.error);
       }
     };
   }, [isMapping]);
@@ -69,9 +69,9 @@ export const Mapping: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/map',
-      ROS2_MESSAGE_TYPES.OCCUPANCY_GRID,
+      MESSAGE_TYPES.OCCUPANCY_GRID,
       (mapMsg) => {
         setCurrentMapData({
           width: mapMsg.info.width,
@@ -109,9 +109,9 @@ export const Mapping: React.FC = () => {
     // 如果2秒内没有收到数据，再显示警告
     setHasLaserData(true);
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/scan',
-      ROS2_MESSAGE_TYPES.LASER_SCAN,
+      MESSAGE_TYPES.LASER_SCAN,
       (scanMsg) => {
         // 接收到雷达数据
         setHasLaserData(true);
@@ -157,7 +157,7 @@ export const Mapping: React.FC = () => {
 
   const startMapping = async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
 
@@ -169,7 +169,7 @@ export const Mapping: React.FC = () => {
 
       // 获取已存在的地图列表（如果失败不影响建图流程）
       try {
-        const maps = await rosService.getAllMapMetadata();
+        const maps = await apiService.getAllMapMetadata();
         setExistingMaps(maps.map(m => m.name));
       } catch (error) {
         console.warn('获取地图列表失败，将使用空列表继续:', error);
@@ -209,7 +209,7 @@ export const Mapping: React.FC = () => {
             // 先删除旧地图
             message.loading({ content: `正在删除旧地图 "${sanitizedName}"...`, key: 'deleteMap', duration: 0 });
 
-            await rosService.deleteMapFromROS(sanitizedName);
+            await apiService.deleteMap(sanitizedName);
 
             // 同时从本地缓存删除
             mapStorageService.deleteMapFromLocalCache(sanitizedName);
@@ -243,8 +243,8 @@ export const Mapping: React.FC = () => {
     try {
       message.loading({ content: '正在设置地图名称...', key: 'setMapName', duration: 0 });
 
-      // 调用 ROS 服务设置地图名称
-      await rosService.setMapName(finalMapName);
+      // 调用后端接口设置地图名称
+      await apiService.setMapName(finalMapName);
 
       // 记住这个地图名称供后续使用
       setPendingMapName(finalMapName);
@@ -280,7 +280,7 @@ export const Mapping: React.FC = () => {
         setMappingStepStatus(['finish', 'wait']);
         message.info('已跳过启动遥控器');
       } else {
-        const joystickResult = await rosService.startJoystick();
+        const joystickResult = await apiService.startJoystick();
         if (!joystickResult.success) {
           setMappingStepStatus(['error', 'wait']);
           message.error(joystickResult.message || '启动遥控器失败');
@@ -304,7 +304,7 @@ export const Mapping: React.FC = () => {
         setIsMapping(true);
         message.info('已跳过进入建图模式');
       } else {
-        const mappingResult = await rosService.startMapping();
+        const mappingResult = await apiService.startMapping();
         if (!mappingResult.success) {
           setMappingStepStatus(['finish', 'error']);
           message.error(mappingResult.message || '启动建图模式失败');
@@ -334,7 +334,7 @@ export const Mapping: React.FC = () => {
     try {
       // 步骤 1: 停止建图节点（如果启动时跳过了，则停止时也跳过）
       if (!skipMappingNode) {
-        const stopResult = await rosService.stopLocalization();
+        const stopResult = await apiService.stopLocalization();
         if (!stopResult.success) {
           // 停止建图失败
           setSavingModalVisible(false);
@@ -348,7 +348,7 @@ export const Mapping: React.FC = () => {
 
       // 步骤 2: 停止遥控器（如果启动时跳过了，则停止时也跳过）
       if (!skipJoystick) {
-        const joystickResult = await rosService.stopJoystick();
+        const joystickResult = await apiService.stopJoystick();
         if (!joystickResult.success) {
           // 遥控器停止失败不影响整体流程，只是警告
           console.warn('[建图] 停止遥控器失败:', joystickResult.message);
@@ -362,8 +362,8 @@ export const Mapping: React.FC = () => {
       // 从ROS同步地图到本地缓存
       if (pendingMapName) {
         try {
-          // 从ROS同步地图到本地缓存
-          await syncMapFromROS();
+          // 从后端同步地图
+          await syncMapFromBackend();
 
           // 关闭保存中弹窗，显示建图成功弹窗
           setSavingModalVisible(false);
@@ -428,8 +428,8 @@ export const Mapping: React.FC = () => {
         data: currentMapData.data,
       };
 
-      // 保存到 ROS 服务
-      await rosService.saveMapToROS(mapData);
+      // 保存到后端
+      await apiService.saveMap(mapData);
 
       // 同时保存到本地缓存
       mapStorageService.saveMapToLocalCache(mapData);
@@ -444,8 +444,8 @@ export const Mapping: React.FC = () => {
     }
   };
 
-  // 从ROS同步地图到本地缓存
-  const syncMapFromROS = async () => {
+  // 从后端同步地图
+  const syncMapFromBackend = async () => {
     // 如果没有设置过地图名称，直接返回
     if (!pendingMapName) {
       console.log('[建图] 没有待加载的地图名称');
@@ -454,7 +454,7 @@ export const Mapping: React.FC = () => {
 
     try {
       // 加载完整的地图数据
-      const mapData = await rosService.loadMapFromROS(pendingMapName);
+      const mapData = await apiService.loadMap(pendingMapName);
 
       // 保存到本地缓存
       mapStorageService.saveMapToLocalCache(mapData);
@@ -633,10 +633,10 @@ export const Mapping: React.FC = () => {
             {connectionStatus !== ConnectionStatus.CONNECTED ? (
               <>
                 <p style={{ fontSize: '16px', color: '#999' }}>
-                  等待 ROS 连接...
+                  等待后端连接...
                 </p>
                 <p style={{ color: '#999' }}>
-                  请确保 ROS 主节点正在运行
+                  请确保后端服务正在运行
                 </p>
               </>
             ) : !isMapping ? (
@@ -972,9 +972,9 @@ export const Mapping: React.FC = () => {
           <div style={{ fontSize: 13, color: '#666' }}>
             <div style={{ marginBottom: 8 }}>💡 建议操作：</div>
             <ul style={{ paddingLeft: 20, margin: 0 }}>
-              <li>检查 ROS 服务是否正常运行</li>
+              <li>检查后端服务是否正常运行</li>
               <li>确认磁盘空间是否充足</li>
-              <li>查看 ROS 日志了解详细错误信息</li>
+              <li>查看后端日志了解详细错误信息</li>
               <li>点击"重新建图"重试</li>
             </ul>
           </div>
@@ -1023,9 +1023,9 @@ export const Mapping: React.FC = () => {
                 onClick={async () => {
                   try {
                     // 加载地图数据
-                    const mapData = await rosService.loadMapFromROS(pendingMapName);
+                    const mapData = await apiService.loadMap(pendingMapName);
                     // 应用地图
-                    await rosService.setCurrentMap(mapData);
+                    await apiService.setCurrentMap(mapData);
                     message.success('地图已应用');
                     setSuccessModalVisible(false);
                     // 跳转到导航界面

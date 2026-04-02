@@ -184,7 +184,7 @@
 
         async function callService(serviceName, args = {}, serviceType = 'std_srvs/Trigger') {
             if (!connected) {
-                log('请先连接 ROS', 'error');
+                log('请先连接 后端', 'error');
                 return;
             }
 
@@ -218,7 +218,7 @@
 
         async function listMaps() {
             if (!connected) {
-                log('请先连接 ROS', 'error');
+                log('请先连接 后端', 'error');
                 return;
             }
 

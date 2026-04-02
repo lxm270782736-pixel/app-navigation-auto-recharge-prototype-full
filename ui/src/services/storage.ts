@@ -443,19 +443,19 @@ class MapStorageService {
       // 获取本地缓存的地图
       const localMaps = this.getAllMapsFromLocalCache();
 
-      // 尝试从 ROS 获取地图列表
-      let rosMaps: MapData[] = [];
+      // 尝试从后端获取地图列表
+      let backendMaps: MapData[] = [];
       try {
-        const { rosService } = await import('./ros');
-        rosMaps = await rosService.getAllMapMetadata();
+        const { apiService } = await import('./api');
+        backendMaps = await apiService.getAllMapMetadata();
       } catch (error) {
-        console.warn('无法从 ROS 获取地图列表，仅使用本地缓存:', error);
+        console.warn('无法从后端获取地图列表，仅使用本地缓存:', error);
       }
 
-      // 合并本地和 ROS 的地图列表
+      // 合并本地和后端的地图列表
       const allMapNames = new Set<string>([
         ...localMaps.map(m => m.name),
-        ...rosMaps.map(m => m.name),
+        ...backendMaps.map(m => m.name),
       ]);
 
       // 找出所有 untitled_map_ 开头的地图名称

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Button, Input, Select, InputNumber, Switch, Space, Card, message, Empty, Popconfirm } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
+import { apiService } from '@/services/api';
 import type { CustomStepDefinition, CustomStepParamDef, CustomStepAction } from '@/types';
 
 const { TextArea } = Input;
@@ -40,7 +40,7 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
 
   const load = useCallback(async () => {
     try {
-      const data = await rosService.getCustomStepTypes();
+      const data = await apiService.getCustomStepTypes();
       setDefinitions(data.custom_step_types || []);
     } catch { /* ignore */ }
   }, []);
@@ -61,7 +61,7 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
   };
 
   const handleDelete = async (id: string) => {
-    const result = await rosService.deleteCustomStepType(id);
+    const result = await apiService.deleteCustomStepType(id);
     if (result.success) {
       message.success('已删除');
       load();
@@ -86,13 +86,13 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
     }
 
     const def = { ...editing };
-    if (def.action.type === 'ros_service') {
+    if (def.action.type === 'service') {
       def.action = { ...def.action, request: parsedJson };
-    } else if (def.action.type === 'ros_topic') {
+    } else if (def.action.type === 'topic') {
       def.action = { ...def.action, message: parsedJson };
     }
 
-    const result = await rosService.saveCustomStepType(def);
+    const result = await apiService.saveCustomStepType(def);
     if (result.success) {
       message.success('已保存');
       load();
@@ -234,7 +234,7 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
                 />
               </div>
 
-              {editing.action.type === 'ros_service' && (
+              {editing.action.type === 'service' && (
                 <>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <div style={{ flex: 1 }}>
@@ -253,7 +253,7 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
                 </>
               )}
 
-              {editing.action.type === 'ros_topic' && (
+              {editing.action.type === 'topic' && (
                 <>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <div style={{ flex: 1 }}>

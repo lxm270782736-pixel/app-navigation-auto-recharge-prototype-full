@@ -10,8 +10,8 @@ import {
   ReloadOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
 import dayjs from 'dayjs';
@@ -21,7 +21,7 @@ const CURRENT_MAP_KEY = 'astribot_current_map_id';
 
 export const MapManager: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [maps, setMaps] = useState<MapData[]>([]);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedMap, setSelectedMap] = useState<MapData | null>(null);
@@ -88,14 +88,14 @@ export const MapManager: React.FC = () => {
 
   const loadMaps = async (forceRefresh: boolean = false) => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
     try {
       setLoading(true);
       if (forceRefresh) {
         try {
-          const currentMapName = await rosService.getCurrentMapName();
+          const currentMapName = await apiService.getCurrentMapName();
           if (currentMapName) {
             setCurrentMapId(currentMapName);
             localStorage.setItem(CURRENT_MAP_KEY, currentMapName);
@@ -107,7 +107,7 @@ export const MapManager: React.FC = () => {
           console.error('[地图管理] 获取当前地图失败:', error);
         }
       }
-      const rosMaps = await rosService.getAllMapMetadata();
+      const rosMaps = await apiService.getAllMapMetadata();
       setMaps(sortMaps(rosMaps));
       loadFullMapData(rosMaps);
     } catch (error) {
@@ -122,7 +122,7 @@ export const MapManager: React.FC = () => {
     const validMaps = mapList.filter(map => map.id && map.name && map.id !== 'unknown_map');
     await Promise.all(validMaps.map(async (map) => {
       try {
-        const fullMapData = await rosService.loadMapFromROS(map.id);
+        const fullMapData = await apiService.loadMap(map.id);
         if (fullMapData) {
           setMaps((prevMaps) =>
             prevMaps.map((m) => m.id === map.id ? { ...map, ...fullMapData, thumbnail: map.thumbnail } : m)
@@ -145,12 +145,12 @@ export const MapManager: React.FC = () => {
 
   const handleApplyMap = async (map: MapData) => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
     try {
       message.loading({ content: '正在应用地图...', key: 'applyMap', duration: 0 });
-      await rosService.setCurrentMap(map);
+      await apiService.setCurrentMap(map);
       setCurrentMapId(map.id);
       try { localStorage.setItem(CURRENT_MAP_KEY, map.id); } catch { /* ignore */ }
       message.success({ content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`, key: 'applyMap', duration: 3 });
@@ -167,7 +167,7 @@ export const MapManager: React.FC = () => {
   const confirmDelete = async () => {
     if (!selectedMap) return;
     try {
-      await rosService.deleteMapFromROS(selectedMap.id);
+      await apiService.deleteMap(selectedMap.id);
       if (selectedMap.id === currentMapId) {
         setCurrentMapId(null);
         try { localStorage.removeItem(CURRENT_MAP_KEY); } catch { /* ignore */ }
@@ -219,7 +219,7 @@ export const MapManager: React.FC = () => {
           borderRadius: '4px',
           marginBottom: '16px',
         }}>
-          ⚠️ 请先连接 ROS 以加载地图列表
+          ⚠️ 请先连接 后端 以加载地图列表
         </div>
       )}
 

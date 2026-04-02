@@ -29,8 +29,8 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { rosService } from '@/services/ros';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { RoomConfig, RoomTaskStep, TaskPreset } from '@/types';
 import type { CustomStepDefinition } from '@/types';
@@ -209,7 +209,7 @@ const SortableStepItem: React.FC<{
 };
 
 export const TaskConfigTab: React.FC = () => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [presets, setPresets] = useState<TaskPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
@@ -250,9 +250,9 @@ export const TaskConfigTab: React.FC = () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
       const [roomData, presetsData, customData] = await Promise.all([
-        rosService.getRoomConfig(),
-        rosService.getTaskPresets().catch(() => ({ presets: [] })),
-        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
+        apiService.getRoomConfig(),
+        apiService.getTaskPresets().catch(() => ({ presets: [] })),
+        apiService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
       const rooms = (roomData.rooms || []) as RoomConfig[];
       setRoomConfigs(rooms);
@@ -350,7 +350,7 @@ export const TaskConfigTab: React.FC = () => {
   // Save current editing preset to backend
   const handleSave = async () => {
     if (!editingPreset) return;
-    const result = await rosService.saveTaskPreset(editingPreset);
+    const result = await apiService.saveTaskPreset(editingPreset);
     if (result.success) {
       message.success('已保存');
       setIsDirty(false);
@@ -373,7 +373,7 @@ export const TaskConfigTab: React.FC = () => {
       })),
       retry_limit: 3,
     };
-    const result = await rosService.saveTaskPreset(preset);
+    const result = await apiService.saveTaskPreset(preset);
     if (result.success) {
       message.success('已创建');
       setNewPresetModal(false);
@@ -387,7 +387,7 @@ export const TaskConfigTab: React.FC = () => {
 
   const handleDuplicate = async (presetId: string) => {
     const source = presets.find(p => p.id === presetId);
-    const result = await rosService.duplicateTaskPreset(presetId, `${source?.name || '任务'} 副本`);
+    const result = await apiService.duplicateTaskPreset(presetId, `${source?.name || '任务'} 副本`);
     if (result.success) {
       message.success('已复制');
       await loadData();
@@ -398,7 +398,7 @@ export const TaskConfigTab: React.FC = () => {
   };
 
   const handleDeletePreset = async (presetId: string) => {
-    const result = await rosService.deleteTaskPreset(presetId);
+    const result = await apiService.deleteTaskPreset(presetId);
     if (result.success) {
       message.success('已删除');
       if (selectedPresetId === presetId) setSelectedPresetId('');
@@ -409,7 +409,7 @@ export const TaskConfigTab: React.FC = () => {
   };
 
   const handleSetDefault = async (presetId: string) => {
-    const result = await rosService.setDefaultPreset(presetId);
+    const result = await apiService.setDefaultPreset(presetId);
     if (result.success) {
       message.success('已设为默认');
       loadData();
@@ -496,7 +496,7 @@ export const TaskConfigTab: React.FC = () => {
                     if (!renameValue.trim()) return;
                     const target = presets.find(x => x.id === p.id);
                     if (target) {
-                      await rosService.saveTaskPreset({ ...target, name: renameValue.trim() });
+                      await apiService.saveTaskPreset({ ...target, name: renameValue.trim() });
                       loadData();
                     }
                     setRenamingId(null);

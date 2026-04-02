@@ -14,9 +14,9 @@ import { WaypointControl } from '@/components/common/WaypointControl';
 import { WaypointConfigModal } from '@/components/common/WaypointConfigModal';
 import { ChassisControl } from '@/components/common/ChassisControl';
 import { DockControl } from '@/components/common/DockControl';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, Waypoint, PathPoint } from '@/types';
 import dayjs from 'dayjs';
@@ -35,7 +35,7 @@ interface PatrolState {
 
 export const Navigation: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
 
   // 导航规划路径
   const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
@@ -121,8 +121,8 @@ export const Navigation: React.FC = () => {
         // 巡航不活跃且状态为idle，不影响单点导航的isNavigating
       }
     };
-    rosService.on('patrol-state', handlePatrolState);
-    return () => rosService.off('patrol-state', handlePatrolState);
+    apiService.on('patrol-state', handlePatrolState);
+    return () => apiService.off('patrol-state', handlePatrolState);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waypointMode]);
 
@@ -136,18 +136,18 @@ export const Navigation: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeMap((mapData) => {
+    const unsubscribe = apiService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
       setIsMapRealtime(true);
     });
 
     // 获取当前地图名称，并主动加载地图数据
-    rosService.getCurrentMapName().then(async (name) => {
+    apiService.getCurrentMapName().then(async (name) => {
       if (name) {
         setCurrentMapName(name);
         if (!currentMap) {
           try {
-            const mapData = await rosService.loadMapFromROS(name);
+            const mapData = await apiService.loadMap(name);
             if (mapData) {
               setCurrentMap(mapData);
               setIsMapRealtime(false);
@@ -194,9 +194,9 @@ export const Navigation: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/loc_high_freq',
-      ROS2_MESSAGE_TYPES.ODOMETRY,
+      MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
@@ -227,9 +227,9 @@ export const Navigation: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/visualizer/mincoPath',
-      ROS2_MESSAGE_TYPES.PATH,
+      MESSAGE_TYPES.PATH,
       (pathMsg) => {
         const points: PathPoint[] = pathMsg.poses.map((ps: any) => ({
           x: ps.pose.position.x,
@@ -288,28 +288,28 @@ export const Navigation: React.FC = () => {
       setNavigationStatus(data.text);
     };
 
-    rosService.on('navigation-result', handleNavigationResult);
-    rosService.on('navigation-feedback', handleNavigationFeedback);
-    rosService.on('navigation-status', handleNavigationStatus);
+    apiService.on('navigation-result', handleNavigationResult);
+    apiService.on('navigation-feedback', handleNavigationFeedback);
+    apiService.on('navigation-status', handleNavigationStatus);
 
     return () => {
-      rosService.off('navigation-result', handleNavigationResult);
-      rosService.off('navigation-feedback', handleNavigationFeedback);
-      rosService.off('navigation-status', handleNavigationStatus);
+      apiService.off('navigation-result', handleNavigationResult);
+      apiService.off('navigation-feedback', handleNavigationFeedback);
+      apiService.off('navigation-status', handleNavigationStatus);
     };
   }, [isPatrolActive]);
 
-  // 加载可用地图列表（只从ROS后端加载）
+  // 加载可用地图列表（只从后端加载）
   const loadAvailableMaps = async () => {
     setLoadingMaps(true);
     try {
-      // 只从ROS后端加载地图，不使用本地缓存
+      // 只从后端加载地图，不使用本地缓存
       if (connectionStatus === ConnectionStatus.CONNECTED) {
-        const rosMaps = await rosService.getAllMapMetadata();
+        const maps = await apiService.getAllMapMetadata();
         // 过滤掉本地独有的地图
-        setAvailableMaps(rosMaps);
+        setAvailableMaps(maps);
       } else {
-        message.warning('请先连接 ROS');
+        message.warning('请先连接 后端');
         setAvailableMaps([]);
       }
     } catch (error) {
@@ -329,7 +329,7 @@ export const Navigation: React.FC = () => {
   // 应用选中的地图
   const handleApplyMap = async (map: MapData) => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
 
@@ -337,10 +337,10 @@ export const Navigation: React.FC = () => {
       message.loading({ content: '正在应用地图...', key: 'applyMap', duration: 0 });
 
       // 调用 ROS 服务，将地图设置为当前地图
-      await rosService.setCurrentMap(map);
+      await apiService.setCurrentMap(map);
 
       // 从ROS加载完整的地图数据（包含occupancy grid）
-      const fullMapData = await rosService.loadMapFromROS(map.name);
+      const fullMapData = await apiService.loadMap(map.name);
 
       // 立即设置当前地图，不等待/map话题发布
       setCurrentMap(fullMapData);
@@ -373,7 +373,7 @@ export const Navigation: React.FC = () => {
 
     if (isRelocalizationMode) {
       // 重定位模式：设置初始位置
-      rosService.setInitialPose(pose);
+      apiService.setInitialPose(pose);
       setInitialPose(pose); // 保存初始位姿以便显示标记
       message.success(`初始位置已发送，等待确认...`);
       setIsRelocalizationMode(false); // 退出重定位模式
@@ -464,7 +464,7 @@ export const Navigation: React.FC = () => {
 
   // 停止巡航（通知后端）
   const handleStopPatrol = async () => {
-    const result = await rosService.stopPatrol();
+    const result = await apiService.stopPatrol();
     if (result.success) {
       setIsNavigating(false);
       setNavigationStatus('');
@@ -481,7 +481,7 @@ export const Navigation: React.FC = () => {
       message.error('请先添加路径点');
       return;
     }
-    const result = await rosService.startPatrol(waypoints, startIndex);
+    const result = await apiService.startPatrol(waypoints, startIndex);
     if (result.success) {
       message.success(`巡航已启动，共 ${waypoints.length} 个路径点`);
     } else {
@@ -528,7 +528,7 @@ export const Navigation: React.FC = () => {
     }
 
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
+      message.warning('请先连接 后端');
       return;
     }
 
@@ -564,7 +564,7 @@ export const Navigation: React.FC = () => {
           };
 
           // 保存地图到 ROS
-          await rosService.saveMapToROS(mapToSave);
+          await apiService.saveMap(mapToSave);
 
           message.success(`地图已保存: ${mapName}`);
         } catch (error) {
@@ -598,7 +598,7 @@ export const Navigation: React.FC = () => {
             </>
           ) : (
             <div style={{ fontSize: '16px', color: '#666' }}>
-              请先连接 ROS...
+              请先连接 后端...
             </div>
           )}
         </div>
