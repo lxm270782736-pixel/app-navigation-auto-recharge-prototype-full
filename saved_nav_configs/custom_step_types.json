@@ -6,7 +6,7 @@
       "description": "通过扬声器播放语音提示",
       "icon_color": "#13c2c2",
       "action": {
-        "type": "ros_topic",
+        "type": "topic",
         "topic_name": "/speaker/play",
         "msg_type": "std_msgs/msg/String",
         "message": {
@@ -38,7 +38,7 @@
       "description": "启动UV消毒灯进行区域消毒",
       "icon_color": "#eb2f96",
       "action": {
-        "type": "ros_service",
+        "type": "service",
         "service_name": "/uv_light/control",
         "service_type": "std_srvs/srv/SetBool",
         "request": {
@@ -75,7 +75,7 @@
       "description": "读取房间温度传感器数据",
       "icon_color": "#fa8c16",
       "action": {
-        "type": "ros_service",
+        "type": "service",
         "service_name": "/sensor/temperature",
         "service_type": "std_srvs/srv/Trigger",
         "request": {}

@@ -1,30 +1,29 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { rosService } from '@/services/ros';
+import { apiService } from '@/services/api';
 import { ConnectionStatus } from '@/types';
 
-interface ROSContextType {
+interface RobotContextType {
   connectionStatus: ConnectionStatus;
-  connect: (url?: string) => Promise<void>;
+  connect: () => Promise<void>;
   disconnect: () => void;
 }
 
-const ROSContext = createContext<ROSContextType | undefined>(undefined);
+const RobotContext = createContext<RobotContextType | undefined>(undefined);
 
-export const useROS = () => {
-  const context = useContext(ROSContext);
+export const useRobot = () => {
+  const context = useContext(RobotContext);
   if (!context) {
-    throw new Error('useROS must be used within ROSProvider');
+    throw new Error('useRobot must be used within RobotProvider');
   }
   return context;
 };
 
-interface ROSProviderProps {
+interface RobotProviderProps {
   children: ReactNode;
   autoConnect?: boolean;
-  rosUrl?: string;
 }
 
-export const ROSProvider: React.FC<ROSProviderProps> = ({
+export const RobotProvider: React.FC<RobotProviderProps> = ({
   children,
   autoConnect = true,
 }) => {
@@ -37,7 +36,7 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
   const connect = async () => {
     try {
       setConnectionStatus(ConnectionStatus.CONNECTING);
-      await rosService.connect();
+      await apiService.connect();
     } catch (error) {
       console.error('Failed to connect:', error);
       setConnectionStatus(ConnectionStatus.ERROR);
@@ -46,7 +45,7 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
   };
 
   const disconnect = () => {
-    rosService.disconnect();
+    apiService.disconnect();
     setConnectionStatus(ConnectionStatus.DISCONNECTED);
   };
 
@@ -61,8 +60,8 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
       // 不降级到 ERROR — Meta 模式下 ROS Bridge 非必须
     };
 
-    rosService.on('connection', handleConnection);
-    rosService.on('error', handleError);
+    apiService.on('connection', handleConnection);
+    apiService.on('error', handleError);
 
     if (autoConnect) {
       connect().catch(() => {
@@ -72,14 +71,14 @@ export const ROSProvider: React.FC<ROSProviderProps> = ({
     }
 
     return () => {
-      rosService.off('connection', handleConnection);
-      rosService.off('error', handleError);
+      apiService.off('connection', handleConnection);
+      apiService.off('error', handleError);
     };
   }, [autoConnect]);
 
   return (
-    <ROSContext.Provider value={{ connectionStatus, connect, disconnect }}>
+    <RobotContext.Provider value={{ connectionStatus, connect, disconnect }}>
       {children}
-    </ROSContext.Provider>
+    </RobotContext.Provider>
   );
 };

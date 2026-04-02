@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, Table, Tag, Button, Empty, Space, message, Modal } from 'antd';
 import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { PatrolRecord, Alert, CustomStepDefinition } from '@/types';
 
@@ -45,7 +45,7 @@ const ALERT_STATUS: Record<string, { color: string; text: string }> = {
 };
 
 export const HistoryTab: React.FC = () => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [records, setRecords] = useState<PatrolRecord[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PatrolRecord | null>(null);
@@ -64,9 +64,9 @@ export const HistoryTab: React.FC = () => {
     setLoading(true);
     try {
       const [recordsData, alertsData, customData] = await Promise.all([
-        rosService.getPatrolRecords(),
-        rosService.getAlerts(),
-        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
+        apiService.getPatrolRecords(),
+        apiService.getAlerts(),
+        apiService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
       setRecords(Array.isArray(recordsData) ? recordsData : []);
       setAlerts(Array.isArray(alertsData) ? alertsData : []);
@@ -82,7 +82,7 @@ export const HistoryTab: React.FC = () => {
 
   const handleConfirmAlert = async (alert: Alert) => {
     const date = alert.created_at.slice(0, 10);
-    const result = await rosService.confirmAlert(date, alert.id);
+    const result = await apiService.confirmAlert(date, alert.id);
     if (result.success) {
       message.success('告警已确认');
       loadData();
@@ -93,7 +93,7 @@ export const HistoryTab: React.FC = () => {
 
   const handleCloseAlert = async (alert: Alert) => {
     const date = alert.created_at.slice(0, 10);
-    const result = await rosService.closeAlert(date, alert.id);
+    const result = await apiService.closeAlert(date, alert.id);
     if (result.success) {
       message.success('告警已关闭');
       loadData();

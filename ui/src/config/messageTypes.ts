@@ -1,15 +1,9 @@
 /**
- * ROS2 Message Type Configuration
+ * Robot Message Type Configuration
  *
- * ROS2 uses a different message type format than ROS1:
- * - Topics: 'package/msg/MessageType' (ROS1: 'package/MessageType')
- * - Services: 'package/srv/ServiceType' (ROS1: 'package/ServiceType')
- * - Actions: 'package/action/ActionType' (ROS1: 'package/ActionType')
- *
- * This file centralizes all ROS2 message type strings for easy maintenance.
+ * Message type strings used for topic subscriptions.
  */
-
-export const ROS2_MESSAGE_TYPES = {
+export const MESSAGE_TYPES = {
   // ============================================
   // Topic Message Types (package/msg/Type)
   // ============================================
@@ -85,8 +79,8 @@ export const ROS2_MESSAGE_TYPES = {
  * Helper function to get ROS2 message type
  * Can be used for dynamic type lookup
  */
-export function getROS2MessageType(key: keyof typeof ROS2_MESSAGE_TYPES): string {
-  return ROS2_MESSAGE_TYPES[key];
+export function getMessageType(key: keyof typeof MESSAGE_TYPES): string {
+  return MESSAGE_TYPES[key];
 }
 
-export default ROS2_MESSAGE_TYPES;
+export default MESSAGE_TYPES;

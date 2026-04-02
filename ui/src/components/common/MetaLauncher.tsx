@@ -5,7 +5,7 @@ import {
   PoweroffOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
+import { apiService } from '@/services/api';
 
 const STATE_LABELS: Record<string, { text: string; color: string }> = {
   disconnected: { text: '未连接', color: '#8c8c8c' },
@@ -27,14 +27,14 @@ export const MetaLauncher: React.FC = () => {
       if (state.loc_state !== undefined) setLocState(state.loc_state);
       if (state.nav_state !== undefined) setNavState(state.nav_state);
     };
-    rosService.on('state', handler);
-    return () => { rosService.off('state', handler); };
+    apiService.on('state', handler);
+    return () => { apiService.off('state', handler); };
   }, []);
 
   // 初始获取
   const loadStatus = useCallback(async () => {
     try {
-      const s = await rosService.getMetaStatus();
+      const s = await apiService.getMetaStatus();
       setLocState(s.loc_state || 'disconnected');
       setNavState(s.nav_state || 'disconnected');
     } catch { /* ignore */ }
@@ -45,7 +45,7 @@ export const MetaLauncher: React.FC = () => {
   const handleStart = async () => {
     setLoading(true);
     try {
-      const result = await rosService.startMeta();
+      const result = await apiService.startMeta();
       if (result.success) {
         message.success('Meta 服务已启动');
       } else {
@@ -62,7 +62,7 @@ export const MetaLauncher: React.FC = () => {
   const handleStop = async () => {
     setLoading(true);
     try {
-      await rosService.deactivateMeta();
+      await apiService.deactivateMeta();
       message.info('Meta 服务已停用');
       await loadStatus();
     } catch {

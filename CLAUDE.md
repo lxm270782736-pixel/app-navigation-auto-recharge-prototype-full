@@ -32,19 +32,19 @@ The project uses a Python mock server (`mock_rosbridge.py`) for development and 
 ```
 UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
            ↓
-    ROSContext (connection management via useROS hook)
+    RobotContext (connection management via useRobot hook)
            ↓
-    rosService (src/services/ros.ts - ROS communication layer)
+    apiService (src/services/api.ts - Robot communication layer)
            ↓
-    ROSLIB (WebSocket to rosbridge_server on port 9090)
+    FastAPI Backend (HTTP + SSE to meta_bridge)
          ↓
     ROS 2 Backend (SLAM, Nav2, AMCL, hardware drivers)
 ```
 
 ### Key Service Layers
 
-**ROS Communication (src/services/ros.ts)**
-- Singleton service handling all ROS interactions
+**Robot Communication (src/services/api.ts)**
+- Singleton service handling all robot interactions
 - Event-based architecture using listeners Map
 - Methods: `connect()`, `subscribeTopic()`, `publishMessage()`, `callService()`, `sendNavigationGoal()`
 - Auto-reconnect with 3-second delay on connection loss
@@ -56,8 +56,8 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
 - Endpoints: GET/POST/DELETE `/api/maps`
 - Map data includes: id, name, thumbnail (base64), dimensions, resolution, origin, occupancy grid
 
-**Context Management (src/contexts/ROSContext.tsx)**
-- Provides `useROS()` hook for components
+**Context Management (src/contexts/RobotContext.tsx)**
+- Provides `useRobot()` hook for components
 - Manages connection state: DISCONNECTED/CONNECTING/CONNECTED/ERROR
 - Auto-connects on mount if `autoConnect={true}`
 
@@ -179,7 +179,7 @@ See docs/TASK_SYSTEM.md for architectural details and docs/TASK_USAGE_GUIDE.md f
 
 ### ROS 2 Message Type Format
 - This project uses **ROS 2 Humble** (LTS) message type format
-- All message type strings are defined in `src/config/ros2MessageTypes.ts`
+- All message type strings are defined in `src/config/messageTypes.ts`
 - Format differences from ROS 1:
   - Topics: `nav_msgs/msg/OccupancyGrid` (ROS 2) vs `nav_msgs/OccupancyGrid` (ROS 1)
   - Services: `std_srvs/srv/Trigger` (ROS 2) vs `std_srvs/Trigger` (ROS 1)
@@ -197,13 +197,13 @@ See docs/TASK_SYSTEM.md for architectural details and docs/TASK_USAGE_GUIDE.md f
 
 ### Path Aliases
 ```typescript
-import { rosService } from '@/services/ros';  // @ = ./src
+import { apiService } from '@/services/api';  // @ = ./src
 ```
 
 ### Component Communication
-- Use `useROS()` hook to access ROS connection
-- Use `rosService` directly for ROS operations
-- Subscribe to rosService events for real-time updates
+- Use `useRobot()` hook to access ROS connection
+- Use `apiService` directly for API operations
+- Subscribe to apiService events for real-time updates
 
 ### Type Safety
 - All ROS message types defined in src/types/
@@ -234,12 +234,12 @@ The `mock_rosbridge.py` implements:
 ## Key Entry Points
 
 **Core Services**
-- `src/services/ros.ts` - ROS communication singleton with event emitter pattern
+- `src/services/api.ts` - Robot API communication singleton with event emitter pattern
 - `src/services/storage.ts` - Map storage with HTTP + localStorage fallback
-- `src/contexts/ROSContext.tsx` - Connection state management provider
+- `src/contexts/RobotContext.tsx` - Connection state management provider
 
 **ROS2 Configuration**
-- `src/config/ros2MessageTypes.ts` - Centralized ROS2 message type constants
+- `src/config/messageTypes.ts` - Centralized ROS2 message type constants
 
 **Task System Core**
 - `src/types/task.ts` - 400+ lines defining 15+ extensible task types
@@ -268,6 +268,6 @@ The `mock_rosbridge.py` implements:
 
 - Chinese comments and UI text throughout (this is a Chinese project)
 - File structure: components organize by feature (Dashboard, Navigation, etc.)
-- Service layer is singleton pattern (rosService instance)
+- Service layer is singleton pattern (apiService instance)
 - Event emitters use Map<string, Set<callback>> for listener management
 - Error handling via try-catch with antd message notifications

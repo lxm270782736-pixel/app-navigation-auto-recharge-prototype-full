@@ -567,7 +567,7 @@ class RoomPatrolMixin:
         print(f"[room_patrol] Custom step '{step_id}' action={action_type}")
 
         try:
-            if action_type == "ros_service":
+            if action_type == "service":
                 resolved = self._resolve_params(action.get("request", {}), params)
                 result = self._call_service(action["service_name"], action["service_type"], resolved)
                 ok = result.get("success", True) if isinstance(result, dict) else True
@@ -577,7 +577,7 @@ class RoomPatrolMixin:
                     time.sleep(float(wait))
                 return ok, result
 
-            elif action_type == "ros_topic":
+            elif action_type == "topic":
                 resolved = self._resolve_params(action.get("message", {}), params)
                 result = self.publish_topic(action["topic_name"], action["msg_type"], resolved)
                 wait = params.get("duration", action.get("duration", 0))

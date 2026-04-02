@@ -7,10 +7,10 @@ import {
   CloseCircleOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { ConnectionStatus } from '@/types';
-import { useROS } from '@/contexts/ROSContext';
+import { useRobot } from '@/contexts/RobotContext';
 
 // DockStatus 状态码
 enum DockStatusCode {
@@ -42,7 +42,7 @@ interface DockControlProps {
 }
 
 export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
 
   // 来自 /dock_status 话题的状态
   const [dockStatus, setDockStatus] = useState<{
@@ -86,9 +86,9 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/dock_status',
-      ROS2_MESSAGE_TYPES.DOCK_STATUS,
+      MESSAGE_TYPES.DOCK_STATUS,
       (msg) => {
         setDockStatus({
           status: msg.status ?? DockStatusCode.IDLE,
@@ -148,16 +148,16 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       }
     };
 
-    rosService.on('dock-feedback', handleDockFeedback);
-    rosService.on('dock-result', handleDockResult);
-    rosService.on('undock-feedback', handleUndockFeedback);
-    rosService.on('undock-result', handleUndockResult);
+    apiService.on('dock-feedback', handleDockFeedback);
+    apiService.on('dock-result', handleDockResult);
+    apiService.on('undock-feedback', handleUndockFeedback);
+    apiService.on('undock-result', handleUndockResult);
 
     return () => {
-      rosService.off('dock-feedback', handleDockFeedback);
-      rosService.off('dock-result', handleDockResult);
-      rosService.off('undock-feedback', handleUndockFeedback);
-      rosService.off('undock-result', handleUndockResult);
+      apiService.off('dock-feedback', handleDockFeedback);
+      apiService.off('dock-result', handleDockResult);
+      apiService.off('undock-feedback', handleUndockFeedback);
+      apiService.off('undock-result', handleUndockResult);
     };
   }, []);
 
@@ -165,7 +165,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
     try {
       setLastError('');
       setIsDockActionActive(true);
-      await rosService.sendDockGoal(forceRetry);
+      await apiService.sendDockGoal(forceRetry);
     } catch (error) {
       setIsDockActionActive(false);
       message.error('发送上桩指令失败');
@@ -177,7 +177,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
     try {
       setLastError('');
       setIsDockActionActive(true);
-      await rosService.sendUndockGoal(false);
+      await apiService.sendUndockGoal(false);
     } catch (error) {
       setIsDockActionActive(false);
       message.error('发送下桩指令失败');
@@ -186,7 +186,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
   }, []);
 
   const handleCancel = useCallback(() => {
-    rosService.cancelDock();
+    apiService.cancelDock();
     setIsDockActionActive(false);
     setActionFeedback(null);
     message.info('已取消');

@@ -242,7 +242,7 @@ export interface CustomStepParamDef {
 
 // 自定义步骤动作配置
 export interface CustomStepAction {
-  type: 'ros_service' | 'ros_topic' | 'wait';
+  type: 'service' | 'topic' | 'wait';
   service_name?: string;
   service_type?: string;
   request?: Record<string, any>;

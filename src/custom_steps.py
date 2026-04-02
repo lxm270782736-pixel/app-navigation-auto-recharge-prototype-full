@@ -7,7 +7,7 @@ from pathlib import Path
 
 _CUSTOM_STEPS_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "custom_step_types.json"
 
-_VALID_ACTION_TYPES = {"ros_service", "ros_topic", "wait"}
+_VALID_ACTION_TYPES = {"service", "topic", "wait"}
 _ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
@@ -48,12 +48,12 @@ class CustomStepsMixin:
         if action_type not in _VALID_ACTION_TYPES:
             return {"success": False, "message": f"动作类型必须是 {_VALID_ACTION_TYPES} 之一"}
 
-        if action_type == "ros_service":
+        if action_type == "service":
             if not action.get("service_name") or not action.get("service_type"):
-                return {"success": False, "message": "ROS Service 需要 service_name 和 service_type"}
-        elif action_type == "ros_topic":
+                return {"success": False, "message": "Service 需要 service_name 和 service_type"}
+        elif action_type == "topic":
             if not action.get("topic_name") or not action.get("msg_type"):
-                return {"success": False, "message": "ROS Topic 需要 topic_name 和 msg_type"}
+                return {"success": False, "message": "Topic 需要 topic_name 和 msg_type"}
 
         definition["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 

@@ -5,7 +5,7 @@ import {
   SyncOutlined,
   LoadingOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
+import { apiService } from '@/services/api';
 
 interface ChassisControlProps {
   isNavigating?: boolean; // 是否正在导航
@@ -27,7 +27,7 @@ export const ChassisControl: React.FC<ChassisControlProps> = ({
     const initControlType = async () => {
       try {
         setFetchingType(true);
-        const currentType = await rosService.getChassisControlType();
+        const currentType = await apiService.getChassisControlType();
         if (currentType) {
           setControlType(currentType);
         }
@@ -56,7 +56,7 @@ export const ChassisControl: React.FC<ChassisControlProps> = ({
 
     setLoading(true);
     try {
-      await rosService.setChassisControlType(newType);
+      await apiService.setChassisControlType(newType);
       setControlType(newType);
       onControlTypeChange?.(newType);
       message.success(`已切换到${newType === 'twist' ? '自动' : '手柄'}模式`);

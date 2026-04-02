@@ -9,9 +9,9 @@ import {
   EnvironmentOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, RoomPatrolState, RoomConfig } from '@/types';
 
@@ -34,7 +34,7 @@ const WAYPOINT_TYPE_COLORS: Record<string, string> = {
 };
 
 export const TaskDispatchTab: React.FC = () => {
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [patrolState, setPatrolState] = useState<RoomPatrolState | null>(null);
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
@@ -57,10 +57,10 @@ export const TaskDispatchTab: React.FC = () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
       const [roomData, taskData, customData, presetsData] = await Promise.all([
-        rosService.getRoomConfig(),
-        rosService.getTaskConfig().catch(() => ({ rooms: [] })),
-        rosService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
-        rosService.getTaskPresets().catch(() => ({ presets: [] })),
+        apiService.getRoomConfig(),
+        apiService.getTaskConfig().catch(() => ({ rooms: [] })),
+        apiService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
+        apiService.getTaskPresets().catch(() => ({ presets: [] })),
       ]);
       setRoomConfigs(roomData.rooms || []);
       setCustomStepTypes(customData.custom_step_types || []);
@@ -102,16 +102,16 @@ export const TaskDispatchTab: React.FC = () => {
   // Subscribe to SSE room patrol state
   useEffect(() => {
     const handler = (data: RoomPatrolState) => setPatrolState(data);
-    rosService.on('room-patrol-state', handler);
-    return () => rosService.off('room-patrol-state', handler);
+    apiService.on('room-patrol-state', handler);
+    return () => apiService.off('room-patrol-state', handler);
   }, []);
 
   // Subscribe to robot pose
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/loc_high_freq',
-      ROS2_MESSAGE_TYPES.ODOMETRY,
+      MESSAGE_TYPES.ODOMETRY,
       (msg) => {
         const pos = msg.pose.pose.position;
         const ori = msg.pose.pose.orientation;
@@ -128,12 +128,12 @@ export const TaskDispatchTab: React.FC = () => {
   // Subscribe to map
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
-    const unsubscribe = rosService.subscribeMap((mapData) => setCurrentMap(mapData));
+    const unsubscribe = apiService.subscribeMap((mapData) => setCurrentMap(mapData));
     // 主动加载当前地图，不等 /map 话题推送
-    rosService.getCurrentMapName().then(async (name) => {
+    apiService.getCurrentMapName().then(async (name) => {
       if (name) {
         try {
-          const mapData = await rosService.loadMapFromROS(name);
+          const mapData = await apiService.loadMap(name);
           if (mapData) setCurrentMap(mapData);
         } catch (e) {
           console.warn('[任务下发] 加载地图失败:', e);
@@ -148,7 +148,7 @@ export const TaskDispatchTab: React.FC = () => {
   const handleStart = async () => {
     const preset = presets.find(p => p.id === selectedPresetId);
     const taskConfig = preset ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit } : undefined;
-    const result = await rosService.startRoomPatrol(taskConfig);
+    const result = await apiService.startRoomPatrol(taskConfig);
     if (result.success) {
       message.success(result.message);
     } else {
@@ -157,7 +157,7 @@ export const TaskDispatchTab: React.FC = () => {
   };
 
   const handleStop = async () => {
-    const result = await rosService.stopRoomPatrol();
+    const result = await apiService.stopRoomPatrol();
     if (result.success) {
       message.info('巡房已停止');
     } else {
@@ -228,7 +228,7 @@ export const TaskDispatchTab: React.FC = () => {
           />
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-            {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 ROS'}
+            {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
           </div>
         )}
       </div>

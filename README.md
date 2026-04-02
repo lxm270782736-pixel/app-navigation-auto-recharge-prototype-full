@@ -2,7 +2,7 @@
 
 > 基于 React + TypeScript 的机器人SLAM建图和自主导航界面系统
 
-一个现代化的Web界面，为ROS机器人提供完整的建图、导航和监控功能。支持仿真模式和真实机器人模式，通过WebSocket与ROS后端实时通信。
+一个现代化的Web界面，为Astribot机器人提供完整的建图、导航和监控功能。前端通过HTTP REST + SSE与FastAPI后端通信，后端经由astribot_link连接Meta服务（定位和导航）。
 
 ## 特性亮点
 
@@ -11,20 +11,25 @@
 - 📊 **实时监控** - 机器人状态、电池电量、位置速度实时显示
 - 🖱️ **直观交互** - 鼠标滚轮缩放、拖拽平移、轨迹跟踪
 - 💾 **服务器存储** - 地图数据保存在服务器端，支持持久化存储
-- 🔄 **自动重连** - ROS连接断开后自动重新连接
-- 🎯 **附加任务** - 支持到达后停留、执行轨迹、自动拍照
+- 🔄 **自动重连** - 后端连接断开后自动重新连接
+- 🎯 **可扩展任务系统** - 支持15+任务类型（等待、拍照、轨迹、扫描、检测、声音、显示等）
+- 🎨 **可视化任务流编辑器** - Scratch风格的拖拽式任务编排界面
+- 🚀 **一键节点启动** - Dashboard中一键启动SLAM和导航节点
+- 🎛️ **定位模式管理** - 统一的模式切换界面（建图/定位/避障）
 - ✏️ **地图编辑** - 内置地图编辑器，支持绘制障碍物、自由区域和橡皮擦工具
 - ↩️ **撤销/重做** - 完整的历史记录管理，支持键盘快捷键（Ctrl+Z/Ctrl+Y）
 
 ## 功能模块
 
 ### 1. 系统监控仪表板 (Dashboard)
-- ROS连接状态实时指示
+- 后端连接状态实时指示
 - 电池电量监控（百分比 + 进度条）
 - 机器人位置（X, Y 坐标）
 - 朝向角度显示
 - 速度信息（线速度/角速度）
 - 快捷导航卡片
+- **一键服务启动器** - 顺序启动定位服务和导航服务，带状态跟踪
+- **定位模式管理** - 统一切换建图/定位/自动定位/避障模式
 
 ### 2. 地图管理 (Map Manager)
 - 地图列表网格展示
@@ -64,9 +69,11 @@
 - 手动重定位（设置机器人初始位姿）
 - 目标点设置模式
 - 浮动控制面板
-- 机器人轨迹跟踪（最近500点）
+- 机器人轨迹跟踪（最近500点，距离采样>0.1m）
 - 坐标系可视化
 - 路径规划实时显示
+- **可扩展任务系统** - 支持15+任务类型的附加任务配置
+- **双重成功检查** - 验证机器人到达位置 + 任务执行成功
 
 ### 6. 导航参数配置
 - **使用默认配置**: 切换使用系统默认参数或自定义参数
@@ -89,6 +96,41 @@
 - 目标点标记
 - 世界坐标系原点和轴线显示
 
+### 8. 可扩展任务系统
+支持在导航目标点附加多种任务类型，模块化设计便于扩展：
+
+**基础任务**
+- WAIT - 等待指定时长
+- PHOTO - 拍照
+- TRAJECTORY - 执行预设轨迹
+
+**感知任务**
+- SCAN - 环境扫描
+- INSPECT - 检测识别
+
+**交互任务**
+- SOUND - 播放声音
+- DISPLAY - 显示信息
+- SIGNAL - 发送信号
+
+**操作任务**
+- PICKUP - 抓取物体
+- PLACE - 放置物体
+- CHARGE - 充电
+
+**复合任务**
+- SEQUENCE - 顺序执行
+- PARALLEL - 并行执行
+- CONDITIONAL - 条件执行
+- LOOP - 循环执行
+- CUSTOM - 自定义服务调用
+
+**任务配置方式**
+- 列表模式：拖拽排序，表单配置参数
+- 流程模式：Scratch风格可视化编程界面（React Flow）
+
+详见 [任务系统架构文档](./docs/TASK_SYSTEM.md)
+
 ## 技术栈
 
 ### 前端技术
@@ -99,77 +141,78 @@
 - **日期处理**: dayjs 1.11.10
 - **图标**: @ant-design/icons 5.2.6
 
-### ROS通信
-- **通信库**: roslib 1.3.0
-- **协议**: WebSocket
-- **后端**: ROS 2 Humble (LTS)
+### 后端通信
+- **后端框架**: FastAPI (Python)
+- **实时推送**: SSE (Server-Sent Events) - 每500ms推送完整状态
+- **API协议**: HTTP REST
+- **机器人服务**: astribot_link (Meta服务桥接库)
 - **任务系统**: 可扩展的附加任务架构（支持15+任务类型）
 
 ## 系统架构
 
+### 四层架构设计
+
 ```
-┌─────────────────────────────────────┐
-│      React UI 界面层                │
-│ (Dashboard/MapManager/MapEditor/    │
-│  Navigation/Mapping)                │
-└──────────────┬──────────────────────┘
-               │ useROS Hook
-┌──────────────▼──────────────────────┐
-│   ROSContext (连接管理)              │
-│  - connectionStatus                 │
-│  - connect/disconnect               │
-└──────────────┬──────────────────────┘
-               │ rosService
-┌──────────────▼──────────────────────┐
-│   ROS Service Layer (ros.ts)        │
-│  - subscribeTopic()                 │
-│  - publishMessage()                 │
-│  - callService()                    │
-│  - sendNavigationGoal()             │
-└──────────────┬──────────────────────┘
-               │ ROSLIB
-      WebSocket (ws://localhost:9090)
-               │
-┌──────────────▼──────────────────────┐
-│    ROS Bridge (rosbridge_suite)     │
-└──────────────┬──────────────────────┘
-               │ ROS 2协议
-┌──────────────▼──────────────────────┐
+┌─────────────────────────────────────────────────────────┐
+│  UI 组件层 (React Components)                           │
+│  Dashboard / MapManager / MapEditor / Navigation /      │
+│  Mapping / LocalizationManager / NodeLauncher          │
+└────────────────────────┬────────────────────────────────┘
+                         │ useRobot Hook / HTTP REST + SSE
+┌────────────────────────▼────────────────────────────────┐
+│  服务层 (ui/src/services/api.ts)                        │
+│  - sendNavigationGoal() → POST /api/navigation/go       │
+│  - loadMap() → GET /api/maps/{id}                       │
+│  - SSE订阅 /api/state (每500ms推送状态快照)              │
+│  - 大数据轮询 /api/maps (每2s)                          │
+└────────────────────────┬────────────────────────────────┘
+                         │ HTTP REST + SSE
+              http://localhost:8080
+                         │
+┌────────────────────────▼────────────────────────────────┐
+│  FastAPI 后端 (src/main.py + src/logic.py)              │
+│  ├── MetaBridgeMixin   - Meta服务生命周期管理            │
+│  ├── LocalizationMixin - 建图/定位模式控制               │
+│  ├── MapManagerMixin   - 地图存储管理                   │
+│  ├── NavigationMixin   - 导航目标控制                   │
+│  └── PatrolMixin       - 巡逻任务管理                   │
+└────────────────────────┬────────────────────────────────┘
+                         │ astribot_link Python库
+┌────────────────────────▼────────────────────────────────┐
+│  Meta 服务层                                            │
+│  - localization  (建图、定位、位姿估计)                  │
+│  - astribot_navigation  (路径规划、运动控制)             │
+│  服务生命周期: disconnected→connected→inactive→active   │
+└─────────────────────────────────────────────────────────┘
+```
+### 地图存储架构
 
-│   ROS 2 后端                        │
-│  - SLAM节点 (slam_toolbox)          │
-│  - Nav2 导航                        │
-│  - AMCL 定位                        │
-│  - 硬件驱动                         │
-└──────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│   地图存储架构                       │
-└─────────────────────────────────────┘
-┌──────────────────────────────────────┐
-│  MapStorageService (storage.ts)     │
-│  - getAllMaps() - 获取所有地图       │
-│  - getMap(id) - 获取单个地图         │
-│  - saveMap(map) - 保存地图          │
-│  - deleteMap(id) - 删除地图         │
-│  - generateThumbnail() - 生成缩略图  │
-└──────────────┬───────────────────────┘
-               │ HTTP API
-      REST (http://localhost:8080/api)
-               │
-┌──────────────▼──────────────────────┐
-│   HTTP API 服务器 (Python)           │
-│  GET    /api/maps - 获取地图列表     │
-│  GET    /api/maps/{id} - 获取地图    │
-│  POST   /api/maps - 保存地图         │
-│  DELETE /api/maps/{id} - 删除地图    │
-└──────────────┬──────────────────────┘
-               │ 文件系统
-┌──────────────▼──────────────────────┐
-│   saved_maps/ 目录                  │
-│  - {map_id}.json (地图数据文件)      │
-│  - 包含完整地图数据和元数据          │
-└──────────────────────────────────────┘
+```
+┌─────────────────────────────────────────────────────────┐
+│  MapStorageService (src/services/storage.ts)            │
+│  - getAllMaps() - 获取所有地图                           │
+│  - getMap(id) - 获取单个地图                            │
+│  - saveMap(map) - 保存地图                              │
+│  - deleteMap(id) - 删除地图                             │
+│  - generateThumbnail() - 生成缩略图 (max 200x200px)     │
+│  - 自动降级: HTTP API → localStorage                    │
+└────────────────────────┬────────────────────────────────┘
+                         │ HTTP REST API
+              http://localhost:8080/api
+                         │
+┌────────────────────────▼────────────────────────────────┐
+│  HTTP API 服务器 (FastAPI/src/main.py)                  │
+│  GET    /api/maps - 获取地图列表                        │
+│  GET    /api/maps/{id} - 获取单个地图                   │
+│  POST   /api/maps - 保存地图 (GZIP压缩)                 │
+│  DELETE /api/maps/{id} - 删除地图                       │
+└────────────────────────┬────────────────────────────────┘
+                         │ 文件系统
+┌────────────────────────▼────────────────────────────────┐
+│  saved_maps/ 目录                                       │
+│  - {map_id}.json.gz (GZIP压缩的地图数据)                │
+│  - 包含: 栅格数据、元数据、缩略图(base64)                │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## 快速开始
@@ -178,15 +221,16 @@
 
 - Node.js >= 16
 - npm 或 yarn
+- Python >= 3.8（用于后端服务）
+- astribot_link（Astribot私有PyPI包）
 
-- ROS 2 Humble (LTS) - 用于真实机器人
-- rosbridge_suite 已安装
 ```bash
-sudo apt update
+# 安装 Node.js
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
 
-sudo apt install ros-humble-rosbridge-server
+# 安装 Python 后端依赖
+pip install fastapi sse-starlette astribot_link
 ```
 ### 安装依赖
 
@@ -201,7 +245,7 @@ npm install
 npm run dev
 ```
 
-应用将在 `http://localhost:3000` 启动
+应用将在 `http://localhost:3500` 启动
 
 ### 生产构建
 
@@ -219,10 +263,9 @@ npm run preview  # 预览构建结果（端口4173）
 ```
 
 启动内容：
-- 模拟ROS Bridge服务器（Python）在端口9090
-- HTTP API 服务器在端口8080（地图存储）
-- 前端服务器在端口4173
-- 访问 http://localhost:4173
+- FastAPI 后端服务器在端口8080（含Mock Meta服务）
+- 前端开发服务器在端口3500
+- 访问 http://localhost:3500
 
 #### 真实机器人模式
 
@@ -230,138 +273,117 @@ npm run preview  # 预览构建结果（端口4173）
 ./start-real.sh
 ```
 
-需要真实ROS环境和硬件支持
+需要已安装并可访问的astribot_link和Meta服务环境
 
-详细启动说明请参考 [STARTUP_SCRIPTS.md](./STARTUP_SCRIPTS.md)
+详细启动说明请参考 [STARTUP_SCRIPTS.md](./docs/STARTUP_SCRIPTS.md)
 
-## ROS集成配置
+## 后端服务配置
 
-### 必需的ROS包
+### API 端点
 
-1. **rosbridge_suite** - WebSocket通信
-```bash
+前端自动检测后端地址：
+- 端口8080时：使用同源地址（无前缀）
+- 其他端口：使用 `http://{hostname}:8080`
 
-sudo apt-get install ros-humble-rosbridge-server
-```
+**状态推送（SSE）**
 
-2. **SLAM包** (例如 slam_toolbox)
+| 端点 | 描述 |
+|------|------|
+| `GET /api/state` | SSE流，每500ms推送机器人完整状态 |
 
-```bash
-sudo apt-get install ros-humble-slam-toolbox
-```
+**导航接口**
 
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/navigation/go` | POST | 发送导航目标 |
+| `/api/patrol/start` | POST | 启动多点巡逻 |
+| `/api/room-patrol/start` | POST | 启动房间巡逻 |
 
-3. **导航包** (Nav2 navigation stack)
-```bash
-sudo apt-get install ros-humble-navigation2
+**地图接口**
 
-```
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/maps` | GET | 获取地图列表 |
+| `/api/maps/{id}` | GET | 获取单个地图 |
+| `/api/maps` | POST | 保存地图 |
+| `/api/maps/{id}` | DELETE | 删除地图 |
+| `/api/maps/apply` | POST | 加载地图到导航系统 |
 
-### 启动ROS Bridge
+**定位接口**
 
-```bash
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-```
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/localization/start_mapping` | POST | 启动建图 |
+| `/api/localization/start_localization` | POST | 启动定位 |
+| `/api/localization/start_localization_auto` | POST | 启动自动定位 |
+| `/api/localization/start_obstacle_avoidance` | POST | 启动避障模式 |
+| `/api/localization/stop` | POST | 停止当前模式 |
 
-默认端口: 9090
+**Meta服务生命周期接口**
 
-如需修改端口，更新 `src/contexts/ROSContext.tsx` 中的 `rosUrl`:
-
-```typescript
-<ROSProvider autoConnect={true} rosUrl="ws://localhost:9090">
-```
-
-### ROS话题和服务接口
-
-#### 订阅的话题
-
-| 话题名 | 消息类型 | 描述 |
-|--------|----------|------|
-| `/map` | `nav_msgs/msg/OccupancyGrid` | 地图数据 |
-| `/loc_high_freq` | `nav_msgs/msg/Odometry` | 里程计/机器人位置 |
-| `/cmd_vel` | `geometry_msgs/msg/Twist` | 速度信息 |
-
-#### 发布的话题
-
-| 话题名 | 消息类型 | 描述 |
-|--------|----------|------|
-| `/initialpose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | 设置初始位姿 |
-
-#### 调用的服务
-
-| 服务名 | 服务类型 | 描述 |
-|--------|----------|------|
-| `/localization/start_mapping` | `std_srvs/srv/Trigger` | 启动建图 |
-
-| `/localization/stop_localization` | `std_srvs/srv/Trigger` | 停止建图/定位 |
-
-| `/map_manager/save_map` | `localization_msgs/srv/SaveMap` | 保存地图 |
-| `/map_manager/load_map` | `localization_msgs/srv/LoadMap` | 加载地图 |
-| `/map_manager/list_maps` | `localization_msgs/srv/ListMaps` | 获取地图列表 |
-
-#### 使用的Action
-
-| Action名 | Action类型 | 描述 |
-|----------|------------|------|
-| `/move_chassis_to_server` | `astribot_msgs/action/MoveChassis` | 导航到目标点 |
-
-详细的ROS后端配置请参考 [ROS_INTEGRATION.md](./ROS_INTEGRATION.md)
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/meta/start` | POST | 连接并激活Meta服务 |
+| `/api/meta/status` | GET | 查询Meta服务状态 |
 
 ## 项目结构
 
 ```
 astribot_navigation_ui/
-├── src/
-│   ├── components/            # React组件
-│   │   ├── Dashboard/         # 主仪表板组件
-│   │   ├── MapManager/        # 地图管理组件
-│   │   ├── MapEditor/         # 地图编辑器组件（新增）
-│   │   ├── Mapping/           # 建图功能组件
-│   │   ├── Navigation/        # 导航功能组件
-│   │   └── common/            # 公共组件
-│   │       └── MapCanvas.tsx  # 地图渲染引擎
-│   ├── contexts/              # React Context上下文
-│   │   └── ROSContext.tsx     # ROS连接管理
-│   ├── services/              # 业务服务层
-│   │   ├── ros.ts             # ROS通信服务
-│   │   └── storage.ts         # 地图存储服务（支持服务器端存储）
-│   ├── types/                 # TypeScript类型定义
-│   │   ├── index.ts           # 核心类型定义
-│   │   └── roslib.d.ts        # ROS类型声明
-│   ├── App.tsx                # 主应用组件
-│   ├── main.tsx               # React入口
-│   └── App.css                # 全局样式
-├── dist/                      # 构建产物目录
-├── saved_maps/                # 服务器端地图存储目录（新增）
-├── mock_rosbridge.py          # 模拟ROS Bridge + HTTP API服务器
-├── start.sh                   # 通用启动脚本
-├── start-sim.sh               # 仿真模式启动脚本
-├── start-real.sh              # 真实机器人启动脚本
-├── package.json               # NPM包配置
-├── tsconfig.json              # TypeScript配置
-├── vite.config.ts             # Vite构建配置
-└── [文档]
-    ├── ROS_INTEGRATION.md     # ROS集成指南
-    ├── QUICKSTART.md          # 快速开始
-    ├── STARTUP_SCRIPTS.md     # 启动脚本说明
-    ├── MOCK_ROSBRIDGE.md      # 模拟服务器说明
-    ├── COORDINATE_SYSTEM.md   # 坐标系说明
-    ├── DEBUG_ROBOT_DISPLAY.md # 调试指南
-    ├── CHANGELOG.md           # 更新日志
-    └── TEST_REPORT.md         # 测试报告
+├── src/                           # Python后端
+│   ├── main.py                    # FastAPI入口，HTTP + SSE接口定义
+│   ├── logic.py                   # 业务逻辑（Mixin组合）
+│   ├── meta_bridge.py             # astribot_link Meta服务生命周期管理
+│   ├── localization.py            # 定位模式控制
+│   ├── map_manager.py             # 地图存储管理
+│   ├── navigation.py              # 导航目标控制
+│   └── patrol.py / patrol_room.py # 巡逻任务管理
+├── ui/                            # React前端
+│   └── src/
+│       ├── components/            # React组件
+│       │   ├── Dashboard/         # 主仪表板组件
+│       │   ├── MapManager/        # 地图管理组件
+│       │   ├── MapEditor/         # 地图编辑器组件
+│       │   ├── Mapping/           # 建图功能组件
+│       │   ├── Navigation/        # 导航功能组件
+│       │   ├── TaskFlowEditor/    # 可视化任务流编辑器（React Flow）
+│       │   └── common/            # 公共组件
+│       │       ├── MapCanvas.tsx  # 地图渲染引擎
+│       │       ├── LocalizationManager.tsx  # 定位模式管理
+│       │       ├── NodeLauncher.tsx         # 服务启动器
+│       │       └── TaskConfigPanel.tsx      # 任务配置面板
+│       ├── contexts/              # React Context上下文
+│       │   └── RobotContext.tsx     # 连接状态管理
+│       ├── services/              # 业务服务层
+│       │   ├── api.ts             # HTTP REST + SSE 通信服务（单例）
+│       │   └── storage.ts         # 地图存储服务（HTTP + localStorage降级）
+│       └── types/                 # TypeScript类型定义
+│           ├── index.ts           # 核心类型定义
+│           └── task.ts            # 任务系统类型（15+任务类型）
+├── saved_maps/                    # 服务器端地图存储目录
+├── start-sim.sh                   # 仿真模式启动脚本
+├── start-real.sh                  # 真实机器人启动脚本
+└── docs/                          # 文档目录
+    ├── NAVIGATION_EVENTS.md       # 导航事件处理（关键）
+    ├── TASK_SYSTEM.md             # 任务系统架构
+    ├── TASK_USAGE_GUIDE.md        # 任务使用指南
+    ├── VISUAL_TASK_FLOW_EDITOR.md # 可视化任务流编辑器
+    ├── MAP_STORAGE_ARCHITECTURE.md # 地图存储架构
+    └── [其他文档...]
 ```
 
 ## 使用说明
 
 ### 1. 建图流程
 
-1. 启动ROS Bridge和SLAM节点（或使用仿真模式）
-2. 在主页面点击"SLAM建图"按钮
-3. 系统自动启动建图流程
-4. 使用遥控器控制机器人在环境中移动
-5. 观察实时地图预览
-6. 完成建图后点击"结束建图"
-7. 输入地图名称并保存（保存到服务器）
+1. 确保后端服务已启动且Meta服务已连接（或使用仿真模式）
+2. 在Dashboard中切换定位模式为"建图"
+3. 在主页面点击"SLAM建图"按钮
+4. 系统自动启动建图流程
+5. 使用遥控器控制机器人在环境中移动
+6. 观察实时地图预览
+7. 完成建图后点击"结束建图"
+8. 输入地图名称并保存（保存到服务器）
 
 ### 2. 地图编辑流程
 
@@ -385,34 +407,51 @@ astribot_navigation_ui/
 4. 在地图上点击机器人当前实际位置进行定位
 5. 切换到"设置目标点"模式
 6. 在地图上点击选择目标位置
-7. （可选）配置附加任务
+7. （可选）配置导航参数和附加任务
 8. 点击"开始导航"按钮
 
-### 3. 附加任务配置
+**导航成功判定（关键）**
+- 条件1: 导航状态 === SUCCEEDED - 机器人到达目标位置
+- 条件2: result.success !== false - 所有附加任务执行成功
+- 两个条件必须同时满足才算导航成功
 
-- **到达后停留**: 勾选后可设置停留时长（1-60秒）
-- **执行预设轨迹**: 机器人到达目标点后播放预设轨迹
-- **自动拍照**: 到达目标点后自动拍照
+### 4. 附加任务配置
 
-### 4. 地图交互
+**配置方式**
+- **列表模式**: 拖拽排序，表单配置参数
+- **流程模式**: Scratch风格可视化编程（React Flow）
+
+**常用任务示例**
+- **等待任务**: 到达后停留指定时长（1-60秒）
+- **拍照任务**: 自动拍照并保存
+- **轨迹任务**: 执行预设的运动轨迹
+- **扫描任务**: 环境扫描和数据采集
+- **复合任务**: 顺序/并行/条件/循环执行多个任务
+
+详见 [任务使用指南](./docs/TASK_USAGE_GUIDE.md) 和 [可视化任务流编辑器](./docs/VISUAL_TASK_FLOW_EDITOR.md)
+
+### 5. 地图交互
 
 - **缩放**: 鼠标滚轮向上/向下
 - **平移**: 鼠标中键拖动 或 Ctrl+左键拖动
-- **定位**: 手动重定位下左键点击地图
+- **定位**: 手动重定位模式下左键点击地图
 - **设置目标**: 目标点模式下左键点击地图
+- **坐标转换**: 自动处理世界坐标(米) ↔ 像素坐标转换
 
 ## 配置选项
 
-### ROS连接配置
+### 后端连接配置
 
-在 `src/contexts/ROSContext.tsx` 中修改：
+前端自动检测后端地址（`ui/src/services/api.ts`）：
 
 ```typescript
-<ROSProvider
-  autoConnect={true}                    // 是否自动连接
-  rosUrl="ws://localhost:9090"          // ROS Bridge地址
->
+// 端口8080时使用同源，否则使用 http://{hostname}:8080
+const BASE_URL = window.location.port === '8080'
+  ? ''
+  : `http://${window.location.hostname}:8080`;
 ```
+
+如需自定义，修改 `ui/src/services/api.ts` 中的 `BASE_URL` 常量。
 
 ### 地图存储
 
@@ -434,118 +473,194 @@ astribot_navigation_ui/
 
 ## 开发指南
 
-### 添加新的ROS话题订阅
+### 调用后端API
 
-在 `src/services/ros.ts` 中使用 `subscribeTopic` 方法：
+在 `ui/src/services/api.ts` 中封装了所有后端调用：
 
 ```typescript
-rosService.subscribeTopic<MessageType>(
-  '/topic_name',
-  'package_name/MessageType',
-  (message) => {
-    // 处理消息
-  }
-);
+// 发送导航目标
+await apiService.sendNavigationGoal({
+  pose: { x: targetX, y: targetY, theta: targetTheta },
+  tasks: [
+    { type: 'WAIT', params: { duration: 5 } },
+    { type: 'PHOTO', params: {} }
+  ]
+});
+
+// 获取地图列表
+const maps = await apiService.getMapList();
+
+// 加载地图到导航系统
+await apiService.applyMap(mapId);
 ```
 
-### 添加新的ROS服务调用
+### 监听SSE状态推送
 
 ```typescript
-await rosService.callService<RequestType, ResponseType>(
-  '/service_name',
-  'package_name/ServiceType',
-  { /* request data */ }
-);
-```
+// SSE每500ms推送完整状态快照
+apiService.on('state', (state) => {
+  console.log('Pose:', state.pose);
+  console.log('Nav status:', state.nav_status);
+  console.log('Meta connected:', state.meta_connected);
+});
 
-### 发送导航目标
+apiService.on('navigation-feedback', (feedback) => {
+  console.log('Distance remaining:', feedback.distance_remaining);
+});
 
-```typescript
-await rosService.sendNavigationGoal({
-  x: targetX,
-  y: targetY,
-  theta: targetTheta
+apiService.on('navigation-result', (result) => {
+  // 双重检查：位置到达 + 任务成功
+  const success = result.status === 'SUCCEEDED' && result.success !== false;
 });
 ```
 
-### 监听ROS事件
+### 添加新的后端接口调用
+
+在 `ui/src/services/api.ts` 中添加方法：
 
 ```typescript
-rosService.on('connection', (status) => {
-  console.log('Connection status:', status);
-});
-
-rosService.on('navigation-feedback', (feedback) => {
-  console.log('Navigation feedback:', feedback);
-});
+async myNewAction(params: MyParams): Promise<MyResponse> {
+  const response = await fetch(`${BASE_URL}/api/my-endpoint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  return response.json();
+}
 ```
+
+在 `src/main.py` 中添加对应FastAPI端点，在 `src/logic.py` 对应Mixin中实现逻辑。
+
+### 添加新的任务类型
+
+1. 在 `ui/src/types/task.ts` 中添加任务类型：
+```typescript
+export enum TaskType {
+  // ... 现有类型
+  NEW_TASK = 'NEW_TASK'
+}
+
+export interface NewTaskParams {
+  param1: string;
+  param2: number;
+}
+```
+
+2. 在 `ui/src/components/common/TaskConfigPanel.tsx` 中添加UI配置
+
+3. 在 `src/navigation.py` 中实现后端执行逻辑
+
+详见 [任务系统架构文档](./docs/TASK_SYSTEM.md)
 
 ## 核心组件说明
 
 ### MapCanvas.tsx - 地图渲染引擎
 
-负责地图的可视化渲染和交互：
+基于Canvas的高性能地图渲染组件：
 
 **渲染元素**:
 - 栅格地图（灰色=未知，白色=空闲，黑色=占据）
 - 坐标系原点和轴线（红色=X轴，绿色=Y轴）
 - 机器人位置和方向箭头（蓝色）
 - 目标位置标记（红色）
-- 机器人轨迹线（半透明蓝色）
+- 机器人轨迹线（半透明蓝色，最多500点）
 
 **交互功能**:
 - 缩放和平移
 - 点击设置位置/目标点
 - 自动适配容器大小
+- 坐标转换: 世界坐标(米) ↔ 像素坐标
 
-### rosService - ROS通信服务
+**重要**: 始终使用MapCanvas的坐标转换方法，不要手动实现转换逻辑
 
-提供ROS通信的统一接口：
+### apiService (api.ts) - 后端通信服务
+
+HTTP适配层，封装了所有后端API调用，对外保持与旧接口兼容的方法名：
 
 **核心方法**:
-- `connect(url)` - 连接ROS Bridge
-- `disconnect()` - 断开连接
-- `subscribeTopic<T>()` - 订阅话题
-- `publishMessage<T>()` - 发布消息
-- `callService<Req, Res>()` - 调用服务
-- `sendNavigationGoal()` - 发送导航目标
+- `connect()` - 建立SSE连接
+- `sendNavigationGoal()` - POST /api/navigation/go
+- `getMapList()` - GET /api/maps
+- `applyMap(id)` - POST /api/maps/apply
+- `saveMap()` - POST /api/maps/save
 
-**事件系统**:
-- `connection` - 连接状态变化
-- `error` - 错误事件
-- `navigation-feedback` - 导航反馈
+**SSE状态推送**（每500ms）:
+- `meta_connected` - Meta服务连接状态
+- `pose` - 机器人当前位置和朝向
+- `nav_status` / `nav_feedback` - 导航状态和进度
+- `patrol` / `room_patrol` - 巡逻任务状态
+
+**大数据轮询**（每2秒）:
+- 地图栅格数据（通过REST获取，数据量太大不适合SSE）
+
+### LocalizationManager - 定位模式管理
+
+统一的机器人运行模式切换界面：
+
+**支持模式**:
+- idle - 空闲
+- mapping - 建图
+- localization - 定位
+- localization_auto - 自动定位
+- obstacle_avoidance - 避障
+
+**后端API调用**:
+- `POST /api/localization/start_mapping`
+- `POST /api/localization/start_localization`
+- `POST /api/localization/start_localization_auto`
+- `POST /api/localization/start_obstacle_avoidance`
+- `POST /api/localization/stop`
+
+**状态同步**: 通过SSE `/api/state` 实时获取当前定位模式
+
+### NodeLauncher - 服务启动器
+
+Dashboard中的一键服务启动组件：
+
+**启动流程**:
+1. 顺序启动定位服务 → 导航服务
+2. 调用 `POST /api/meta/start` 触发Meta服务生命周期
+3. 通过SSE监听 `meta_connected` 状态变化
+4. 可视化进度条和详细状态模态框
 
 ## 常见问题
 
-### 1. 无法连接到ROS Bridge
+### 1. 无法连接到后端
 
-- 确保 rosbridge_server 已启动：`ros2 launch rosbridge_server rosbridge_websocket_launch.xml`
+- 确保FastAPI后端服务已启动（端口8080）
 - 检查防火墙设置
-- 确认端口号是否正确（默认9090）
-- 查看浏览器控制台的错误信息
+- 查看浏览器控制台的网络请求错误
+- 确认 `http://localhost:8080/api/state` 是否可访问
 
-### 2. 地图无法显示
+### 2. Meta服务未连接
 
-- 确认 `/map` 话题正在发布：`ros2 topic echo /map --once`
-- 检查地图数据格式是否正确
+- 检查 astribot_link 是否正确安装
+- 查看后端日志确认Meta服务状态
+- 在Dashboard中点击"启动服务"重新连接
+- 后端支持自动重连，等待几秒后刷新状态
+
+### 3. 地图无法显示
+
+- 确认后端服务已成功加载地图
+- 检查 `GET /api/maps/{id}` 是否正常返回数据
 - 查看浏览器控制台是否有渲染错误
 
-### 3. 导航无法开始
+### 4. 导航无法开始
 
 - 确保已正确设置机器人初始位姿（手动重定位）
-- 检查 Nav2 节点是否正常运行：`ros2 node list | grep nav`
+- 检查Meta导航服务状态是否为active
 - 确认目标点在地图的可达区域内
-- 查看导航服务器是否已加载地图
+- 查看后端日志中的导航错误信息
 
-### 4. 机器人位置不准确
+### 5. 机器人位置不准确
 
 - 重新进行定位（手动重定位下点击机器人实际位置）
-- 检查AMCL节点是否正常工作
-- 确认里程计数据是否准确
+- 检查Meta定位服务是否正常工作
+- 通过SSE状态确认 `pose` 数据是否在更新
 
-### 5. 地图无法保存
+### 6. 地图无法保存
 
-- 检查 HTTP API 服务器是否启动（端口8080）
+- 检查后端服务是否启动（端口8080）
 - 确认 `saved_maps/` 目录是否存在且有写权限
 - 检查浏览器控制台的网络请求错误
 - 降级模式：服务器不可用时会使用浏览器 localStorage
@@ -556,15 +671,16 @@ rosService.on('navigation-feedback', (feedback) => {
 - **轨迹限制**: 最多保留500个轨迹点
 - **Canvas渲染**: 使用Canvas API而非DOM，性能更好
 - **图像渲染**: imageRendering: 'pixelated' 保持像素风格
-- **自动重连**: 避免频繁重连，3秒间隔
+- **SSE推送**: 状态每500ms推送一次，避免频繁请求
+- **大数据轮询**: 地图等大数据每2秒REST轮询，不走SSE
 
 ## 安全和容错
 
-- **连接失败处理**: try-catch包装ROS调用
-- **超时保护**: 重连等待3秒
+- **连接失败处理**: try-catch包装API调用
+- **Meta服务自动恢复**: 后端检测Meta服务崩溃后自动重连
 - **状态检查**: 导航前检查机器人位姿和目标点
 - **错误提示**: 通过antd message显示用户友好的错误信息
-- **自动重连**: 连接断开后自动尝试重新连接
+- **存储降级**: 后端不可用时自动降级到浏览器localStorage
 
 ## 许可证
 
@@ -588,16 +704,16 @@ MIT License
 
 ## 相关文档
 
-- [ROS集成指南](./ROS_INTEGRATION.md) - 详细的ROS后端配置
-- [快速开始](./QUICKSTART.md) - 快速上手指南
-- [启动脚本说明](./STARTUP_SCRIPTS.md) - 启动脚本详解
-- [导航事件处理](./NAVIGATION_EVENTS.md) - 导航结果和反馈的处理方式
-- [坐标系说明](./COORDINATE_SYSTEM.md) - 坐标转换和显示
-- [调试指南](./DEBUG_ROBOT_DISPLAY.md) - 机器人显示调试
-- [任务系统架构](./TASK_SYSTEM.md) - 可扩展任务系统架构设计
-- [任务使用指南](./TASK_USAGE_GUIDE.md) - 附加任务系统使用说明
-- [更新日志](./CHANGELOG.md) - 版本更新记录
-- [测试报告](./TEST_REPORT.md) - 测试覆盖和结果
+**必读文档**
+- [导航事件处理](./docs/NAVIGATION_EVENTS.md) - 关键：导航结果、反馈和状态事件处理详情
+- [任务系统架构](./docs/TASK_SYSTEM.md) - 可扩展任务架构设计和添加新任务类型
+- [可视化任务流编辑器](./docs/VISUAL_TASK_FLOW_EDITOR.md) - 基于React Flow的可视化编程界面
+- [地图存储架构](./docs/MAP_STORAGE_ARCHITECTURE.md) - 地图存储架构和API设计
+
+**补充文档**
+- [任务使用指南](./docs/TASK_USAGE_GUIDE.md) - 附加任务系统使用说明和示例
+- [启动脚本说明](./docs/STARTUP_SCRIPTS.md) - 启动脚本详解
+- [坐标系说明](./docs/COORDINATE_SYSTEM.md) - 坐标转换和显示
 
 ## 致谢
 

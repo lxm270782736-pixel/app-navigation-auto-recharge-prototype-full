@@ -1,9 +1,7 @@
 /**
- * ROSService — HTTP adapter for backend FastAPI.
+ * ApiService — HTTP adapter for backend FastAPI.
  *
- * Same interface as the original ROSLIB-based service, but all communication
- * goes through the FastAPI backend (REST + SSE) instead of direct ROS WebSocket.
- *
+ * All communication goes through the FastAPI backend (REST + SSE).
  * Components call the same methods — zero changes needed.
  */
 import type { MapData, Pose, NavigationGoal } from '@/types';
@@ -41,7 +39,7 @@ const API_BASE = window.location.port === '8080'
   ? ''  // same origin, no prefix needed
   : `http://${window.location.hostname}:8080`;
 
-class ROSService {
+class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private topicCallbacks: Map<string, Set<(data: any) => void>> = new Map();
   private eventSource: EventSource | null = null;
@@ -193,7 +191,7 @@ class ROSService {
     this.topicCallbacks.get(topicName)!.add(callback as any);
 
     // Heavy topics: start polling via REST
-    if (ROSService.HEAVY_TOPICS.has(topicName) && !this.pollingTimers.has(topicName)) {
+    if (ApiService.HEAVY_TOPICS.has(topicName) && !this.pollingTimers.has(topicName)) {
       const timer = setInterval(async () => {
         if (!this._connected) return;
         try {
@@ -556,7 +554,7 @@ class ROSService {
     }
   }
 
-  async loadMapFromROS(mapName: string): Promise<MapData | null> {
+  async loadMap(mapName: string): Promise<MapData | null> {
     try {
       const result = await this._get(`/api/maps/${encodeURIComponent(mapName)}`);
       if (result.success) {
@@ -569,7 +567,7 @@ class ROSService {
     }
   }
 
-  async saveMapToROS(mapData: MapData): Promise<{ success: boolean; message: string }> {
+  async saveMap(mapData: MapData): Promise<{ success: boolean; message: string }> {
     return this._post('/api/maps/save', {
       map_name: mapData.name,
       map_data: {
@@ -592,7 +590,7 @@ class ROSService {
     });
   }
 
-  async deleteMapFromROS(mapId: string): Promise<{ success: boolean; message: string }> {
+  async deleteMap(mapId: string): Promise<{ success: boolean; message: string }> {
     return this._post('/api/maps/delete', { map_name: mapId });
   }
 
@@ -699,4 +697,4 @@ class ROSService {
   }
 }
 
-export const rosService = new ROSService();
+export const apiService = new ApiService();

@@ -12,16 +12,16 @@ import {
   ApiOutlined,
   SendOutlined,
 } from '@ant-design/icons';
-import { rosService } from '@/services/ros';
-import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { useROS } from '@/contexts/ROSContext';
+import { apiService } from '@/services/api';
+import { MESSAGE_TYPES } from '@/config/messageTypes';
+import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { Pose } from '@/types';
 import { MetaLauncher } from '@/components/common/MetaLauncher';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { connectionStatus } = useROS();
+  const { connectionStatus } = useRobot();
   const [robotPose, setRobotPose] = useState<Pose | null>(null);
   // 暂时使用固定电池电量，等待真实 ROS 环境提供电池话题
   const [batteryLevel] = useState<number>(85);
@@ -33,9 +33,9 @@ export const Dashboard: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/loc_high_freq',
-      ROS2_MESSAGE_TYPES.ODOMETRY,
+      MESSAGE_TYPES.ODOMETRY,
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
@@ -65,7 +65,7 @@ export const Dashboard: React.FC = () => {
   //     return;
   //   }
 
-  //   const unsubscribe = rosService.subscribeTopic<any>(
+  //   const unsubscribe = apiService.subscribeTopic<any>(
   //     '/battery_state',
   //     'sensor_msgs/BatteryState',
   //     (batteryMsg) => {
@@ -84,9 +84,9 @@ export const Dashboard: React.FC = () => {
       return;
     }
 
-    const unsubscribe = rosService.subscribeTopic<any>(
+    const unsubscribe = apiService.subscribeTopic<any>(
       '/cmd_vel',
-      ROS2_MESSAGE_TYPES.TWIST,
+      MESSAGE_TYPES.TWIST,
       (twistMsg) => {
         setVelocity({
           linear: twistMsg.linear.x,

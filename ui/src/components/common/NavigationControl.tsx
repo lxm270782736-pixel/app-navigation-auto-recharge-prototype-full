@@ -20,7 +20,7 @@ import {
   EnvironmentOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
-import { rosService } from "@/services/ros";
+import { apiService } from "@/services/api";
 import { ConnectionStatus } from "@/types";
 import type {
   Pose,
@@ -102,7 +102,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   useEffect(() => {
     const initChassisControlType = async () => {
       try {
-        const currentType = await rosService.getChassisControlType();
+        const currentType = await apiService.getChassisControlType();
         setChassisControlType(currentType);
       } catch (error) {
         console.warn("Failed to fetch chassis control type:", error);
@@ -116,10 +116,10 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
       setChassisControlType(data.controlType);
     };
 
-    rosService.on("chassis-control-type-changed", handleChassisTypeChange);
+    apiService.on("chassis-control-type-changed", handleChassisTypeChange);
 
     return () => {
-      rosService.off("chassis-control-type-changed", handleChassisTypeChange);
+      apiService.off("chassis-control-type-changed", handleChassisTypeChange);
     };
   }, []);
 
@@ -176,14 +176,14 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
       setHasActiveAction(false);
     };
 
-    rosService.on("navigation-feedback", handleNavigationFeedback);
-    rosService.on("navigation-status", handleNavigationStatus);
-    rosService.on("navigation-result", handleNavigationResult);
+    apiService.on("navigation-feedback", handleNavigationFeedback);
+    apiService.on("navigation-status", handleNavigationStatus);
+    apiService.on("navigation-result", handleNavigationResult);
 
     return () => {
-      rosService.off("navigation-feedback", handleNavigationFeedback);
-      rosService.off("navigation-status", handleNavigationStatus);
-      rosService.off("navigation-result", handleNavigationResult);
+      apiService.off("navigation-feedback", handleNavigationFeedback);
+      apiService.off("navigation-status", handleNavigationStatus);
+      apiService.off("navigation-result", handleNavigationResult);
     };
   }, []);
 
@@ -204,7 +204,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
 
       if (navigationMode === NavigationMode.LOCAL_NAVIGATION) {
         // 局部导航模式：发送到 /small_range_goal 话题
-        rosService.sendLocalNavigationGoal(goalPose);
+        apiService.sendLocalNavigationGoal(goalPose);
         message.success("局部导航目标已发送");
 
         // 局部导航模式没有反馈，立即重置导航状态
@@ -219,7 +219,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
           actionConfig, // 添加导航参数配置
         };
 
-        rosService.sendNavigationGoal(goal);
+        apiService.sendNavigationGoal(goal);
         // message.success('导航已开始'); // 移除立即提示，通过导航状态显示
       }
     } catch (error) {
@@ -238,7 +238,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
       setHasSavedConfig(false);
     } else {
       // 单点导航模式
-      rosService.cancelNavigation();
+      apiService.cancelNavigation();
       // message.info('导航已取消'); // 移除立即提示，等待服务器响应
       onNavigationStop();
       // 导航停止时，清除action执行标记
@@ -281,7 +281,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 gap: "6px",
               }}
             >
-              ⚠️ ROS 未连接，请先连接 ROS
+              ⚠️ ROS 未连接，请先连接 后端
             </div>
           )}
 
