@@ -9,6 +9,13 @@ META_CONNECTED = "connected"       # link 已连接，未 configure
 META_INACTIVE = "inactive"         # 已 configure，未 activate
 META_ACTIVE = "active"             # 已 activate，可调用业务方法
 
+
+def _is_success(result) -> bool:
+    """Check transition result — handles both string and enum (.value) returns."""
+    if hasattr(result, 'value'):
+        return result.value == "success"
+    return result == "success"
+
 # 默认配置
 _DEFAULT_LOC_CONFIG = {
     "map_folder": "map_default",
@@ -154,7 +161,7 @@ class MetaBridgeMixin:
         errors = []
 
         try:
-            self._loc = connect("localization")
+            self._loc = connect("meta.localization")
             self._loc_state = META_CONNECTED
             logger.info("[meta] Connected to localization")
         except Exception as e:
@@ -163,7 +170,7 @@ class MetaBridgeMixin:
             logger.warning("[meta] Failed to connect localization: %s", e)
 
         try:
-            self._nav = connect("astribot_navigation")
+            self._nav = connect("meta.astribot_navigation")
             self._nav_state = META_CONNECTED
             logger.info("[meta] Connected to astribot_navigation")
         except Exception as e:
@@ -236,7 +243,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Configuring localization with: %s", cfg)
                 result = self._loc.configure(cfg)
                 logger.info("[meta] Localization configure result: %s", result)
-                if hasattr(result, 'value') and result.value == "success":
+                if _is_success(result):
                     self._loc_state = META_INACTIVE
                     results["localization"] = "configured"
                     logger.info("[meta] Localization configured")
@@ -253,7 +260,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Configuring navigation with: %s", cfg)
                 result = self._nav.configure(cfg)
                 logger.info("[meta] Navigation configure result: %s", result)
-                if hasattr(result, 'value') and result.value == "success":
+                if _is_success(result):
                     self._nav_state = META_INACTIVE
                     results["navigation"] = "configured"
                     logger.info("[meta] Navigation configured")
@@ -305,7 +312,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Activating localization...")
                 result = self._loc.activate()
                 logger.info("[meta] Localization activate result: %s", result)
-                if hasattr(result, 'value') and result.value == "success":
+                if _is_success(result):
                     self._loc_state = META_ACTIVE
                     results["localization"] = "activated"
                     logger.info("[meta] Localization activated")
@@ -322,7 +329,7 @@ class MetaBridgeMixin:
                 logger.info("[meta] Activating navigation...")
                 result = self._nav.activate()
                 logger.info("[meta] Navigation activate result: %s", result)
-                if hasattr(result, 'value') and result.value == "success":
+                if _is_success(result):
                     self._nav_state = META_ACTIVE
                     results["navigation"] = "activated"
                     logger.info("[meta] Navigation activated")

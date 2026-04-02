@@ -27,7 +27,7 @@ class MapManagerMixin:
             return {"success": False, "message": "Empty map name"}
 
         logger.warning("[map] apply_map: %r", map_name_clean)
-        result = self._loc_call_timeout("apply_map", 60.0, map_name_clean)
+        result = self._loc_call("apply_map", map_name_clean)
         logger.warning("[map] apply_map result: %s", result)
         if result.get("success"):
             with self._lock:
@@ -50,34 +50,30 @@ class MapManagerMixin:
         result = self._loc_call("load_map", map_name)
         if not result.get("success"):
             return result
-        # map_data is a ROS OccupancyGrid object returned by astribot_link
         og = result.get("map_data")
-        if og is None:
-            return {"success": False, "message": "No map_data in response"}
-        if isinstance(og, dict):
-            # astribot_link unexpectedly returned a dict instead of OccupancyGrid
-            logger.error("[map] load_map: map_data is dict, expected OccupancyGrid: %s", og)
-            return {"success": False, "message": "map_data has unexpected type (dict)"}
+        if not isinstance(og, dict):
+            logger.error("[map] load_map: map_data has unexpected type: %s", type(og))
+            return {"success": False, "message": f"map_data has unexpected type: {type(og)}"}
         try:
-            info = og.info
-            origin = info.origin
+            info = og["info"]
+            origin = info["origin"]
             return {
                 "success": True,
                 "name": map_name,
-                "resolution": float(info.resolution),
-                "width": int(info.width),
-                "height": int(info.height),
+                "resolution": float(info["resolution"]),
+                "width": int(info["width"]),
+                "height": int(info["height"]),
                 "origin": {
-                    "x": float(origin.position.x),
-                    "y": float(origin.position.y),
-                    "orientation": float(origin.orientation.z),
+                    "x": float(origin["position"]["x"]),
+                    "y": float(origin["position"]["y"]),
+                    "orientation": float(origin["orientation"]["z"]),
                 },
-                "data": list(og.data),
+                "data": list(og["data"]),
                 "zones_json": result.get("zones_json", ""),
             }
-        except AttributeError as e:
-            logger.error("[map] load_map: OccupancyGrid attribute missing: %s", e)
-            return {"success": False, "message": f"Failed to read OccupancyGrid fields: {e}"}
+        except (KeyError, TypeError) as e:
+            logger.error("[map] load_map: map_data missing field: %s", e)
+            return {"success": False, "message": f"Failed to read map_data fields: {e}"}
         except Exception as e:
             logger.error("[map] load_map: serialization failed: %s", e)
             return {"success": False, "message": f"Failed to serialize map: {e}"}
