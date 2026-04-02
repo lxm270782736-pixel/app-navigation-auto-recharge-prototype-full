@@ -16,7 +16,6 @@ import { ChassisControl } from '@/components/common/ChassisControl';
 import { DockControl } from '@/components/common/DockControl';
 import { rosService } from '@/services/ros';
 import { ROS2_MESSAGE_TYPES } from '@/config/ros2MessageTypes';
-import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, Waypoint, PathPoint } from '@/types';
@@ -308,8 +307,7 @@ export const Navigation: React.FC = () => {
       if (connectionStatus === ConnectionStatus.CONNECTED) {
         const rosMaps = await rosService.getAllMapMetadata();
         // 过滤掉本地独有的地图
-        const rosOnlyMaps = rosMaps.filter(map => !map.localOnly);
-        setAvailableMaps(rosOnlyMaps);
+        setAvailableMaps(rosMaps);
       } else {
         message.warning('请先连接 ROS');
         setAvailableMaps([]);
@@ -558,27 +556,15 @@ export const Navigation: React.FC = () => {
 
           const mapName = `map_${year}${month}${day}_${hours}${minutes}${seconds}`;
 
-          // 生成缩略图
-          const thumbnail = mapStorageService.generateThumbnail(
-            currentMap.data,
-            currentMap.width,
-            currentMap.height
-          );
-
-          // 创建地图数据（含缩略图）
           const mapToSave: MapData = {
             ...currentMap,
             id: mapName,
             name: mapName,
             createdAt: new Date().toISOString(),
-            thumbnail,
           };
 
           // 保存地图到 ROS
           await rosService.saveMapToROS(mapToSave);
-
-          // 同时保存到本地缓存
-          mapStorageService.saveMapToLocalCache(mapToSave);
 
           message.success(`地图已保存: ${mapName}`);
         } catch (error) {

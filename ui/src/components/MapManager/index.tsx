@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, List, Modal, Empty, message, Space, Badge, Tag, Alert } from 'antd';
+import { Card, Button, List, Modal, Empty, message, Space, Badge, Alert } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -8,11 +8,9 @@ import {
   CheckCircleOutlined,
   EditOutlined,
   ReloadOutlined,
-  CloudUploadOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { rosService } from '@/services/ros';
-import { mapStorageService } from '@/services/storage';
 import { useROS } from '@/contexts/ROSContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData } from '@/types';
@@ -21,40 +19,6 @@ import dayjs from 'dayjs';
 // LocalStorage key for current map
 const CURRENT_MAP_KEY = 'astribot_current_map_id';
 
-/** Generate a 200x200 thumbnail from occupancy grid data. */
-function generateThumbnail(map: MapData): string {
-  try {
-    const { width, height, data } = map;
-    if (!width || !height || !data?.length) return '';
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(200 / width, 200 / height);
-    canvas.width = Math.round(width * scale);
-    canvas.height = Math.round(height * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-    const src = ctx.createImageData(width, height);
-    for (let i = 0; i < data.length; i++) {
-      const v = data[i];
-      let r = 128, g = 128, b = 128; // unknown
-      if (v === 0) { r = 255; g = 255; b = 255; }      // free
-      else if (v === 100) { r = 0; g = 0; b = 0; }     // occupied
-      src.data[i * 4] = r;
-      src.data[i * 4 + 1] = g;
-      src.data[i * 4 + 2] = b;
-      src.data[i * 4 + 3] = 255;
-    }
-    // Draw full-res then scale down
-    const tmp = document.createElement('canvas');
-    tmp.width = width;
-    tmp.height = height;
-    tmp.getContext('2d')!.putImageData(src, 0, 0);
-    ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.7);
-  } catch {
-    return '';
-  }
-}
-
 export const MapManager: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useROS();
@@ -62,7 +26,6 @@ export const MapManager: React.FC = () => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedMap, setSelectedMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [thumbnailsLoading, setThumbnailsLoading] = useState<Set<string>>(new Set());
 
   // 从 localStorage 恢复当前地图ID
   const [currentMapId, setCurrentMapId] = useState<string | null>(() => {
@@ -124,86 +87,29 @@ export const MapManager: React.FC = () => {
   }, [maps, currentMapId]);
 
   const loadMaps = async (forceRefresh: boolean = false) => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      message.warning('请先连接 ROS');
+      return;
+    }
     try {
       setLoading(true);
-
-      // 如果是强制刷新，从ROS获取当前地图名称
-      if (forceRefresh && connectionStatus === ConnectionStatus.CONNECTED) {
+      if (forceRefresh) {
         try {
           const currentMapName = await rosService.getCurrentMapName();
           if (currentMapName) {
-            // 根据地图名称查找对应的地图ID
-            // 注意：这里假设地图ID和名称相同，如果不同需要调整
             setCurrentMapId(currentMapName);
-            // 同步到 localStorage
             localStorage.setItem(CURRENT_MAP_KEY, currentMapName);
-            console.log('[地图管理] 从ROS获取当前地图:', currentMapName);
           } else {
-            // 如果ROS返回空，清除当前地图状态
             setCurrentMapId(null);
             localStorage.removeItem(CURRENT_MAP_KEY);
-            console.log('[地图管理] ROS未设置当前地图，已清除本地状态');
           }
         } catch (error) {
           console.error('[地图管理] 获取当前地图失败:', error);
         }
       }
-
-      // 如果不是强制刷新，优先从本地缓存加载
-      if (!forceRefresh) {
-        const localMaps = mapStorageService.getAllMapsFromLocalCache();
-        if (localMaps.length > 0) {
-          setMaps(sortMaps(localMaps));
-          console.log('[地图管理] 从本地缓存加载', localMaps.length, '个地图');
-          setLoading(false);
-          return;
-        }
-        console.log('[地图管理] 本地缓存为空，从 ROS 加载');
-      } else {
-        console.log('[地图管理] 强制刷新，对比本地和远端');
-      }
-
-      // 本地为空或强制刷新，从 ROS 加载
-      if (connectionStatus !== ConnectionStatus.CONNECTED) {
-        message.warning('请先连接 ROS');
-        setLoading(false);
-        return;
-      }
-
-      // 从 ROS Service 获取地图列表（已包含元数据和缩略图，但不含完整 data）
       const rosMaps = await rosService.getAllMapMetadata();
-      console.log('[地图管理] 从 ROS 加载', rosMaps.length, '个地图（含元数据和缩略图）');
-
-      // 如果是强制刷新，对比本地缓存和ROS，标记本地独有的地图
-      let finalMaps: MapData[] = [...rosMaps];
-      if (forceRefresh) {
-        const localMaps = mapStorageService.getAllMapsFromLocalCache();
-        const rosMapIds = new Set(rosMaps.map(m => m.id));
-
-        // 找出只存在于本地的地图
-        const localOnlyMaps = localMaps.filter(localMap => !rosMapIds.has(localMap.id));
-
-        if (localOnlyMaps.length > 0) {
-          console.log('[地图管理] 发现', localOnlyMaps.length, '个仅存在于本地的地图:', localOnlyMaps.map(m => m.name));
-
-          // 标记为本地独有
-          localOnlyMaps.forEach(map => {
-            map.localOnly = true;
-          });
-
-          // 合并到最终列表
-          finalMaps = [...rosMaps, ...localOnlyMaps];
-
-          message.warning(`发现 ${localOnlyMaps.length} 个地图仅存在于本地，未同步到ROS`);
-        }
-      }
-
-      // 排序地图列表
-      const sortedMaps = sortMaps(finalMaps);
-      setMaps(sortedMaps);
-
-      // 异步加载每个地图的完整数据（用于编辑）
-      loadFullMapData(sortedMaps, forceRefresh);
+      setMaps(sortMaps(rosMaps));
+      loadFullMapData(rosMaps);
     } catch (error) {
       console.error('加载地图列表失败:', error);
       message.error('加载地图列表失败');
@@ -212,61 +118,20 @@ export const MapManager: React.FC = () => {
     }
   };
 
-  const loadFullMapData = async (mapList: MapData[], saveToCache: boolean = true) => {
-    // 过滤掉无效的地图（id 或 name 为空/undefined）
-    // 同时过滤掉仅本地的地图（它们已经有完整数据，不需要从ROS加载）
-    const validMaps = mapList.filter(map => {
-      if (!map.id || !map.name || map.id === 'unknown_map') {
-        console.warn('[地图管理] 跳过无效地图:', map);
-        return false;
-      }
-      if (map.localOnly) {
-        console.log('[地图管理] 跳过仅本地地图（已有完整数据）:', map.name);
-        return false;
-      }
-      return true;
-    });
-
-    // 并行加载所有地图的完整数据（用于编辑）
-    const dataPromises = validMaps.map(async (map) => {
-      setThumbnailsLoading((prev) => new Set(prev).add(map.id));
-
+  const loadFullMapData = async (mapList: MapData[]) => {
+    const validMaps = mapList.filter(map => map.id && map.name && map.id !== 'unknown_map');
+    await Promise.all(validMaps.map(async (map) => {
       try {
-        // 从 ROS 加载完整地图数据（只需要 data 字段，元数据和缩略图已有）
         const fullMapData = await rosService.loadMapFromROS(map.id);
-
-        // 创建完整的地图对象 — fullMapData 包含 width/height/resolution/origin/data
-        const completeMap: MapData = fullMapData
-          ? { ...map, ...fullMapData, thumbnail: map.thumbnail || generateThumbnail(fullMapData) }
-          : { ...map, data: map.data ?? [] };
-
-        // 更新 state
-        setMaps((prevMaps) =>
-          prevMaps.map((m) =>
-            m.id === map.id ? completeMap : m
-          )
-        );
-
-        // 保存到本地缓存（如果需要）
-        if (saveToCache) {
-          mapStorageService.saveMapToLocalCache(completeMap);
+        if (fullMapData) {
+          setMaps((prevMaps) =>
+            prevMaps.map((m) => m.id === map.id ? { ...map, ...fullMapData, thumbnail: map.thumbnail } : m)
+          );
         }
-
-        console.log('[地图管理] 已加载地图数据:', map.name, `数据量: ${fullMapData.data.length} 像素`);
       } catch (error) {
-        console.error(`加载地图数据 ${map.name || map.id} 失败:`, error);
-      } finally {
-        setThumbnailsLoading((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(map.id);
-          return newSet;
-        });
+        console.error(`加载地图数据 ${map.name} 失败:`, error);
       }
-    });
-
-    // 等待所有地图数据加载完成
-    await Promise.all(dataPromises);
-    console.log('[地图管理] 所有地图数据已加载完成' + (saveToCache ? '（已保存到本地缓存）' : ''));
+    }));
   };
 
   const handleCreateMap = () => {
@@ -283,78 +148,14 @@ export const MapManager: React.FC = () => {
       message.warning('请先连接 ROS');
       return;
     }
-
-    // 如果是本地独有的地图，不能应用
-    if (map.localOnly) {
-      message.warning('该地图仅存在于本地，请先同步到ROS后再应用');
-      return;
-    }
-
     try {
       message.loading({ content: '正在应用地图...', key: 'applyMap', duration: 0 });
-
-      // 调用 ROS 服务，将地图设置为当前地图
       await rosService.setCurrentMap(map);
-
-      // 更新当前地图ID
       setCurrentMapId(map.id);
-
-      // 持久化到 localStorage
-      try {
-        localStorage.setItem(CURRENT_MAP_KEY, map.id);
-        console.log('[地图管理] 当前地图ID已保存到 localStorage:', map.id);
-      } catch (error) {
-        console.error('保存当前地图ID到 localStorage 失败:', error);
-      }
-
-      message.success({
-        content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`,
-        key: 'applyMap',
-        duration: 3,
-      });
-
-      console.log('[地图管理] 已应用地图:', map.name);
+      try { localStorage.setItem(CURRENT_MAP_KEY, map.id); } catch { /* ignore */ }
+      message.success({ content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`, key: 'applyMap', duration: 3 });
     } catch (error) {
-      console.error('应用地图失败:', error);
-      message.error({
-        content: '应用地图失败: ' + (error instanceof Error ? error.message : '未知错误'),
-        key: 'applyMap',
-      });
-    }
-  };
-
-  const handleSyncToROS = async (map: MapData) => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 ROS');
-      return;
-    }
-
-    try {
-      message.loading({ content: '正在同步到ROS...', key: 'syncMap', duration: 0 });
-
-      // 保存到 ROS
-      await rosService.saveMapToROS(map);
-
-      message.success({
-        content: `地图 "${map.name}" 已同步到ROS`,
-        key: 'syncMap',
-        duration: 2,
-      });
-
-      console.log('[地图管理] 地图已同步到ROS:', map.name);
-
-      // 更新地图状态，移除 localOnly 标记
-      setMaps((prevMaps) =>
-        prevMaps.map((m) =>
-          m.id === map.id ? { ...m, localOnly: false } : m
-        )
-      );
-    } catch (error) {
-      console.error('同步到ROS失败:', error);
-      message.error({
-        content: '同步到ROS失败: ' + (error instanceof Error ? error.message : '未知错误'),
-        key: 'syncMap',
-      });
+      message.error({ content: '应用地图失败: ' + (error instanceof Error ? error.message : '未知错误'), key: 'applyMap' });
     }
   };
 
@@ -365,60 +166,17 @@ export const MapManager: React.FC = () => {
 
   const confirmDelete = async () => {
     if (!selectedMap) return;
-
     try {
-      // 同步删除：本地和ROS并行处理
-      let rosDeleteSuccess = false;
-      let localDeleteSuccess = false;
-
-      // 1. 立即删除本地缓存（优先本地策略）
-      try {
-        mapStorageService.deleteMapFromLocalCache(selectedMap.id);
-        localDeleteSuccess = true;
-        console.log('[地图删除] 本地缓存已删除');
-      } catch (error) {
-        console.error('[地图删除] 本地缓存删除失败:', error);
-      }
-
-      // 2. 尝试删除ROS后端（如果已连接）
-      if (connectionStatus === ConnectionStatus.CONNECTED) {
-        try {
-          await rosService.deleteMapFromROS(selectedMap.id);
-          rosDeleteSuccess = true;
-          console.log('[地图删除] ROS后端已删除');
-        } catch (error) {
-          console.error('[地图删除] ROS后端删除失败:', error);
-          // ROS删除失败不阻止本地删除
-        }
-      }
-
-      // 3. 如果删除的是当前地图，清除当前地图状态
+      await rosService.deleteMapFromROS(selectedMap.id);
       if (selectedMap.id === currentMapId) {
         setCurrentMapId(null);
-        try {
-          localStorage.removeItem(CURRENT_MAP_KEY);
-          console.log('[地图删除] 已清除当前地图状态');
-        } catch (error) {
-          console.error('清除 localStorage 失败:', error);
-        }
+        try { localStorage.removeItem(CURRENT_MAP_KEY); } catch { /* ignore */ }
       }
-
-      // 4. 更新UI状态
       setMaps((prevMaps) => prevMaps.filter((m) => m.id !== selectedMap.id));
-
-      // 5. 显示结果
-      if (localDeleteSuccess && rosDeleteSuccess) {
-        message.success('地图已删除（本地和ROS同步完成）');
-      } else if (localDeleteSuccess && !rosDeleteSuccess) {
-        message.warning('地图已从本地删除，但ROS删除失败');
-      } else if (!localDeleteSuccess) {
-        message.error('地图删除失败');
-      }
-
+      message.success('地图已删除');
       setDeleteModalVisible(false);
       setSelectedMap(null);
     } catch (error) {
-      console.error('删除地图失败:', error);
       message.error('删除地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
     }
   };
@@ -500,9 +258,9 @@ export const MapManager: React.FC = () => {
             return (
               <List.Item>
                 <Badge.Ribbon
-                  text={isCurrentMap ? "使用中" : "仅本地"}
-                  color={isCurrentMap ? "green" : "orange"}
-                  style={{ display: (isCurrentMap || map.localOnly) ? 'block' : 'none' }}
+                  text="使用中"
+                  color="green"
+                  style={{ display: isCurrentMap ? 'block' : 'none' }}
                 >
                   <Card
                     hoverable
@@ -522,9 +280,7 @@ export const MapManager: React.FC = () => {
                       }}
                       onClick={() => handleEditMap(map)}
                     >
-                      {thumbnailsLoading.has(map.id) ? (
-                        <span style={{ color: '#999' }}>加载缩略图中...</span>
-                      ) : map.thumbnail ? (
+                      {map.thumbnail ? (
                         <img
                           src={map.thumbnail}
                           alt={map.name}
@@ -535,67 +291,36 @@ export const MapManager: React.FC = () => {
                       )}
                     </div>
                   }
-                  actions={
-                    map.localOnly
-                      ? [
-                          <Button
-                            key="sync"
-                            type="link"
-                            icon={<CloudUploadOutlined />}
-                            onClick={() => handleSyncToROS(map)}
-                            style={{ color: '#fa8c16' }}
-                          >
-                            同步到ROS
-                          </Button>,
-                          <Button
-                            key="edit"
-                            type="link"
-                            icon={<EditOutlined />}
-                            onClick={() => handleEditMap(map)}
-                          >
-                            编辑
-                          </Button>,
-                          <Button
-                            key="delete"
-                            type="link"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() => handleDeleteMap(map)}
-                          >
-                            删除
-                          </Button>,
-                        ]
-                      : [
-                          <Button
-                            key="apply"
-                            type="link"
-                            icon={<CheckCircleOutlined />}
-                            onClick={() => handleApplyMap(map)}
-                            disabled={isCurrentMap}
-                            style={{ color: isCurrentMap ? '#999' : '#52c41a' }}
-                            title={isCurrentMap ? "当前使用中" : "应用此地图"}
-                          >
-                            {isCurrentMap ? '使用中' : '应用'}
-                          </Button>,
-                          <Button
-                            key="edit"
-                            type="link"
-                            icon={<EditOutlined />}
-                            onClick={() => handleEditMap(map)}
-                          >
-                            编辑
-                          </Button>,
-                          <Button
-                            key="delete"
-                            type="link"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() => handleDeleteMap(map)}
-                          >
-                            删除
-                          </Button>,
-                        ]
-                  }
+                  actions={[
+                    <Button
+                      key="apply"
+                      type="link"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => handleApplyMap(map)}
+                      disabled={isCurrentMap}
+                      style={{ color: isCurrentMap ? '#999' : '#52c41a' }}
+                      title={isCurrentMap ? "当前使用中" : "应用此地图"}
+                    >
+                      {isCurrentMap ? '使用中' : '应用'}
+                    </Button>,
+                    <Button
+                      key="edit"
+                      type="link"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEditMap(map)}
+                    >
+                      编辑
+                    </Button>,
+                    <Button
+                      key="delete"
+                      type="link"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDeleteMap(map)}
+                    >
+                      删除
+                    </Button>,
+                  ]}
                 >
                     <Card.Meta
                       title={map.name}
@@ -633,11 +358,7 @@ export const MapManager: React.FC = () => {
           <div>
             <Alert
               message="警告：此操作不可恢复！"
-              description={
-                selectedMap.localOnly
-                  ? '该地图仅存在于本地缓存，删除后将无法恢复。'
-                  : '该地图将从本地缓存和ROS后端同时删除，删除后将无法恢复。'
-              }
+              description="该地图将从 ROS 后端删除，删除后将无法恢复。"
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
@@ -680,22 +401,13 @@ export const MapManager: React.FC = () => {
                   <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
                     {selectedMap.name}
                   </div>
-                  {selectedMap.localOnly && (
-                    <Tag color="orange" style={{ margin: 0 }}>仅本地</Tag>
-                  )}
                 </div>
 
                 <div style={{ fontSize: 13, color: '#666', lineHeight: '22px' }}>
                   <div>创建时间：{dayjs(selectedMap.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
                   <div>地图尺寸：{selectedMap.width} × {selectedMap.height} 像素</div>
                   <div>分辨率：{selectedMap.resolution.toFixed(3)} m/px</div>
-                  <div>存储位置：
-                    {selectedMap.localOnly ? (
-                      <span style={{ color: '#fa8c16' }}> 仅本地缓存</span>
-                    ) : (
-                      <span style={{ color: '#52c41a' }}> 本地缓存 + ROS后端</span>
-                    )}
-                  </div>
+                  <div>存储位置：<span style={{ color: '#52c41a' }}> ROS后端</span></div>
                 </div>
               </div>
             </div>
