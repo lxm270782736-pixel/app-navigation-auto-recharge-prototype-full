@@ -226,7 +226,7 @@ if __name__ == '__main__':
 
 **启动Mock服务器：**
 ```bash
-./start-sim.sh
+python main.py  # 后端；另开终端: cd ui && npm run dev
 # 或单独启动
 python3 mock_rosbridge.py
 ```

@@ -6,12 +6,12 @@
 
 ```bash
 # 启动模拟服务器
-./start-sim.sh
+python main.py  # 后端，另开终端: cd ui && npm run dev
 ```
 
 等待服务启动完成：
 - Mock ROS Bridge: ws://localhost:9090
-- HTTP API Server: http://localhost:8080
+- HTTP API Server: http://localhost:17659
 - Frontend: http://localhost:4173
 
 ### 2. 进入导航界面
@@ -250,7 +250,7 @@
 ```bash
 # 重启服务器
 Ctrl+C
-./start-sim.sh
+python main.py  # 后端，另开终端: cd ui && npm run dev
 ```
 
 ### 问题2: 任务参数无效
@@ -357,7 +357,7 @@ echo "任务系统自动化测试"
 echo "==================="
 
 # 启动服务器（后台）
-./start-sim.sh &
+python main.py  # 后端，另开终端: cd ui && npm run dev &
 SERVER_PID=$!
 
 sleep 5

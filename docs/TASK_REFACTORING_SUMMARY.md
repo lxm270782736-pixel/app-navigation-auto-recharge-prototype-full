@@ -279,7 +279,7 @@ TaskListView (显示新任务列表)
 
 ```bash
 # 1. 启动系统
-./start-sim.sh
+python main.py  # 后端；另开终端: cd ui && npm run dev
 
 # 2. 访问 http://localhost:4173
 

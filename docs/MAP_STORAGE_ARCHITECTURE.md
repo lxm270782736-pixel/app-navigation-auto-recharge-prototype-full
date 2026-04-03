@@ -10,7 +10,7 @@ UI 层 (MapManager/MapEditor/Navigation)
        ↓
 mapStorageService (storage.ts)
        ↓ ↓
-   HTTP API (8080)  ←──────  LocalStorage (降级)
+   HTTP API (17659)  ←──────  LocalStorage (降级)
        ↓
    saved_maps/ 目录
 ```
@@ -22,7 +22,7 @@ mapStorageService (storage.ts)
 - `GET /api/maps/:id` - 获取单个地图
 - `POST /api/maps` - 保存地图
 - `DELETE /api/maps/:id` - 删除地图
-- 端口: 8080
+- 端口: 17659
 - 数据格式: JSON (带 GZIP 压缩)
 
 **LocalStorage 降级**:
