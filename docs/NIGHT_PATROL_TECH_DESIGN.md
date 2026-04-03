@@ -45,7 +45,7 @@
 │  ├── Navigation / Dashboard / MapManager 等                    │
 │  └── CustomStepManager Modal                                   │
 ├───────────────────────────────────────────────────────────────┤
-│  FastAPI Backend (Python, port 8080)                           │
+│  FastAPI Backend (Python, port 17659)                           │
 │  ├── src/main.py           — REST + SSE 路由                   │
 │  ├── src/logic.py          — BusinessLogic 组装类 + 连接管理    │
 │  ├── src/room_config.py    — RoomConfigMixin (点位录制)         │

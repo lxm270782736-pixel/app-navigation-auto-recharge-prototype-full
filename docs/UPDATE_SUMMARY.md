@@ -86,7 +86,7 @@
 创建了详细的地图存储架构分析文档,为后续迁移到统一 ROS Service 架构做准备。
 
 #### 当前架构问题
-- HTTP API (port 8080) 和 ROS 地图系统分离
+- HTTP API (port 17634) 和 ROS 地图系统分离
 - UI 保存的地图和 ROS navigation 使用的地图可能不一致
 - 无历史地图管理和版本控制
 - 数据流分散难以维护
@@ -171,7 +171,7 @@ MAP_STORAGE_ARCHITECTURE.md
 
 #### 当前状态
 ```
-HTTP API (8080)     ROS map_server
+HTTP API (17634)     ROS map_server
       ↓                    ↓
   saved_maps/         ROS maps/
       ↑                    ↑

@@ -127,7 +127,7 @@ import { TaskMonitor } from '@/components/common/TaskMonitor';
 
 1. **启动模拟服务器**
    ```bash
-   ./start-sim.sh
+   python main.py  # 后端；另开终端: cd ui && npm run dev
    ```
 
 2. **打开浏览器**

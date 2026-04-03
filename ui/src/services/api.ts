@@ -34,10 +34,10 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — same origin when served from FastAPI, or port 17634 for dev
-const API_BASE = window.location.port === '17634'
+// Backend base URL — injected from .env via vite.config.ts define
+const API_BASE = window.location.port === String(__BACKEND_PORT__)
   ? ''  // same origin, no prefix needed
-  : `http://${window.location.hostname}:17634`;
+  : `http://${window.location.hostname}:${__BACKEND_PORT__}`;
 
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();

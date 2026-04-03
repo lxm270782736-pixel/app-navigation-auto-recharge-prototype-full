@@ -5,7 +5,7 @@
 ### 启动系统
 
 ```bash
-./start-sim.sh
+python main.py  # 后端；另开终端: cd ui && npm run dev
 ```
 
 访问 http://localhost:4173，进入导航界面。
