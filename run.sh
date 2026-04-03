@@ -6,9 +6,9 @@ echo "=================================================="
 echo ""
 
 # 检查并清理旧进程
-if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
-    echo "⚠️  端口8080已被占用，尝试清理..."
-    kill $(lsof -t -i:8080) 2>/dev/null
+if lsof -Pi :17634 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    echo "⚠️  端口17634已被占用，尝试清理..."
+    kill $(lsof -t -i:17634) 2>/dev/null
     sleep 1
 fi
 
@@ -28,7 +28,7 @@ fi
 
 # 启动Web服务器
 echo "启动Web服务器..."
-cd dist && python3 -m http.server 8080 &
+cd dist && python3 -m http.server 17634 &
 WEB_PID=$!
 sleep 2
 
@@ -38,7 +38,7 @@ echo "  ✅ 所有服务已启动！"
 echo "=================================================="
 echo ""
 echo "  📱 访问地址:"
-echo "     http://localhost:8080"
+echo "     http://localhost:17634"
 echo ""
 echo "  🤖 ROS Bridge:"
 echo "     ws://localhost:9090"
@@ -47,7 +47,7 @@ echo "  ⚙️  服务进程:"
 echo "     Web服务器: PID $WEB_PID"
 echo ""
 echo "  💡 提示:"
-echo "     - 在浏览器中打开 http://localhost:8080"
+echo "     - 在浏览器中打开 http://localhost:17634"
 echo "     - 按 Ctrl+C 停止所有服务"
 echo ""
 echo "=================================================="

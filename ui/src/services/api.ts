@@ -34,10 +34,10 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — same origin when served from FastAPI, or port 8080 for dev
-const API_BASE = window.location.port === '8080'
+// Backend base URL — same origin when served from FastAPI, or port 17634 for dev
+const API_BASE = window.location.port === '17634'
   ? ''  // same origin, no prefix needed
-  : `http://${window.location.hostname}:8080`;
+  : `http://${window.location.hostname}:17634`;
 
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();

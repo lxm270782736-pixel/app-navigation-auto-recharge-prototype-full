@@ -540,4 +540,4 @@ if _UI_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8080)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=17634)

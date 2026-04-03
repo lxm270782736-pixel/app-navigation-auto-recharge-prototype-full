@@ -5,7 +5,7 @@
  *   const { appState, callApi, baseUrl } = useApp(appId);
  *   // appState: reactive state from SSE (updates every 0.5s)
  *   // callApi: typed fetch wrapper — callApi('POST', '/api/navigation/go', { x, y, theta })
- *   // baseUrl: app's HTTP base URL (e.g., http://192.168.0.11:8080)
+ *   // baseUrl: app's HTTP base URL (e.g., http://192.168.0.11:17634)
  *
  * In mock mode, Vite alias swaps this file for mocks/use-app.mock.ts.
  */
