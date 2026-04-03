@@ -243,8 +243,12 @@ export const Mapping: React.FC = () => {
     try {
       message.loading({ content: '正在设置地图名称...', key: 'setMapName', duration: 0 });
 
-      // 调用后端接口设置地图名称
-      await apiService.setMapName(finalMapName);
+      // 通过 apply_map 接口在后端设置地图名称（地图不存在时作为 pending_map_name）
+      const applyResult = await apiService.applyMap(finalMapName);
+      if (!applyResult.success) {
+        message.error({ content: applyResult.message || '设置地图名称失败', key: 'setMapName' });
+        return;
+      }
 
       // 记住这个地图名称供后续使用
       setPendingMapName(finalMapName);
