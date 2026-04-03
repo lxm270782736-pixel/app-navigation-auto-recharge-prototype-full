@@ -167,7 +167,7 @@
 │  - 大数据轮询 /api/maps (每2s)                          │
 └────────────────────────┬────────────────────────────────┘
                          │ HTTP REST + SSE
-              http://localhost:8080
+              http://localhost:17634
                          │
 ┌────────────────────────▼────────────────────────────────┐
 │  FastAPI 后端 (src/main.py + src/logic.py)              │
@@ -198,7 +198,7 @@
 │  - 自动降级: HTTP API → localStorage                    │
 └────────────────────────┬────────────────────────────────┘
                          │ HTTP REST API
-              http://localhost:8080/api
+              http://localhost:17634/api
                          │
 ┌────────────────────────▼────────────────────────────────┐
 │  HTTP API 服务器 (FastAPI/src/main.py)                  │
@@ -263,7 +263,7 @@ npm run preview  # 预览构建结果（端口4173）
 ```
 
 启动内容：
-- FastAPI 后端服务器在端口8080（含Mock Meta服务）
+- FastAPI 后端服务器在端口17634（含Mock Meta服务）
 - 前端开发服务器在端口3500
 - 访问 http://localhost:3500
 
@@ -282,8 +282,8 @@ npm run preview  # 预览构建结果（端口4173）
 ### API 端点
 
 前端自动检测后端地址：
-- 端口8080时：使用同源地址（无前缀）
-- 其他端口：使用 `http://{hostname}:8080`
+- 端口17634时：使用同源地址（无前缀）
+- 其他端口：使用 `http://{hostname}:17634`
 
 **状态推送（SSE）**
 
@@ -445,10 +445,10 @@ astribot_navigation_ui/
 前端自动检测后端地址（`ui/src/services/api.ts`）：
 
 ```typescript
-// 端口8080时使用同源，否则使用 http://{hostname}:8080
-const BASE_URL = window.location.port === '8080'
+// 端口17634时使用同源，否则使用 http://{hostname}:17634
+const BASE_URL = window.location.port === '17634'
   ? ''
-  : `http://${window.location.hostname}:8080`;
+  : `http://${window.location.hostname}:17634`;
 ```
 
 如需自定义，修改 `ui/src/services/api.ts` 中的 `BASE_URL` 常量。
@@ -627,10 +627,10 @@ Dashboard中的一键服务启动组件：
 
 ### 1. 无法连接到后端
 
-- 确保FastAPI后端服务已启动（端口8080）
+- 确保FastAPI后端服务已启动（端口17634）
 - 检查防火墙设置
 - 查看浏览器控制台的网络请求错误
-- 确认 `http://localhost:8080/api/state` 是否可访问
+- 确认 `http://localhost:17634/api/state` 是否可访问
 
 ### 2. Meta服务未连接
 
@@ -660,7 +660,7 @@ Dashboard中的一键服务启动组件：
 
 ### 6. 地图无法保存
 
-- 检查后端服务是否启动（端口8080）
+- 检查后端服务是否启动（端口17634）
 - 确认 `saved_maps/` 目录是否存在且有写权限
 - 检查浏览器控制台的网络请求错误
 - 降级模式：服务器不可用时会使用浏览器 localStorage

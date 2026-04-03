@@ -45,8 +45,8 @@ fi
 echo ""
 
 # 启动FastAPI后端
-if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
-    echo "✓ FastAPI后端已在端口8080运行"
+if lsof -Pi :17634 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    echo "✓ FastAPI后端已在端口17634运行"
     FASTAPI_PID=""
 else
     echo "启动FastAPI后端服务器..."
@@ -54,7 +54,7 @@ else
     FASTAPI_PID=$!
     sleep 2
 
-    if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    if lsof -Pi :17634 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
         echo "✓ FastAPI后端已启动 (PID: $FASTAPI_PID)"
     else
         echo "✗ FastAPI后端启动失败"
@@ -97,7 +97,7 @@ echo "  🤖 ROS Bridge (模拟):"
 echo "     ws://localhost:9090"
 echo ""
 echo "  🖥️  FastAPI后端:"
-echo "     http://localhost:8080"
+echo "     http://localhost:17634"
 echo ""
 echo "  📊 支持的功能:"
 echo "     ✓ 地图数据发布"

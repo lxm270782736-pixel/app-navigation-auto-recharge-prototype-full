@@ -18,7 +18,7 @@ npm run lint         # ESLint check
 
 ### Quick Start Scripts
 ```bash
-./start-sim.sh       # Simulation mode: mock ROS Bridge (9090) + HTTP API (8080) + frontend (3500)
+./start-sim.sh       # Simulation mode: mock ROS Bridge (9090) + HTTP API (17634) + frontend (3500)
 ./start-real.sh      # Real robot mode: requires actual ROS environment
 ```
 
@@ -51,7 +51,7 @@ UI Components (Dashboard/MapManager/MapEditor/Navigation/Mapping)
 - Events: 'connection', 'error', 'navigation-result', 'navigation-feedback', 'navigation-status'
 
 **Map Storage (src/services/storage.ts)**
-- Server-side map storage via HTTP API (port 8080)
+- Server-side map storage via HTTP API (port 17634)
 - Fallback to localStorage when server unavailable
 - Endpoints: GET/POST/DELETE `/api/maps`
 - Map data includes: id, name, thumbnail (base64), dimensions, resolution, origin, occupancy grid
@@ -214,7 +214,7 @@ import { apiService } from '@/services/api';  // @ = ./src
 
 The `mock_rosbridge.py` implements:
 - WebSocket server on port 9090 (rosbridge protocol)
-- HTTP API on port 8080 (map storage)
+- HTTP API on port 17634 (map storage)
 - Simulated navigation with linear interpolation (20 steps)
 - Task execution simulation (wait, photo, trajectory)
 - Action status/feedback/result lifecycle
@@ -249,7 +249,7 @@ The `mock_rosbridge.py` implements:
 - `src/components/common/MapCanvas.tsx` - Canvas-based map renderer with coordinate transforms
 
 **Mock Development**
-- `mock_rosbridge.py` - Simulates ROS Bridge (9090) + HTTP API (8080) for development
+- `mock_rosbridge.py` - Simulates ROS Bridge (9090) + HTTP API (17634) for development
 
 ## Documentation References
 
