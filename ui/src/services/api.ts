@@ -600,12 +600,6 @@ class ApiService {
     });
   }
 
-  // Map name setter (for mapping mode)
-  private _pendingMapName: string | undefined;
-  setMapName(name: string) {
-    this._pendingMapName = name;
-  }
-
   // ------ Chassis Control ------
 
   async setChassisControlType(controlType: string): Promise<string> {
