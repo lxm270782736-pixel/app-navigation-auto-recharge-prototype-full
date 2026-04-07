@@ -34,14 +34,12 @@ def stub():
 
 @pytest.fixture
 def active_stub():
-    """Stub with _loc, _nav, and _replay already in active state."""
+    """Stub with _loc and _nav already in active state."""
     s = _Stub()
     s._loc = MagicMock()
     s._loc_state = META_ACTIVE
     s._nav = MagicMock()
     s._nav_state = META_ACTIVE
-    s._replay = MagicMock()
-    s._replay_state = META_ACTIVE
     return s
 
 
@@ -94,7 +92,7 @@ class TestMetaCallRouting:
         with patch("astribot_link.connect", return_value=mock_proxy) as mock_connect:
             result = stub._meta_call("meta.camera", "capture", label="test", save_to_disk=True)
 
-        mock_connect.assert_called_once_with("meta.camera")
+        mock_connect.assert_called_once_with("meta.camera", timeout=30.0)
         mock_proxy.capture.assert_called_once_with(label="test", save_to_disk=True)
         mock_proxy.deactivate.assert_not_called()
         mock_proxy.close.assert_called_once()
@@ -178,6 +176,7 @@ class TestExecuteMetaCustomStep:
 
         stub._meta_call.assert_called_once_with(
             "meta.camera", "capture",
+            _timeout=30.0,
             label="走廊检查",
             save_to_disk=True,
         )
@@ -225,6 +224,7 @@ class TestExecuteMetaCustomStep:
 
         stub._meta_call.assert_called_once_with(
             "meta.camera", "capture",
+            _timeout=30.0,
             label="床位检查",
             save_to_disk=True,
         )

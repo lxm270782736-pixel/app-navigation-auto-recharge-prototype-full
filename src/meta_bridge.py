@@ -44,10 +44,8 @@ class MetaBridgeMixin:
         """Initialize Meta service proxies (call in __init__)."""
         self._loc = None
         self._nav = None
-        self._replay = None           # meta.sales_replay 持久连接
         self._loc_state = META_DISCONNECTED
         self._nav_state = META_DISCONNECTED
-        self._replay_state = META_DISCONNECTED
         self._recovery_in_progress = False
 
     def _trigger_auto_recovery(self):
@@ -108,27 +106,6 @@ class MetaBridgeMixin:
                 logger.error("[loc] %s failed: %s", method_name, e)
             return {"success": False, "message": msg}
 
-    def _replay_call(self, method_name: str, *args, **kwargs) -> dict:
-        """Call a method on the sales_replay Meta proxy.
-
-        Args:
-            method_name: Name of the method to call on self._replay.
-            *args, **kwargs: Forwarded to the method.
-
-        Returns:
-            dict: {"success": bool, ...} — error dict if Meta not active.
-        """
-        if self._replay_state != "active" or not self._replay:
-            return {"success": False, "message": f"Sales_replay Meta not active (state={self._replay_state})"}
-        try:
-            result = getattr(self._replay, method_name)(*args, **kwargs)
-            if result is None:
-                return {"success": False, "message": f"{method_name} returned None"}
-            return result
-        except Exception as e:
-            logger.error("[replay] %s failed: %s", method_name, e)
-            return {"success": False, "message": str(e)}
-
     def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
         """Call a slow localization method using a dedicated connection with extended timeout.
 
@@ -169,7 +146,7 @@ class MetaBridgeMixin:
                     pass
 
     def connect_meta(self) -> dict:
-        """Connect to Meta localization, navigation, and replay services via astribot_link.
+        """Connect to Meta localization and navigation services via astribot_link.
 
         Returns:
             dict: {"success": bool, "message": str}
@@ -200,16 +177,6 @@ class MetaBridgeMixin:
             self._nav = None
             errors.append(f"navigation: {e}")
             logger.warning("[meta] Failed to connect astribot_navigation: %s", e)
-
-        try:
-            # sales_replay 可能需要更长的连接超时
-            self._replay = connect("meta.sales_replay", timeout=15.0)
-            self._replay_state = META_CONNECTED
-            logger.info("[meta] Connected to sales_replay")
-        except Exception as e:
-            self._replay = None
-            errors.append(f"sales_replay: {e}")
-            logger.warning("[meta] Failed to connect sales_replay: %s", e)
 
         # Sync local state with actual Meta state
         if self.meta_connected:
@@ -250,9 +217,6 @@ class MetaBridgeMixin:
         if self._nav:
             self._nav_state = self._probe_service_state(self._nav, "navigation")
             logger.info("[meta] Navigation actual state: %s", self._nav_state)
-        if self._replay:
-            self._replay_state = self._probe_service_state(self._replay, "sales_replay")
-            logger.info("[meta] Sales_replay actual state: %s", self._replay_state)
 
     def configure_meta(self, loc_config: dict | None = None,
                        nav_config: dict | None = None) -> dict:
@@ -381,54 +345,6 @@ class MetaBridgeMixin:
         ok = self._loc_state == META_ACTIVE or self._nav_state == META_ACTIVE
         return {"success": ok, "results": results}
 
-    def activate_replay(self) -> dict:
-        """Activate the sales_replay Meta service.
-
-        Returns:
-            dict: {"success": bool, "message": str}
-        """
-        if not self.meta_connected:
-            return {"success": False, "message": "Meta not connected"}
-
-        if self._replay_state == META_ACTIVE:
-            return {"success": True, "message": "Sales_replay already active"}
-
-        if self._replay:
-            # 先 configure（如果还在 connected 状态）
-            if self._replay_state == META_CONNECTED:
-                try:
-                    logger.info("[meta] Configuring sales_replay...")
-                    result = self._replay.configure({})
-                    logger.info("[meta] Sales_replay configure result: %s", result)
-                    if _is_success(result):
-                        self._replay_state = META_INACTIVE
-                        logger.info("[meta] Sales_replay configured")
-                except Exception as e:
-                    logger.warning("[meta] Sales_replay configure failed: %s", e)
-
-            # 尝试 activate（使用更长超时）
-            if self._replay_state in (META_INACTIVE, META_CONNECTED):
-                try:
-                    logger.info("[meta] Activating sales_replay with extended timeout...")
-                    # 通过创建临时连接来延长超时
-                    from astribot_link import connect
-                    temp_replay = connect("meta.sales_replay", timeout=30.0)
-                    try:
-                        result = temp_replay.activate()
-                        logger.info("[meta] Sales_replay activate result: %s", result)
-                        if _is_success(result):
-                            self._replay_state = META_ACTIVE
-                            logger.info("[meta] Sales_replay activated")
-                            return {"success": True, "message": "Sales_replay activated"}
-                        else:
-                            logger.warning("[meta] Sales_replay activate returned: %s", result)
-                    finally:
-                        temp_replay.close()
-                except Exception as e:
-                    logger.warning("[meta] Sales_replay activate failed: %s", e)
-
-        return {"success": False, "message": f"Sales_replay not available (state={self._replay_state})"}
-
     def deactivate_meta(self) -> dict:
         """Deactivate active Meta services (localization and navigation).
 
@@ -488,7 +404,7 @@ class MetaBridgeMixin:
             "nav_state": self._nav_state,
         }
 
-    def _meta_call(self, service_name: str, method_name: str, **kwargs) -> dict:
+    def _meta_call(self, service_name: str, method_name: str, _timeout: float = 30.0, **kwargs) -> dict:
         """Call a method on an arbitrary Meta service proxy.
 
         Routes to existing proxies when service_name matches known services,
@@ -500,6 +416,8 @@ class MetaBridgeMixin:
                           "navigation" / "astribot_navigation" → self._nav
                           anything else → temporary astribot_link.connect(service_name)
             method_name: Name of the method to call on the proxy.
+            _timeout: Timeout for temporary connection (default 30s).
+                      Use keyword argument only, not positional.
             **kwargs: Keyword arguments forwarded to the method.
 
         Returns:
@@ -531,7 +449,7 @@ class MetaBridgeMixin:
 
         proxy = None
         try:
-            proxy = connect(service_name)
+            proxy = connect(service_name, timeout=_timeout)
 
             # 探测当前状态，按需推进生命周期（不 deactivate，那是服务端自己的事）
             state = self._probe_service_state(proxy, service_name)
