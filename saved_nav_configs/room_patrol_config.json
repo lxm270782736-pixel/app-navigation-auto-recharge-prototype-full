@@ -6,43 +6,43 @@
   },
   "rooms": [
     {
-      "room_id": "101",
-      "room_name": "101室",
-      "door_outside": {
-        "x": -0.5005,
-        "y": -7.4747,
-        "theta": -0.0279
-      },
-      "door_inside": {
-        "x": 0.7730872612093513,
-        "y": -7.504467314841321,
-        "theta": -0.0279
-      },
-      "bed_check": {
-        "x": 4.3574,
-        "y": -7.6105,
-        "theta": -0.028
-      },
-      "door_type": "L_handle",
-      "enabled": true
-    },
-    {
       "room_id": "102",
       "room_name": "102室",
       "door_outside": {
-        "x": -4.5802950523940975,
-        "y": -1.181167878843696,
-        "theta": 1.0262
+        "x": -5.603,
+        "y": -3.9295,
+        "theta": 0.7652
       },
       "door_inside": {
-        "x": -3.1020593364012594,
-        "y": -1.0354263293796135,
-        "theta": 0.7644
+        "x": -4.8745,
+        "y": -3.23,
+        "theta": 0.7652
       },
       "bed_check": {
         "x": -1.5405427350003738,
         "y": -1.139527436139673,
         "theta": 0.7644
+      },
+      "door_type": "L_handle",
+      "enabled": true
+    },
+    {
+      "room_id": "101",
+      "room_name": "101室",
+      "door_outside": {
+        "x": -8.609,
+        "y": -2.0888,
+        "theta": 0.7626
+      },
+      "door_inside": {
+        "x": -7.5752,
+        "y": -1.1011,
+        "theta": 0.7626
+      },
+      "bed_check": {
+        "x": -6.0789,
+        "y": 0.3285,
+        "theta": 0.7626
       },
       "door_type": "L_handle",
       "enabled": true
@@ -54,5 +54,5 @@
     "clutter",
     "water"
   ],
-  "updated_at": "2026-03-30T16:43:46"
+  "updated_at": "2026-04-07T10:37:08"
 }

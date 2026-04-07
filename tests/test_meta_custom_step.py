@@ -34,12 +34,14 @@ def stub():
 
 @pytest.fixture
 def active_stub():
-    """Stub with _loc and _nav already in active state."""
+    """Stub with _loc, _nav, and _replay already in active state."""
     s = _Stub()
     s._loc = MagicMock()
     s._loc_state = META_ACTIVE
     s._nav = MagicMock()
     s._nav_state = META_ACTIVE
+    s._replay = MagicMock()
+    s._replay_state = META_ACTIVE
     return s
 
 
@@ -227,3 +229,126 @@ class TestExecuteMetaCustomStep:
             save_to_disk=True,
         )
         assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# meta_poll: 轮询等待异步操作完成
+# ---------------------------------------------------------------------------
+
+class TestMetaPoll:
+
+    def _make_replay_def(self):
+        return {
+            "id": "meta_replay",
+            "name": "播放轨迹",
+            "action": {
+                "type": "meta",
+                "meta_service": "meta.sales_replay",
+                "meta_method": "replay",
+                "meta_kwargs": {"traj_name": "{{traj_name}}", "use_traj_head": "{{use_traj_head}}"},
+                "meta_poll": {
+                    "method": "get_replay_status",
+                    "done_key": "is_playing",
+                    "done_value": False,
+                    "result_key": "success",
+                    "interval": 0.01,   # 测试里极短间隔
+                    "timeout": 5,
+                },
+            },
+            "parameters": [
+                {"key": "traj_name", "type": "string", "default_value": "idle/breathing_8"},
+                {"key": "use_traj_head", "type": "boolean", "default_value": True},
+            ],
+            "timeout": 130,
+        }
+
+    def test_replay_polls_until_done(self, stub):
+        """dispatch 成功后轮询，直到 is_playing=False 时返回 success。"""
+        stub.get_custom_step_definition = MagicMock(return_value=self._make_replay_def())
+
+        # 前两次轮询 is_playing=True，第三次 False+success=True
+        poll_responses = [
+            {"is_playing": True},
+            {"is_playing": True},
+            {"is_playing": False, "success": True},
+        ]
+        call_iter = iter(poll_responses)
+
+        def _meta_call_side(service, method, **kwargs):
+            if method == "replay":
+                return {"success": True, "message": "replay dispatched"}
+            return next(call_iter)
+
+        stub._meta_call = MagicMock(side_effect=_meta_call_side)
+
+        ok, detail = stub._execute_custom_step(
+            "meta_replay",
+            {"traj_name": "idle/breathing_8", "use_traj_head": True},
+        )
+
+        assert ok is True
+        assert detail == {"is_playing": False, "success": True}
+        # replay 调用一次 + 轮询三次 = 4 次
+        assert stub._meta_call.call_count == 4
+
+    def test_replay_dispatch_failure_skips_poll(self, stub):
+        """replay() 失败时不进入轮询，直接返回失败。"""
+        stub.get_custom_step_definition = MagicMock(return_value=self._make_replay_def())
+        stub._meta_call = MagicMock(return_value={"success": False, "message": "server error"})
+
+        ok, detail = stub._execute_custom_step("meta_replay", {"traj_name": "x"})
+
+        assert ok is False
+        stub._meta_call.assert_called_once()   # 只有 dispatch，没有轮询
+
+    def test_replay_poll_timeout(self, stub):
+        """轮询超时后返回失败。"""
+        replay_def = self._make_replay_def()
+        replay_def["action"]["meta_poll"]["timeout"] = 0.05   # 50ms 极短超时
+
+        stub.get_custom_step_definition = MagicMock(return_value=replay_def)
+
+        def _always_playing(service, method, **kwargs):
+            if method == "replay":
+                return {"success": True}
+            return {"is_playing": True}   # 永远播放中
+
+        stub._meta_call = MagicMock(side_effect=_always_playing)
+
+        ok, detail = stub._execute_custom_step("meta_replay", {"traj_name": "x"})
+
+        assert ok is False
+        assert "timeout" in detail["error"]
+
+    def test_no_poll_on_meta_photo(self, stub):
+        """meta_photo 无 meta_poll 字段，行为不变（只调用一次 _meta_call）。"""
+        stub.get_custom_step_definition = MagicMock(return_value={
+            "id": "meta_photo",
+            "action": {
+                "type": "meta",
+                "meta_service": "meta.camera",
+                "meta_method": "capture",
+                "meta_kwargs": {"label": "{{label}}", "save_to_disk": "{{save_to_disk}}"},
+                # 无 meta_poll
+            },
+            "parameters": [],
+        })
+        stub._meta_call = MagicMock(return_value={"success": True, "path": "/tmp/x.png"})
+
+        ok, _ = stub._execute_custom_step("meta_photo", {"label": "test", "save_to_disk": True})
+
+        assert ok is True
+        stub._meta_call.assert_called_once()
+
+    def test_replay_from_json_definition(self, stub):
+        """从磁盘读取 meta_replay 定义，验证 meta_poll 字段存在。"""
+        definition = stub.get_custom_step_definition("meta_replay")
+        assert definition is not None, "meta_replay not found in custom_step_types.json"
+        assert definition["action"]["type"] == "meta"
+        assert definition["action"]["meta_service"] == "meta.sales_replay"
+        assert definition["action"]["meta_method"] == "replay"
+        poll = definition["action"].get("meta_poll")
+        assert poll is not None
+        assert poll["method"] == "get_replay_status"
+        assert poll["done_key"] == "is_playing"
+        assert poll["done_value"] is False

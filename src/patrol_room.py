@@ -1,11 +1,14 @@
 """Room patrol orchestration — executes room-by-room inspection sequence."""
 import json
+import logging
 import threading
 import time
 import uuid
 from pathlib import Path
 
 from .storage import JsonDayStorage
+
+logger = logging.getLogger(__name__)
 
 
 # Default step template for a standard room inspection
@@ -595,8 +598,86 @@ class RoomPatrolMixin:
                 meta_method = action.get("meta_method", "")
                 raw_kwargs = action.get("meta_kwargs", {})
                 resolved_kwargs = self._resolve_params(raw_kwargs, params)
+                poll = action.get("meta_poll")
+
+                # meta.sales_replay 使用持久连接，避免 dispatch + poll 过程中断连导致 deactivate
+                if meta_service == "meta.sales_replay":
+                    # 如果 sales_replay 未 activate，先尝试激活
+                    if self._replay_state != "active" and self._replay:
+                        logger.info("[replay_custom] sales_replay not active (state=%s), trying to activate...", self._replay_state)
+                        self.activate_replay()
+
+                    if self._replay_state != "active" or not self._replay:
+                        return {"success": False, "message": f"Sales_replay Meta not active (state={self._replay_state})"}
+                    try:
+                        # 下发
+                        result = getattr(self._replay, meta_method)(**resolved_kwargs)
+                        if result is None:
+                            return {"success": False, "message": f"{meta_method} returned None"}
+                        ok = result.get("success", True) if isinstance(result, dict) else True
+                        if not ok:
+                            return False, result
+
+                        # 轮询（使用同一连接）
+                        if poll:
+                            poll_method = poll["method"]
+                            done_key    = poll["done_key"]
+                            done_value  = poll["done_value"]
+                            result_key  = poll.get("result_key", "success")
+                            interval    = float(poll.get("interval", 0.5))
+                            timeout     = float(poll.get("timeout", 120))
+                            deadline    = time.time() + timeout
+
+                            while time.time() < deadline:
+                                time.sleep(interval)
+                                status = getattr(self._replay, poll_method)()
+                                if not isinstance(status, dict):
+                                    continue
+                                if status.get(done_key) == done_value:
+                                    final = status.get(result_key)
+                                    ok = bool(final) if final is not None else True
+                                    result = status
+                                    break
+                            else:
+                                return False, {"error": f"meta_poll timeout after {timeout}s"}
+                    except Exception as e:
+                        logger.error("[replay_custom] %s.%s failed: %s", meta_service, meta_method, e)
+                        return {"success": False, "message": str(e)}
+
+                    wait = params.get("duration", action.get("duration", 0))
+                    if wait and wait > 0:
+                        time.sleep(float(wait))
+                    return ok, result
+
+                # 其他 meta 服务使用临时连接
                 result = self._meta_call(meta_service, meta_method, **resolved_kwargs)
                 ok = result.get("success", True) if isinstance(result, dict) else True
+                if not ok:
+                    return False, result
+
+                if poll:
+                    poll_method = poll["method"]
+                    done_key    = poll["done_key"]
+                    done_value  = poll["done_value"]
+                    result_key  = poll.get("result_key", "success")
+                    interval    = float(poll.get("interval", 0.5))
+                    timeout     = float(poll.get("timeout", 120))
+                    deadline    = time.time() + timeout
+                    poll_kwargs = poll.get("kwargs", {})  # 轮询方法可能需要的参数
+
+                    while time.time() < deadline:
+                        time.sleep(interval)
+                        status = self._meta_call(meta_service, poll_method, **poll_kwargs)
+                        if not isinstance(status, dict):
+                            continue
+                        if status.get(done_key) == done_value:
+                            final = status.get(result_key)
+                            ok = bool(final) if final is not None else True
+                            result = status
+                            break
+                    else:
+                        return False, {"error": f"meta_poll timeout after {timeout}s"}
+
                 wait = params.get("duration", action.get("duration", 0))
                 if wait and wait > 0:
                     time.sleep(float(wait))

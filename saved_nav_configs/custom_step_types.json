@@ -131,6 +131,47 @@
       ],
       "timeout": 10,
       "created_at": "2026-04-03T00:00:00"
+    },
+    {
+      "id": "meta_replay",
+      "name": "播放轨迹",
+      "description": "通过 Meta sales_replay 服务播放 HDF5 轨迹，阻塞直到播放完成",
+      "icon_color": "#52c41a",
+      "action": {
+        "type": "meta",
+        "meta_service": "meta.sales_replay",
+        "meta_method": "replay",
+        "meta_kwargs": {
+          "traj_name": "{{traj_name}}",
+          "use_traj_head": "{{use_traj_head}}"
+        },
+        "meta_poll": {
+          "method": "get_replay_status",
+          "done_key": "is_playing",
+          "done_value": false,
+          "result_key": "success",
+          "interval": 0.5,
+          "timeout": 120
+        }
+      },
+      "parameters": [
+        {
+          "key": "traj_name",
+          "label": "轨迹名称",
+          "type": "string",
+          "default_value": "idle/breathing_8",
+          "required": true
+        },
+        {
+          "key": "use_traj_head",
+          "label": "使用轨迹头帧",
+          "type": "boolean",
+          "default_value": true,
+          "required": false
+        }
+      ],
+      "timeout": 130,
+      "created_at": "2026-04-07T00:00:00"
     }
   ],
   "updated_at": "2026-03-26T12:00:00"

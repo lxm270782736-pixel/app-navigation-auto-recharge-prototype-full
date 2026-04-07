@@ -240,6 +240,16 @@ export interface CustomStepParamDef {
   options?: { value: string; label: string }[];
 }
 
+// Meta 轮询配置（用于 replay 等异步操作）
+export interface CustomStepMetaPoll {
+  method: string;
+  done_key: string;
+  done_value: boolean | number | string;
+  result_key?: string;
+  interval?: number;
+  timeout?: number;
+}
+
 // 自定义步骤动作配置
 export interface CustomStepAction {
   type: 'service' | 'topic' | 'wait' | 'meta';
@@ -253,6 +263,7 @@ export interface CustomStepAction {
   meta_service?: string;
   meta_method?: string;
   meta_kwargs?: Record<string, any>;
+  meta_poll?: CustomStepMetaPoll;
 }
 
 // 自定义步骤类型定义
