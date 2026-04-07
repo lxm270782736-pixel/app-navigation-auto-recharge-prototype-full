@@ -54,14 +54,17 @@ export const Mapping: React.FC = () => {
   const [failureModalVisible, setFailureModalVisible] = useState(false); // 建图失败弹窗
   const [failureMessage, setFailureMessage] = useState<string>(''); // 失败原因
 
-  // 组件卸载时停止建图
+  // 组件卸载时停止建图（用 ref 避免 isMapping 变化触发 cleanup）
+  const isMappingRef = useRef(false);
+  isMappingRef.current = isMapping;
+
   useEffect(() => {
     return () => {
-      if (isMapping) {
-        apiService.stopMapping().catch(console.error);
+      if (isMappingRef.current) {
+        apiService.stopLocalization().catch(console.error);
       }
     };
-  }, [isMapping]);
+  }, []);
 
   // 订阅地图话题
   useEffect(() => {
