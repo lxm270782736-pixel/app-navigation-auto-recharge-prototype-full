@@ -242,7 +242,7 @@ export interface CustomStepParamDef {
 
 // 自定义步骤动作配置
 export interface CustomStepAction {
-  type: 'service' | 'topic' | 'wait';
+  type: 'service' | 'topic' | 'wait' | 'meta';
   service_name?: string;
   service_type?: string;
   request?: Record<string, any>;
@@ -250,6 +250,9 @@ export interface CustomStepAction {
   msg_type?: string;
   message?: Record<string, any>;
   duration?: number;
+  meta_service?: string;
+  meta_method?: string;
+  meta_kwargs?: Record<string, any>;
 }
 
 // 自定义步骤类型定义

@@ -590,6 +590,18 @@ class RoomPatrolMixin:
                 time.sleep(float(duration))
                 return True, {"duration": duration}
 
+            elif action_type == "meta":
+                meta_service = action.get("meta_service", "")
+                meta_method = action.get("meta_method", "")
+                raw_kwargs = action.get("meta_kwargs", {})
+                resolved_kwargs = self._resolve_params(raw_kwargs, params)
+                result = self._meta_call(meta_service, meta_method, **resolved_kwargs)
+                ok = result.get("success", True) if isinstance(result, dict) else True
+                wait = params.get("duration", action.get("duration", 0))
+                if wait and wait > 0:
+                    time.sleep(float(wait))
+                return ok, result
+
             else:
                 return False, {"error": f"Unknown action type: {action_type}"}
 

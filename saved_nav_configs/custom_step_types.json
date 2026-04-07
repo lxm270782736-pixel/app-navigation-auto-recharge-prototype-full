@@ -98,6 +98,39 @@
       ],
       "timeout": 15,
       "created_at": "2026-03-26T12:00:00"
+    },
+    {
+      "id": "meta_photo",
+      "name": "拍照记录",
+      "description": "通过 Meta camera 服务拍照并打标签，替代内置 photo 步骤的空桩实现",
+      "icon_color": "#1890ff",
+      "action": {
+        "type": "meta",
+        "meta_service": "meta.camera",
+        "meta_method": "capture",
+        "meta_kwargs": {
+          "label": "{{label}}",
+          "save_to_disk": "{{save_to_disk}}"
+        }
+      },
+      "parameters": [
+        {
+          "key": "label",
+          "label": "照片标签",
+          "type": "string",
+          "default_value": "巡检照片",
+          "required": false
+        },
+        {
+          "key": "save_to_disk",
+          "label": "保存到磁盘",
+          "type": "boolean",
+          "default_value": true,
+          "required": false
+        }
+      ],
+      "timeout": 10,
+      "created_at": "2026-04-03T00:00:00"
     }
   ],
   "updated_at": "2026-03-26T12:00:00"

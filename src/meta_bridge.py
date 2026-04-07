@@ -403,6 +403,77 @@ class MetaBridgeMixin:
             "nav_state": self._nav_state,
         }
 
+    def _meta_call(self, service_name: str, method_name: str, **kwargs) -> dict:
+        """Call a method on an arbitrary Meta service proxy.
+
+        Routes to existing proxies when service_name matches known services,
+        otherwise opens a temporary astribot_link connection.
+
+        Args:
+            service_name: Meta service identifier.
+                          "localization" → self._loc
+                          "navigation" / "astribot_navigation" → self._nav
+                          anything else → temporary astribot_link.connect(service_name)
+            method_name: Name of the method to call on the proxy.
+            **kwargs: Keyword arguments forwarded to the method.
+
+        Returns:
+            dict: {"success": bool, ...} — error dict on failure.
+        """
+        _NAV_ALIASES = {"navigation", "astribot_navigation"}
+
+        # --- Route to existing proxy ---
+        if service_name == "localization":
+            return self._loc_call(method_name, **kwargs)
+
+        if service_name in _NAV_ALIASES:
+            if self._nav_state != "active" or not self._nav:
+                return {"success": False, "message": f"Navigation Meta not active (state={self._nav_state})"}
+            try:
+                result = getattr(self._nav, method_name)(**kwargs)
+                if result is None:
+                    return {"success": False, "message": f"{method_name} returned None"}
+                return result
+            except Exception as e:
+                logger.error("[meta_call] nav.%s failed: %s", method_name, e)
+                return {"success": False, "message": str(e)}
+
+        # --- Temporary connection for any other Meta service ---
+        try:
+            from astribot_link import connect
+        except ImportError:
+            return {"success": False, "message": "astribot_link not installed"}
+
+        proxy = None
+        try:
+            proxy = connect(service_name)
+
+            # 探测当前状态，按需推进生命周期（不 deactivate，那是服务端自己的事）
+            state = self._probe_service_state(proxy, service_name)
+            if state == META_CONNECTED:           # unconfigured
+                cfg = proxy.configure({})
+                if not _is_success(cfg):
+                    return {"success": False, "message": f"{service_name} configure failed: {cfg}"}
+                state = META_INACTIVE
+            if state == META_INACTIVE:
+                act = proxy.activate()
+                if not _is_success(act):
+                    return {"success": False, "message": f"{service_name} activate failed: {act}"}
+
+            result = getattr(proxy, method_name)(**kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            logger.error("[meta_call] %s.%s failed: %s", service_name, method_name, e)
+            return {"success": False, "message": str(e)}
+        finally:
+            if proxy is not None:
+                try:
+                    proxy.close()
+                except Exception:
+                    pass
+
     @property
     def meta_connected(self) -> bool:
         """True if at least one Meta service has been connected (not disconnected)."""

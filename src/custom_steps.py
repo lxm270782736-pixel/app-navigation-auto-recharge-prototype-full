@@ -7,7 +7,7 @@ from pathlib import Path
 
 _CUSTOM_STEPS_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "custom_step_types.json"
 
-_VALID_ACTION_TYPES = {"service", "topic", "wait"}
+_VALID_ACTION_TYPES = {"service", "topic", "wait", "meta"}
 _ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
@@ -54,6 +54,9 @@ class CustomStepsMixin:
         elif action_type == "topic":
             if not action.get("topic_name") or not action.get("msg_type"):
                 return {"success": False, "message": "Topic 需要 topic_name 和 msg_type"}
+        elif action_type == "meta":
+            if not action.get("meta_service") or not action.get("meta_method"):
+                return {"success": False, "message": "Meta 需要 meta_service 和 meta_method"}
 
         definition["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
