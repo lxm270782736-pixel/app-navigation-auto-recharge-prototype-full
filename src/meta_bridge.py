@@ -11,9 +11,12 @@ META_ACTIVE = "active"             # 已 activate，可调用业务方法
 
 
 def _is_success(result) -> bool:
-    """Check transition result — handles both string and enum (.value) returns."""
+    """Check transition result — handles string, dict, and enum (.value) returns."""
+    logger.debug("_is_success: result=%s (type=%s)", result, type(result).__name__)
     if hasattr(result, 'value'):
         return result.value == "success"
+    if isinstance(result, dict):
+        return result.get("success", False)
     return result == "success"
 
 # 默认配置
@@ -455,6 +458,8 @@ class MetaBridgeMixin:
             state = self._probe_service_state(proxy, service_name)
             if state == META_CONNECTED:           # unconfigured
                 cfg = proxy.configure({})
+                logger.info("[meta_call] %s.configure() returned: %s (type=%s)",
+                            service_name, cfg, type(cfg).__name__)
                 if not _is_success(cfg):
                     return {"success": False, "message": f"{service_name} configure failed: {cfg}"}
                 state = META_INACTIVE
