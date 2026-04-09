@@ -465,9 +465,12 @@ class MetaBridgeMixin:
                 state = META_INACTIVE
             if state == META_INACTIVE:
                 act = proxy.activate()
+                logger.info("[meta_call] %s.activate() returned: %s (type=%s)",
+                            service_name, act, type(act).__name__)
                 if not _is_success(act):
                     return {"success": False, "message": f"{service_name} activate failed: {act}"}
 
+            logger.info("[meta_call] Calling %s.%s()", service_name, method_name)
             result = getattr(proxy, method_name)(**kwargs)
             if result is None:
                 return {"success": False, "message": f"{method_name} returned None"}
