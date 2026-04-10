@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal, notification } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -137,6 +137,50 @@ export const TaskDispatchTab: React.FC = () => {
     apiService.on('room-patrol-state', handler);
     return () => apiService.off('room-patrol-state', handler);
   }, []);
+
+  const notifiedAlertIds = useRef<Set<string>>(new Set());
+  const pendingNotifications = useRef<Array<{type: string, message: string, description: string}>>([]);
+
+  const flushNotifications = useCallback(() => {
+    for (const n of pendingNotifications.current) {
+      notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
+    }
+    pendingNotifications.current = [];
+  }, []);
+
+  // 监听 patrolState.new_alerts，弹出非阻塞通知（有 Modal 时排队，Modal 关闭后显示）
+  useEffect(() => {
+    const alerts = patrolState?.new_alerts;
+    if (!alerts?.length) return;
+    const ALERT_TYPE_LABELS: Record<string, string> = {
+      bed_absence: '老人离床',
+      floor_clutter: '地面有杂物',
+      floor_water: '地面有水渍',
+    };
+    const hasModal = !!fallEvent || !!stuckEvent;
+    for (const alert of alerts) {
+      if (notifiedAlertIds.current.has(alert.id)) continue;
+      if (['fall_detected', 'robot_stuck'].includes(alert.alert_type)) continue;
+      notifiedAlertIds.current.add(alert.id);
+      const n = {
+        type: alert.alert_type,
+        message: ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type,
+        description: `${alert.room_id} — ${alert.message}`,
+      };
+      if (hasModal) {
+        pendingNotifications.current.push(n);
+      } else {
+        notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
+      }
+    }
+  }, [patrolState?.new_alerts, fallEvent, stuckEvent]);
+
+  // Modal 关闭后 flush 排队的 notification
+  useEffect(() => {
+    if (!fallEvent && !stuckEvent) {
+      flushNotifications();
+    }
+  }, [fallEvent, stuckEvent, flushNotifications]);
 
   // Subscribe to robot pose
   useEffect(() => {

@@ -64,7 +64,7 @@ class RoomPatrolMixin:
 
             try:
                 # Call meta.fall_detection.get_fall_status()
-                status = self._fall_call("get_fall_status")
+                status = self._detection_call("get_fall_status")
 
                 # 如果服务未激活或调用失败，跳过本次轮询
                 if not isinstance(status, dict) or status.get("success") is False:
@@ -79,6 +79,7 @@ class RoomPatrolMixin:
                         "timestamp": time.time(),
                         "location": status.get("location", "unknown"),
                         "confidence": status.get("confidence", 0.0),
+                        "photo": status.get("photo"),
                     }
                     logger.info("[fall] DETECTED at %s (confidence=%.2f)",
                                 self._fall_event["location"], self._fall_event["confidence"])
@@ -105,6 +106,7 @@ class RoomPatrolMixin:
             event.get('location', 'unknown'),
             "fall_detected",
             confidence=event.get('confidence', 0.0),
+            photo=event.get('photo'),
         )
         # 记录告警 ID 和日期，供 ack 时自动关闭
         self._fall_event["alert_id"] = alert["id"]
@@ -344,7 +346,6 @@ class RoomPatrolMixin:
             return {"success": True, "message": "Saved"}
         except Exception as e:
             return {"success": False, "message": str(e)}
-            return {"success": False, "message": str(e)}
 
     # ------ Patrol control ------
 
@@ -520,6 +521,10 @@ class RoomPatrolMixin:
             room_success = True
             skip_room = False
             self._last_photo = None  # reset per-room photo
+            # 清除地面检测缓存，确保每次进入房间重新调用 meta 服务
+            cache_key = f"_floor_cache_{room_id}"
+            if hasattr(self, cache_key):
+                delattr(self, cache_key)
 
             for step_idx, step in enumerate(steps):
                 with self._lock:
@@ -561,11 +566,13 @@ class RoomPatrolMixin:
                     elif step_type == "detect_bed":
                         detail = self.detect_bed_occupancy(room_id)
                         success = True
+                        # 取第一张照片作为告警附图（正常/异常都有）
+                        bed_photo = detail.get("photos", [{}])[0].get("photo") if detail.get("photos") else None
                         if detail.get("is_abnormal"):
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "bed_absence",
                                 confidence=detail.get("confidence", 0),
-                                photo=getattr(self, '_last_photo', None),
+                                photo=bed_photo,
                             )
                             room_result["alerts"].append(alert["id"])
                     elif step_type == "detect_floor":
@@ -577,14 +584,14 @@ class RoomPatrolMixin:
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "floor_clutter",
                                 confidence=clutter.get("confidence", 0),
-                                photo=getattr(self, '_last_photo', None),
+                                photo=clutter.get("photo"),
                             )
                             room_result["alerts"].append(alert["id"])
                         if water.get("is_abnormal"):
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "floor_water",
                                 confidence=water.get("confidence", 0),
-                                photo=getattr(self, '_last_photo', None),
+                                photo=water.get("photo"),
                             )
                             room_result["alerts"].append(alert["id"])
                     elif step_type == "photo":
@@ -795,8 +802,8 @@ class RoomPatrolMixin:
                 connect_timeout = float(action.get("connect_timeout", 30.0))
 
                 # fall_detection 使用持久连接，其他服务使用 _meta_call
-                if meta_service == "fall_detection":
-                    result = self._fall_call(meta_method, **resolved_kwargs)
+                if meta_service == "detection":
+                    result = self._detection_call(meta_method, **resolved_kwargs)
                 else:
                     result = self._meta_call(meta_service, meta_method, _timeout=connect_timeout, **resolved_kwargs)
                 ok = result.get("success", True) if isinstance(result, dict) else True
@@ -823,8 +830,8 @@ class RoomPatrolMixin:
                             return False, {"error": "patrol paused by alert"}
                         time.sleep(interval)
                         # fall_detection 使用持久连接
-                        if meta_service == "fall_detection":
-                            status = self._fall_call(poll_method, **poll_kwargs)
+                        if meta_service == "detection":
+                            status = self._detection_call(poll_method, **poll_kwargs)
                         else:
                             status = self._meta_call(meta_service, poll_method, _timeout=poll_connect_timeout, **poll_kwargs)
                         if not isinstance(status, dict):

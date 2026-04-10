@@ -355,4 +355,5 @@ export interface RoomPatrolState {
     timestamp: number;
     room_id: string;
   } | null;
+  new_alerts?: Alert[];
 }

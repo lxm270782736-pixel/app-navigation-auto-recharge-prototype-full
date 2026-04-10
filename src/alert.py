@@ -19,6 +19,12 @@ _ALERT_MESSAGES = {
 class AlertMixin:
     """Alert CRUD with JsonDayStorage backend."""
 
+    # 内存队列：存放待推送给前端的新告警
+    _pending_alerts: list
+
+    def _init_alert_queue(self):
+        self._pending_alerts = []
+
     def _get_storage(self) -> JsonDayStorage:
         return self._storage
 
@@ -49,7 +55,20 @@ class AlertMixin:
         }
         storage.save("alerts", alert_id, alert, date)
         print(f"[alert] Created: {alert_type} for room {room_id}")
+
+        # 放入待推送队列
+        if hasattr(self, '_pending_alerts'):
+            self._pending_alerts.append(alert)
+
         return alert
+
+    def pop_pending_alerts(self) -> list:
+        """取出并清空待推送告警队列（供 SSE get_state 消费）。"""
+        if not hasattr(self, '_pending_alerts'):
+            return []
+        alerts = list(self._pending_alerts)
+        self._pending_alerts.clear()
+        return alerts
 
     def get_alerts(self, status: str | None = None, date: str | None = None,
                    days: int = 7) -> list[dict]:

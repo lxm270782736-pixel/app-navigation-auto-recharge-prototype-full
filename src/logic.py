@@ -56,6 +56,9 @@ class BusinessLogic(
         # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
         self._storage = JsonDayStorage()
 
+        # Alert push queue
+        self._init_alert_queue()
+
         # Meta link proxies
         self._init_meta()
 
@@ -146,17 +149,19 @@ class BusinessLogic(
                     "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in self._room_patrol_rooms_list],
                     "fall_event": getattr(self, '_fall_event', None),
                     "stuck_event": getattr(self, '_stuck_event', None),
+                    "new_alerts": self.pop_pending_alerts(),
                 },
             }
+
         return raw
 
     def acknowledge_fall(self):
         """护工弹窗确认跌倒事件 — 恢复任务，告警标记为处理中（护工需在历史记录里手动处置）"""
         event = self._fall_event
         self._fall_event = None
-        # 通知 meta.fall_detection 服务（使用持久连接）
+        # 通知 meta.detection 服务（使用持久连接）
         try:
-            self._fall_call("ack_fall")
+            self._detection_call("ack_fall")
         except Exception:
             pass
         # 告警状态 new → processing（护工已知晓，但需手动处置后关闭）
