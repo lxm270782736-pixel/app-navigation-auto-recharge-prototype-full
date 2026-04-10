@@ -372,6 +372,14 @@ class ApiService {
 
   // ------ Alerts (告警) ------
 
+  async acknowledgeFall(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/fall/ack', {});
+  }
+
+  async acknowledgeStuck(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/stuck/ack', {});
+  }
+
   async getAlerts(filter?: { status?: string; date?: string }): Promise<any[]> {
     const params = new URLSearchParams();
     if (filter?.status) params.set('status', filter.status);

@@ -301,6 +301,7 @@ export interface TaskPreset {
   is_default: boolean;
   rooms: RoomTaskConfig[];
   retry_limit: number;
+  fall_detection_enabled?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -345,4 +346,13 @@ export interface RoomPatrolState {
   rooms_total: number;
   progress: number;
   error: string;
+  fall_event?: {
+    timestamp: number;
+    location: string;
+    confidence: number;
+  } | null;
+  stuck_event?: {
+    timestamp: number;
+    room_id: string;
+  } | null;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select } from 'antd';
+import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -7,6 +7,7 @@ import {
   CloseCircleFilled,
   LoadingOutlined,
   EnvironmentOutlined,
+  WarningFilled,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
@@ -44,6 +45,37 @@ export const TaskDispatchTab: React.FC = () => {
   const [customStepTypes, setCustomStepTypes] = useState<any[]>([]);
   const [presets, setPresets] = useState<any[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [fallAcking, setFallAcking] = useState(false);
+  const [stuckAcking, setStuckAcking] = useState(false);
+
+  const fallEvent = patrolState?.fall_event ?? null;
+  const stuckEvent = patrolState?.stuck_event ?? null;
+
+  // 跌倒事件弹窗确认
+  const handleAckFall = async () => {
+    setFallAcking(true);
+    try {
+      await apiService.acknowledgeFall();
+      message.success('已确认处理');
+    } catch {
+      message.error('确认失败，请重试');
+    } finally {
+      setFallAcking(false);
+    }
+  };
+
+  // 机器人卡住事件弹窗确认
+  const handleAckStuck = async () => {
+    setStuckAcking(true);
+    try {
+      await apiService.acknowledgeStuck();
+      message.success('已确认处理');
+    } catch {
+      message.error('确认失败，请重试');
+    } finally {
+      setStuckAcking(false);
+    }
+  };
 
   // Dynamic step labels: built-in + custom
   const stepLabels = useMemo(() => {
@@ -147,7 +179,7 @@ export const TaskDispatchTab: React.FC = () => {
 
   const handleStart = async () => {
     const preset = presets.find(p => p.id === selectedPresetId);
-    const taskConfig = preset ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit } : undefined;
+    const taskConfig = preset ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit, fall_detection_enabled: preset.fall_detection_enabled } : undefined;
     const result = await apiService.startRoomPatrol(taskConfig);
     if (result.success) {
       message.success(result.message);
@@ -212,6 +244,76 @@ export const TaskDispatchTab: React.FC = () => {
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+      {/* 跌倒检测告警弹窗 */}
+      <Modal
+        open={!!fallEvent}
+        closable={false}
+        maskClosable={false}
+        footer={null}
+        centered
+        width={420}
+      >
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <WarningFilled style={{ fontSize: 56, color: '#ff4d4f' }} />
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#ff4d4f', margin: '16px 0 8px' }}>
+            检测到老人跌倒！
+          </div>
+          {fallEvent && (
+            <div style={{ color: '#666', marginBottom: 8 }}>
+              位置：<strong>{fallEvent.location}</strong>
+              &nbsp;&nbsp;置信度：<strong>{(fallEvent.confidence * 100).toFixed(0)}%</strong>
+            </div>
+          )}
+          <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
+            巡逻任务已暂停，请立即前往处理
+          </div>
+          <Button
+            type="primary"
+            danger
+            size="large"
+            loading={fallAcking}
+            onClick={handleAckFall}
+            style={{ width: 200 }}
+          >
+            确认已处理
+          </Button>
+        </div>
+      </Modal>
+
+      {/* 机器人卡住告警弹窗 */}
+      <Modal
+        open={!!stuckEvent}
+        closable={false}
+        maskClosable={false}
+        footer={null}
+        centered
+        width={420}
+      >
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <WarningFilled style={{ fontSize: 56, color: '#faad14' }} />
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#faad14', margin: '16px 0 8px' }}>
+            机器人导航失败，无法移动！
+          </div>
+          {stuckEvent && (
+            <div style={{ color: '#666', marginBottom: 8 }}>
+              房间：<strong>{stuckEvent.room_id}</strong>
+            </div>
+          )}
+          <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
+            巡逻任务已暂停，请人工处理后确认
+          </div>
+          <Button
+            type="primary"
+            size="large"
+            loading={stuckAcking}
+            onClick={handleAckStuck}
+            style={{ width: 200 }}
+          >
+            确认已处理
+          </Button>
+        </div>
+      </Modal>
+
       {/* Left: Map */}
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         {currentMap ? (

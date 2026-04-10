@@ -21,8 +21,8 @@ DEFAULT_ROOM_STEPS = [
     {"type": "navigate", "target": "bed_check"},
     {"type": "detect_bed"},
     {"type": "photo", "label": "床位"},
-    {"type": "navigate", "target": "door_inside"},
-    {"type": "navigate", "target": "door_outside"},
+    {"type": "navigate", "target": "door_inside", "is_exit": True},
+    {"type": "navigate", "target": "door_outside", "is_exit": True},
     {"type": "close_door"},
 ]
 
@@ -32,6 +32,139 @@ _PRESETS_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "task_prese
 
 class RoomPatrolMixin:
     """Room patrol orchestration — runs inspection steps per room."""
+
+    # ------ Fall detection thread (parallel to patrol) ------
+
+    def _start_fall_monitor(self):
+        """Start fall detection monitoring thread (calls meta.fall_detection)."""
+        self._fall_event = None
+        self._fall_monitor_enabled = True  # 开关：控制是否真正轮询检测
+        self._fall_thread = threading.Thread(
+            target=self._fall_monitor_loop,
+            daemon=True,
+            name="fall-monitor",
+        )
+        self._fall_thread.start()
+        logger.info("[fall] Monitor thread started")
+
+    def _stop_fall_monitor(self):
+        """Stop fall monitoring (disable the switch)."""
+        self._fall_monitor_enabled = False
+
+    def _fall_monitor_loop(self):
+        """Background loop: poll meta.fall_detection status continuously."""
+        poll_interval = 2.0  # seconds between polls
+        logger.info("[fall] Monitor loop started, polling every %ss", poll_interval)
+
+        while getattr(self, '_room_patrol_active', False):
+            # 检查开关，如果禁用则跳过轮询
+            if not getattr(self, '_fall_monitor_enabled', False):
+                time.sleep(poll_interval)
+                continue
+
+            try:
+                # Call meta.fall_detection.get_fall_status()
+                status = self._fall_call("get_fall_status")
+                logger.info("[fall] poll: is_fall=%s", status.get("is_fall"))
+
+                # New fall detected
+                if status.get("is_fall") and not self._fall_event:
+                    self._fall_event = {
+                        "timestamp": time.time(),
+                        "location": status.get("location", "unknown"),
+                        "confidence": status.get("confidence", 0.0),
+                    }
+                    logger.info("[fall] DETECTED at %s (confidence=%.2f)",
+                                self._fall_event["location"], self._fall_event["confidence"])
+                    self._on_fall_event(self._fall_event)
+
+                # Nurse acknowledged, clear event
+                if status.get("acknowledged"):
+                    logger.info("[fall] Event acknowledged, cleared")
+                    self._fall_event = None
+
+                time.sleep(poll_interval)
+
+            except Exception as e:
+                # Silently ignore transient errors, keep monitoring
+                logger.debug("[fall] Monitor poll error: %s", e)
+                time.sleep(poll_interval)
+
+        logger.info("[fall] Monitor thread stopped")
+
+    def _on_fall_event(self, event):
+        """Callback when fall event is detected."""
+        alert = self.create_alert(
+            getattr(self, '_room_patrol_id', ''),
+            event.get('location', 'unknown'),
+            "fall_detected",
+            confidence=event.get('confidence', 0.0),
+        )
+        # 记录告警 ID 和日期，供 ack 时自动关闭
+        self._fall_event["alert_id"] = alert["id"]
+        self._fall_event["alert_date"] = alert["created_at"][:10]
+
+    def _handle_fall_blocking(self):
+        """Handle fall event — block until nurse acknowledges."""
+        if not self._fall_event:
+            return
+
+        logger.info("[fall] Task paused, waiting for nurse confirmation...")
+
+        with self._lock:
+            self._room_patrol_status = "paused_fall"
+
+        # Block until event is cleared (nurse ack) or patrol stops
+        while self._fall_event and self._room_patrol_active:
+            time.sleep(1)
+
+        logger.info("[fall] Task resumed")
+        with self._lock:
+            if self._room_patrol_active:
+                self._room_patrol_status = "running"
+
+    def _check_fall_before_step(self):
+        """Check fall event before executing a step. Returns True if should proceed."""
+        if self._fall_event:
+            self._handle_fall_blocking()
+        return self._fall_event is None and self._room_patrol_active
+
+    # ------ Robot stuck handling ------
+
+    def _on_stuck_event(self, room_id: str):
+        """Trigger stuck alert when exit navigation fails."""
+        self._stuck_event = {
+            "timestamp": time.time(),
+            "room_id": room_id,
+        }
+        logger.info("[stuck] Robot stuck in room %s", room_id)
+        alert = self.create_alert(
+            getattr(self, '_room_patrol_id', ''),
+            room_id,
+            "robot_stuck",
+        )
+        self._stuck_event["alert_id"] = alert["id"]
+        self._stuck_event["alert_date"] = alert["created_at"][:10]
+
+    def _handle_stuck_blocking(self):
+        """Block patrol until nurse acknowledges stuck robot."""
+        if not self._stuck_event:
+            return
+        logger.info("[stuck] Task paused, waiting for nurse confirmation...")
+        with self._lock:
+            self._room_patrol_status = "paused_stuck"
+        while self._stuck_event and self._room_patrol_active:
+            time.sleep(1)
+        logger.info("[stuck] Task resumed")
+        with self._lock:
+            if self._room_patrol_active:
+                self._room_patrol_status = "running"
+
+    def _check_stuck_before_step(self):
+        """Check stuck event before executing a step. Returns True if should proceed."""
+        if self._stuck_event:
+            self._handle_stuck_blocking()
+        return self._stuck_event is None and self._room_patrol_active
 
     # ------ Task config persistence (backward-compatible, delegates to presets) ------
 
@@ -265,7 +398,14 @@ class RoomPatrolMixin:
 
         print(f"[room_patrol] Starting patrol {patrol_id} with {len(valid_rooms)} rooms")
 
-        # Run in background thread
+        # Reset per-patrol state
+        self._last_photo = None
+        self._stuck_event = None
+
+        # Fall detection always runs throughout the entire patrol
+        self._start_fall_monitor()
+
+        # Run patrol in background thread
         t = threading.Thread(
             target=self._run_room_patrol,
             args=(valid_rooms, retry_limit),
@@ -282,6 +422,17 @@ class RoomPatrolMixin:
             self._room_patrol_active = False
             self._room_patrol_status = "stopped"
             self._room_patrol_current_step = ""
+
+        # Cancel fall/stuck monitoring
+        self._stop_fall_monitor()
+        self._fall_event = None
+        self._stuck_event = None
+        # Wake up any blocked fall handler
+        if hasattr(self, '_fall_done_event'):
+            try:
+                self._fall_done_event.set()
+            except Exception:
+                pass
 
         # Cancel any pending navigation
         if was_active:
@@ -301,7 +452,7 @@ class RoomPatrolMixin:
             current_room = ""
             if 0 <= current_idx < len(rooms):
                 current_room = rooms[current_idx].get("room_id", "")
-            return {
+            status = {
                 "active": self._room_patrol_active,
                 "status": self._room_patrol_status,
                 "patrol_id": self._room_patrol_id,
@@ -316,6 +467,9 @@ class RoomPatrolMixin:
                 "error": self._room_patrol_error,
                 "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in rooms],
             }
+            # Add fall detection status
+            status["fall_event"] = getattr(self, '_fall_event', None)
+            return status
 
     # ------ Patrol execution (background thread) ------
 
@@ -352,12 +506,18 @@ class RoomPatrolMixin:
 
             room_success = True
             skip_room = False
+            self._last_photo = None  # reset per-room photo
 
             for step_idx, step in enumerate(steps):
                 with self._lock:
                     if not self._room_patrol_active:
                         skip_room = True
                         break
+
+                # Check fall/stuck event before executing step
+                if not self._check_fall_before_step() or not self._check_stuck_before_step():
+                    skip_room = True
+                    break
 
                 step_type = step.get("type", "")
                 step_target = step.get("target", step.get("label", ""))
@@ -392,6 +552,7 @@ class RoomPatrolMixin:
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "bed_absence",
                                 confidence=detail.get("confidence", 0),
+                                photo=getattr(self, '_last_photo', None),
                             )
                             room_result["alerts"].append(alert["id"])
                     elif step_type == "detect_floor":
@@ -403,19 +564,21 @@ class RoomPatrolMixin:
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "floor_clutter",
                                 confidence=clutter.get("confidence", 0),
+                                photo=getattr(self, '_last_photo', None),
                             )
                             room_result["alerts"].append(alert["id"])
                         if water.get("is_abnormal"):
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "floor_water",
                                 confidence=water.get("confidence", 0),
+                                photo=getattr(self, '_last_photo', None),
                             )
                             room_result["alerts"].append(alert["id"])
                     elif step_type == "photo":
-                        # Placeholder — capture_image returns None for now
-                        self.capture_image()
+                        photo_b64 = self.capture_image()
+                        self._last_photo = photo_b64
                         success = True
-                        detail = {"label": step.get("label", "")}
+                        detail = {"label": step.get("label", ""), "has_photo": photo_b64 is not None}
                     elif step_type == "wait":
                         duration = step.get("duration", 1)
                         time.sleep(duration)
@@ -437,12 +600,18 @@ class RoomPatrolMixin:
                 room_result["steps"].append(step_result)
                 print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
 
-                # Navigate/door failure → skip room
+                # Navigate/door failure → skip room (exit nav → stuck alert + wait)
                 if not success and step_type in ("navigate", "open_door"):
+                    if step_type == "navigate" and step.get("is_exit", False):
+                        # Exit navigation failed — robot is stuck, wait for nurse
+                        self._on_stuck_event(room_id)
+                        self._handle_stuck_blocking()
+                        room_result["error"] = "exit navigate failed (robot stuck)"
+                    else:
+                        room_result["error"] = f"{step_type} failed"
+                        print(f"[room_patrol] {step_type} failed, skipping room {room_id}")
                     room_success = False
                     skip_room = True
-                    room_result["error"] = f"{step_type} failed"
-                    print(f"[room_patrol] {step_type} failed, skipping room {room_id}")
                     break
                 # Close door failure → log but continue to next room
                 if not success and step_type == "close_door":
@@ -536,6 +705,10 @@ class RoomPatrolMixin:
             self._room_patrol_status = record["status"]
             self._room_patrol_current_step = ""
 
+        # 清除残留的告警事件，避免任务结束后弹窗继续显示
+        self._fall_event = None
+        self._stuck_event = None
+
         # Save record to disk
         storage = self._get_storage()
         date = time.strftime("%Y-%m-%d")
@@ -602,8 +775,11 @@ class RoomPatrolMixin:
                 # 支持在配置中指定连接超时（秒），默认 30 秒
                 connect_timeout = float(action.get("connect_timeout", 30.0))
 
-                # 统一使用 _meta_call，由 _meta_call 内部处理连接的创建和管理
-                result = self._meta_call(meta_service, meta_method, _timeout=connect_timeout, **resolved_kwargs)
+                # fall_detection 使用持久连接，其他服务使用 _meta_call
+                if meta_service == "fall_detection":
+                    result = self._fall_call(meta_method, **resolved_kwargs)
+                else:
+                    result = self._meta_call(meta_service, meta_method, _timeout=connect_timeout, **resolved_kwargs)
                 ok = result.get("success", True) if isinstance(result, dict) else True
                 if not ok:
                     return False, result
@@ -621,8 +797,15 @@ class RoomPatrolMixin:
                     poll_connect_timeout = float(poll.get("connect_timeout", connect_timeout))
 
                     while time.time() < deadline:
+                        # 检查巡逻是否被停止
+                        if not getattr(self, '_room_patrol_active', False):
+                            return False, {"error": "patrol stopped"}
                         time.sleep(interval)
-                        status = self._meta_call(meta_service, poll_method, _timeout=poll_connect_timeout, **poll_kwargs)
+                        # fall_detection 使用持久连接
+                        if meta_service == "fall_detection":
+                            status = self._fall_call(poll_method, **poll_kwargs)
+                        else:
+                            status = self._meta_call(meta_service, poll_method, _timeout=poll_connect_timeout, **poll_kwargs)
                         if not isinstance(status, dict):
                             continue
                         if status.get(done_key) == done_value:

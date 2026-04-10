@@ -9,6 +9,8 @@ _ALERT_MESSAGES = {
     "bed_absence": "【异常提醒】{room_id} 房间老人离床，请及时查看",
     "floor_clutter": "【环境提醒】{room_id} 房间通道有障碍物，请清理",
     "floor_water": "【环境提醒】{room_id} 房间地面有水渍，请处理",
+    "fall_detected": "【紧急告警】{room_id} 检测到老人跌倒，请立即处理！",
+    "robot_stuck": "【机器人卡住】{room_id} 房间导航失败，机器人无法移动，请人工处理",
     "task_failed": "【任务失败】于{room_id}房间执行{step}任务失败",
     "patrol_complete": "【系统通知】巡视完毕，点击可查看巡视结果",
 }

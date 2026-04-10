@@ -144,6 +144,44 @@ class BusinessLogic(
                     "progress": (len(self._room_patrol_rooms_completed) + len(self._room_patrol_rooms_failed)) / max(len(self._room_patrol_rooms_list), 1) if self._room_patrol_rooms_list else 0,
                     "error": self._room_patrol_error,
                     "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in self._room_patrol_rooms_list],
+                    "fall_event": getattr(self, '_fall_event', None),
+                    "stuck_event": getattr(self, '_stuck_event', None),
                 },
             }
         return raw
+
+    def acknowledge_fall(self):
+        """护工确认已处理跌倒事件，同步关闭对应告警记录"""
+        event = self._fall_event
+        self._fall_event = None
+        # 通知 meta.fall_detection 服务（使用持久连接）
+        try:
+            self._fall_call("ack_fall")
+        except Exception:
+            pass
+        # 自动关闭对应告警记录
+        if event:
+            alert_id = event.get("alert_id")
+            alert_date = event.get("alert_date")
+            if alert_id and alert_date:
+                try:
+                    self.confirm_alert(alert_id, alert_date)
+                    self.close_alert(alert_id, alert_date)
+                except Exception:
+                    pass
+        return {"success": True, "message": "跌倒事件已确认"}
+
+    def acknowledge_stuck(self):
+        """护工确认已处理机器人卡住事件，同步关闭对应告警记录"""
+        event = self._stuck_event
+        self._stuck_event = None
+        if event:
+            alert_id = event.get("alert_id")
+            alert_date = event.get("alert_date")
+            if alert_id and alert_date:
+                try:
+                    self.confirm_alert(alert_id, alert_date)
+                    self.close_alert(alert_id, alert_date)
+                except Exception:
+                    pass
+        return {"success": True, "message": "机器人卡住事件已确认"}

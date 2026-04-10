@@ -2,7 +2,16 @@
 
 Currently returns mock results. Replace method internals when VLM service is available.
 """
+import base64
 import time
+
+# 1x1 white PNG placeholder (68 bytes)
+_PLACEHOLDER_PNG = (
+    b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+    b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00'
+    b'\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18'
+    b'\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+)
 
 
 class DetectionMixin:
@@ -45,9 +54,10 @@ class DetectionMixin:
             "room_id": room_id,
         }
 
-    def capture_image(self) -> bytes | None:
+    def capture_image(self) -> str | None:
         """Capture current frame from ROS camera topic.
 
-        TODO: Implement when camera topic is available.
+        Returns base64-encoded PNG string, or None if unavailable.
+        TODO: Replace with real camera topic subscription when available.
         """
-        return None
+        return base64.b64encode(_PLACEHOLDER_PNG).decode('ascii')

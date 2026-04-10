@@ -47,8 +47,10 @@ class MetaBridgeMixin:
         """Initialize Meta service proxies (call in __init__)."""
         self._loc = None
         self._nav = None
+        self._fall = None
         self._loc_state = META_DISCONNECTED
         self._nav_state = META_DISCONNECTED
+        self._fall_state = META_DISCONNECTED
         self._recovery_in_progress = False
 
     def _trigger_auto_recovery(self):
@@ -107,6 +109,35 @@ class MetaBridgeMixin:
                 self._trigger_auto_recovery()
             else:
                 logger.error("[loc] %s failed: %s", method_name, e)
+            return {"success": False, "message": msg}
+
+    def _fall_call(self, method_name: str, *args, **kwargs) -> dict:
+        """Call a method on the fall detection Meta proxy.
+
+        Args:
+            method_name: Name of the method to call on self._fall.
+            *args, **kwargs: Forwarded to the method.
+
+        Returns:
+            dict: {"success": bool, ...} — error dict if Meta not active.
+        """
+        if self._fall_state != "active" or not self._fall:
+            return {"success": False, "message": f"Fall detection Meta not active (state={self._fall_state})"}
+        try:
+            result = getattr(self._fall, method_name)(*args, **kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            msg = str(e)
+            if "unconfigured" in msg:
+                logger.warning("[fall] %s: service went back to unconfigured", method_name)
+                self._fall_state = META_CONNECTED
+            elif "inactive" in msg:
+                logger.warning("[fall] %s: service is inactive", method_name)
+                self._fall_state = META_INACTIVE
+            else:
+                logger.error("[fall] %s failed: %s", method_name, e)
             return {"success": False, "message": msg}
 
     def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
@@ -181,6 +212,15 @@ class MetaBridgeMixin:
             errors.append(f"navigation: {e}")
             logger.warning("[meta] Failed to connect astribot_navigation: %s", e)
 
+        try:
+            self._fall = connect("meta.fall_detection")
+            self._fall_state = META_CONNECTED
+            logger.info("[meta] Connected to fall_detection")
+        except Exception as e:
+            self._fall = None
+            # fall_detection 是可选的，不加入错误列表
+            logger.debug("[meta] Failed to connect fall_detection (optional): %s", e)
+
         # Sync local state with actual Meta state
         if self.meta_connected:
             self._sync_meta_state()
@@ -196,13 +236,26 @@ class MetaBridgeMixin:
         For localization: uses get_status().is_running (not require_active protected,
         but is_running reliably reflects whether on_activate() has been called).
         For navigation: also uses get_status().is_running for consistency.
+        For other services: also check state field for accurate state detection.
         """
         if proxy is None:
             return META_DISCONNECTED
         try:
             status = proxy.get_status()
             logger.info("[meta] probe %s: status=%s", name, status)
-            # 兼容两种返回格式：is_running 或 running
+
+            # 优先检查 state 字段（新式 Meta 服务返回）
+            state_str = status.get("state")
+            if state_str:
+                if state_str == "active":
+                    return META_ACTIVE
+                elif state_str == "inactive":
+                    return META_INACTIVE
+                elif state_str in ("connected", "unconfigured"):
+                    return META_CONNECTED
+                # 其他状态视为 unconfigured
+
+            # 兼容旧式返回格式：is_running 或 running
             is_active = status.get("is_running") or status.get("running", False)
             return META_ACTIVE if is_active else META_CONNECTED
         except Exception as e:
@@ -220,6 +273,9 @@ class MetaBridgeMixin:
         if self._nav:
             self._nav_state = self._probe_service_state(self._nav, "navigation")
             logger.info("[meta] Navigation actual state: %s", self._nav_state)
+        if self._fall:
+            self._fall_state = self._probe_service_state(self._fall, "fall_detection")
+            logger.info("[meta] Fall detection actual state: %s", self._fall_state)
 
     def configure_meta(self, loc_config: dict | None = None,
                        nav_config: dict | None = None) -> dict:
@@ -275,6 +331,22 @@ class MetaBridgeMixin:
                 results["navigation"] = f"failed: {e}"
                 logger.warning("[meta] Navigation configure failed: %s", e)
 
+        # fall_detection 配置（可选服务）
+        if self._fall and self._fall_state == META_CONNECTED:
+            try:
+                result = self._fall.configure({"simulated": True})
+                logger.info("[meta] Fall detection configure result: %s", result)
+                if _is_success(result):
+                    self._fall_state = META_INACTIVE
+                    results["fall_detection"] = "configured"
+                    logger.info("[meta] Fall detection configured")
+                else:
+                    results["fall_detection"] = f"failed: {result}"
+                    logger.warning("[meta] Fall detection configure returned: %s", result)
+            except Exception as e:
+                results["fall_detection"] = f"failed: {e}"
+                logger.warning("[meta] Fall detection configure failed: %s", e)
+
         return {"success": True, "results": results}
 
     def activate_meta(self, loc_config: dict | None = None,
@@ -296,16 +368,18 @@ class MetaBridgeMixin:
             return {"success": False, "message": "Meta not connected"}
 
         # Already active — nothing to do
-        if self._loc_state == META_ACTIVE and self._nav_state == META_ACTIVE:
-            return {"success": True, "results": {"localization": "already active", "navigation": "already active"}}
+        if self._loc_state == META_ACTIVE and self._nav_state == META_ACTIVE and self._fall_state == META_ACTIVE:
+            return {"success": True, "results": {"localization": "already active", "navigation": "already active", "fall_detection": "already active"}}
 
         # Auto-configure if still in connected state
-        if self._loc_state == META_CONNECTED or self._nav_state == META_CONNECTED:
+        logger.info("[meta] activate_meta: checking for auto-configure, fall_state=%s", self._fall_state)
+        if self._loc_state == META_CONNECTED or self._nav_state == META_CONNECTED or self._fall_state == META_CONNECTED:
             cfg_result = self.configure_meta(loc_config, nav_config)
+            logger.info("[meta] configure_meta result: %s", cfg_result)
             # Check if any service failed to configure
             cfg_failures = {k: v for k, v in cfg_result.get("results", {}).items()
                            if v.startswith("failed")}
-            if cfg_failures and self._loc_state != META_INACTIVE and self._nav_state != META_INACTIVE:
+            if cfg_failures and self._loc_state != META_INACTIVE and self._nav_state != META_INACTIVE and self._fall_state != META_INACTIVE:
                 return {"success": False, "message": f"Configure failed: {cfg_failures}"}
 
         results = {}
@@ -344,6 +418,24 @@ class MetaBridgeMixin:
                 logger.warning("[meta] Navigation activate failed: %s", e)
         elif self._nav and self._nav_state == META_ACTIVE:
             results["navigation"] = "already active"
+
+        # fall_detection 也是可选的
+        if self._fall and self._fall_state == META_INACTIVE:
+            try:
+                logger.info("[meta] Activating fall_detection...")
+                result = self._fall.activate()
+                logger.info("[meta] Fall detection activate result: %s", result)
+                if _is_success(result):
+                    self._fall_state = META_ACTIVE
+                    results["fall_detection"] = "activated"
+                    logger.info("[meta] Fall detection activated")
+                else:
+                    results["fall_detection"] = f"failed: {result}"
+            except Exception as e:
+                results["fall_detection"] = f"failed: {e}"
+                logger.warning("[meta] Fall detection activate failed: %s", e)
+        elif self._fall and self._fall_state == META_ACTIVE:
+            results["fall_detection"] = "already active"
 
         ok = self._loc_state == META_ACTIVE or self._nav_state == META_ACTIVE
         return {"success": ok, "results": results}
@@ -398,13 +490,14 @@ class MetaBridgeMixin:
         """Return current Meta service lifecycle states.
 
         Returns:
-            dict: {"meta_connected": bool, "loc_state": str, "nav_state": str}
+            dict: {"meta_connected": bool, "loc_state": str, "nav_state": str, "fall_state": str}
             State values: "disconnected" | "connected" | "inactive" | "active"
         """
         return {
             "meta_connected": self.meta_connected,
             "loc_state": self._loc_state,
             "nav_state": self._nav_state,
+            "fall_state": self._fall_state,
         }
 
     def _meta_call(self, service_name: str, method_name: str, _timeout: float = 30.0, **kwargs) -> dict:
@@ -417,6 +510,7 @@ class MetaBridgeMixin:
             service_name: Meta service identifier.
                           "localization" → self._loc
                           "navigation" / "astribot_navigation" → self._nav
+                          "fall_detection" → self._fall
                           anything else → temporary astribot_link.connect(service_name)
             method_name: Name of the method to call on the proxy.
             _timeout: Timeout for temporary connection (default 30s).
@@ -431,6 +525,9 @@ class MetaBridgeMixin:
         # --- Route to existing proxy ---
         if service_name == "localization":
             return self._loc_call(method_name, **kwargs)
+
+        if service_name == "fall_detection":
+            return self._fall_call(method_name, **kwargs)
 
         if service_name in _NAV_ALIASES:
             if self._nav_state != "active" or not self._nav:
@@ -468,6 +565,7 @@ class MetaBridgeMixin:
                 logger.info("[meta_call] %s.activate() returned: %s (type=%s)",
                             service_name, act, type(act).__name__)
                 if not _is_success(act):
+                    logger.error("[meta_call] %s activate failed, service may have internal error. Check backend logs.", service_name)
                     return {"success": False, "message": f"{service_name} activate failed: {act}"}
 
             logger.info("[meta_call] Calling %s.%s()", service_name, method_name)
@@ -488,4 +586,4 @@ class MetaBridgeMixin:
     @property
     def meta_connected(self) -> bool:
         """True if at least one Meta service has been connected (not disconnected)."""
-        return self._loc_state != META_DISCONNECTED or self._nav_state != META_DISCONNECTED
+        return self._loc_state != META_DISCONNECTED or self._nav_state != META_DISCONNECTED or self._fall_state != META_DISCONNECTED

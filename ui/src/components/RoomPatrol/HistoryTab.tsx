@@ -41,7 +41,7 @@ const ALERT_TYPES: Record<string, string> = {
 const ALERT_STATUS: Record<string, { color: string; text: string }> = {
   new: { color: 'red', text: '新告警' },
   processing: { color: 'orange', text: '处理中' },
-  closed: { color: 'green', text: '已关闭' },
+  closed: { color: 'green', text: '已处置' },
 };
 
 export const HistoryTab: React.FC = () => {

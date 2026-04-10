@@ -324,6 +324,21 @@ def save_task_config(req: SaveTaskConfigRequest):
     return logic.save_task_config(req.config)
 
 
+# ==================== 跌倒检测 API ====================
+
+
+@app.post("/api/fall/ack")
+def acknowledge_fall():
+    """护工点击「已处理」，清除跌倒事件"""
+    return logic.acknowledge_fall()
+
+
+@app.post("/api/stuck/ack")
+def acknowledge_stuck():
+    """护工点击「已处理」，清除机器人卡住事件"""
+    return logic.acknowledge_stuck()
+
+
 # ==================== 告警 ====================
 
 
