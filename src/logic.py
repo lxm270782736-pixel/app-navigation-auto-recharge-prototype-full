@@ -151,7 +151,7 @@ class BusinessLogic(
         return raw
 
     def acknowledge_fall(self):
-        """护工确认已处理跌倒事件，同步关闭对应告警记录"""
+        """护工弹窗确认跌倒事件 — 恢复任务，告警标记为处理中（护工需在历史记录里手动处置）"""
         event = self._fall_event
         self._fall_event = None
         # 通知 meta.fall_detection 服务（使用持久连接）
@@ -159,20 +159,19 @@ class BusinessLogic(
             self._fall_call("ack_fall")
         except Exception:
             pass
-        # 自动关闭对应告警记录
+        # 告警状态 new → processing（护工已知晓，但需手动处置后关闭）
         if event:
             alert_id = event.get("alert_id")
             alert_date = event.get("alert_date")
             if alert_id and alert_date:
                 try:
                     self.confirm_alert(alert_id, alert_date)
-                    self.close_alert(alert_id, alert_date)
                 except Exception:
                     pass
         return {"success": True, "message": "跌倒事件已确认"}
 
     def acknowledge_stuck(self):
-        """护工确认已处理机器人卡住事件，同步关闭对应告警记录"""
+        """护工弹窗确认机器人卡住事件 — 恢复任务，告警标记为处理中"""
         event = self._stuck_event
         self._stuck_event = None
         if event:
@@ -181,7 +180,6 @@ class BusinessLogic(
             if alert_id and alert_date:
                 try:
                     self.confirm_alert(alert_id, alert_date)
-                    self.close_alert(alert_id, alert_date)
                 except Exception:
                     pass
         return {"success": True, "message": "机器人卡住事件已确认"}

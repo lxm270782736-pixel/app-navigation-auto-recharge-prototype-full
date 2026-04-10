@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Tag, Button, Empty, Space, message, Modal } from 'antd';
-import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
+import { Card, Tag, Button, Empty, Space, message, Modal, Image, Descriptions } from 'antd';
+import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled, PictureOutlined } from '@ant-design/icons';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
@@ -35,6 +35,8 @@ const ALERT_TYPES: Record<string, string> = {
   bed_absence: '老人离床',
   floor_clutter: '地面杂物',
   floor_water: '地面水渍',
+  fall_detected: '老人跌倒',
+  robot_stuck: '机器人卡住',
   task_failed: '任务失败',
 };
 
@@ -49,7 +51,9 @@ export const HistoryTab: React.FC = () => {
   const [records, setRecords] = useState<PatrolRecord[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PatrolRecord | null>(null);
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
 
   // Dynamic step labels
@@ -81,8 +85,10 @@ export const HistoryTab: React.FC = () => {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleConfirmAlert = async (alert: Alert) => {
+    setActionLoading(alert.id);
     const date = alert.created_at.slice(0, 10);
     const result = await apiService.confirmAlert(date, alert.id);
+    setActionLoading(null);
     if (result.success) {
       message.success('告警已确认');
       loadData();
@@ -92,11 +98,14 @@ export const HistoryTab: React.FC = () => {
   };
 
   const handleCloseAlert = async (alert: Alert) => {
+    setActionLoading(alert.id);
     const date = alert.created_at.slice(0, 10);
     const result = await apiService.closeAlert(date, alert.id);
+    setActionLoading(null);
     if (result.success) {
-      message.success('告警已关闭');
+      message.success('已处置');
       loadData();
+      if (selectedAlert?.id === alert.id) setSelectedAlert(null);
     } else {
       message.error(result.message);
     }
@@ -209,25 +218,47 @@ export const HistoryTab: React.FC = () => {
           <Space direction="vertical" style={{ width: '100%' }} size={8}>
             {alerts.map(alert => {
               const st = ALERT_STATUS[alert.status] || { color: 'default', text: alert.status };
+              const borderColor = st.color === 'red' ? '#ff4d4f' : st.color === 'orange' ? '#faad14' : '#52c41a';
               return (
-                <Card key={alert.id} size="small" style={{ borderLeft: `3px solid ${st.color === 'red' ? '#ff4d4f' : st.color === 'orange' ? '#faad14' : '#52c41a'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <Tag color={st.color}>{st.text}</Tag>
-                      <span style={{ fontWeight: 600, marginRight: 8 }}>{alert.room_id}</span>
-                      <span style={{ color: '#666' }}>{ALERT_TYPES[alert.alert_type] || alert.alert_type}</span>
+                <Card
+                  key={alert.id}
+                  size="small"
+                  style={{ borderLeft: `3px solid ${borderColor}`, cursor: 'pointer' }}
+                  onClick={() => setSelectedAlert(alert)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flex: 1 }}>
+                      {/* 缩略图 */}
+                      {alert.photo ? (
+                        <img
+                          src={`data:image/png;base64,${alert.photo}`}
+                          style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div style={{ width: 48, height: 48, background: '#f0f0f0', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <PictureOutlined style={{ color: '#bbb' }} />
+                        </div>
+                      )}
+                      <div>
+                        <div>
+                          <Tag color={st.color}>{st.text}</Tag>
+                          <span style={{ fontWeight: 600, marginRight: 8 }}>{alert.room_id}</span>
+                          <span style={{ color: '#666' }}>{ALERT_TYPES[alert.alert_type] || alert.alert_type}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                          {alert.created_at?.replace('T', ' ')}
+                        </div>
+                      </div>
                     </div>
-                    <Space size={4}>
+                    <Space size={4} onClick={e => e.stopPropagation()}>
                       {alert.status === 'new' && (
-                        <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => handleConfirmAlert(alert)}>确认</Button>
+                        <Button size="small" type="primary" icon={<CheckOutlined />} loading={actionLoading === alert.id} onClick={() => handleConfirmAlert(alert)}>确认</Button>
                       )}
                       {alert.status === 'processing' && (
-                        <Button size="small" icon={<CloseOutlined />} onClick={() => handleCloseAlert(alert)}>已处置</Button>
+                        <Button size="small" icon={<CloseOutlined />} loading={actionLoading === alert.id} onClick={() => handleCloseAlert(alert)}>已处置</Button>
                       )}
                     </Space>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                    {alert.message} | {alert.created_at?.replace('T', ' ')}
                   </div>
                 </Card>
               );
@@ -235,6 +266,57 @@ export const HistoryTab: React.FC = () => {
           </Space>
         )}
       </Card>
+
+      {/* 告警详情 Modal */}
+      <Modal
+        open={!!selectedAlert}
+        onCancel={() => setSelectedAlert(null)}
+        footer={selectedAlert ? (
+          <Space>
+            {selectedAlert.status === 'new' && (
+              <Button type="primary" icon={<CheckOutlined />} loading={actionLoading === selectedAlert.id} onClick={() => handleConfirmAlert(selectedAlert)}>确认告警</Button>
+            )}
+            {selectedAlert.status === 'processing' && (
+              <Button icon={<CloseOutlined />} loading={actionLoading === selectedAlert.id} onClick={() => handleCloseAlert(selectedAlert)}>标记已处置</Button>
+            )}
+            <Button onClick={() => setSelectedAlert(null)}>关闭</Button>
+          </Space>
+        ) : null}
+        title={selectedAlert ? `${ALERT_TYPES[selectedAlert.alert_type] || selectedAlert.alert_type} — ${selectedAlert.room_id}` : ''}
+        width={520}
+      >
+        {selectedAlert && (
+          <div>
+            {selectedAlert.photo ? (
+              <Image
+                src={`data:image/png;base64,${selectedAlert.photo}`}
+                style={{ width: '100%', borderRadius: 8, marginBottom: 16 }}
+              />
+            ) : (
+              <div style={{ width: '100%', height: 160, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                <PictureOutlined style={{ fontSize: 32, color: '#bbb' }} />
+                <span style={{ color: '#bbb', marginLeft: 8 }}>暂无图片</span>
+              </div>
+            )}
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item label="状态">
+                <Tag color={ALERT_STATUS[selectedAlert.status]?.color}>{ALERT_STATUS[selectedAlert.status]?.text || selectedAlert.status}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="房间">{selectedAlert.room_id}</Descriptions.Item>
+              <Descriptions.Item label="类型">{ALERT_TYPES[selectedAlert.alert_type] || selectedAlert.alert_type}</Descriptions.Item>
+              <Descriptions.Item label="置信度">{selectedAlert.confidence ? `${(selectedAlert.confidence * 100).toFixed(0)}%` : '—'}</Descriptions.Item>
+              <Descriptions.Item label="告警内容">{selectedAlert.message}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{selectedAlert.created_at?.replace('T', ' ')}</Descriptions.Item>
+              {selectedAlert.confirmed_at && (
+                <Descriptions.Item label="确认时间">{selectedAlert.confirmed_at?.replace('T', ' ')}</Descriptions.Item>
+              )}
+              {selectedAlert.closed_at && (
+                <Descriptions.Item label="处置时间">{selectedAlert.closed_at?.replace('T', ' ')}</Descriptions.Item>
+              )}
+            </Descriptions>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

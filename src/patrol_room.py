@@ -65,6 +65,12 @@ class RoomPatrolMixin:
             try:
                 # Call meta.fall_detection.get_fall_status()
                 status = self._fall_call("get_fall_status")
+
+                # 如果服务未激活或调用失败，跳过本次轮询
+                if not isinstance(status, dict) or status.get("success") is False:
+                    time.sleep(poll_interval)
+                    continue
+
                 logger.info("[fall] poll: is_fall=%s", status.get("is_fall"))
 
                 # New fall detected
@@ -93,7 +99,7 @@ class RoomPatrolMixin:
         logger.info("[fall] Monitor thread stopped")
 
     def _on_fall_event(self, event):
-        """Callback when fall event is detected."""
+        """Callback when fall event is detected — cancel navigation immediately."""
         alert = self.create_alert(
             getattr(self, '_room_patrol_id', ''),
             event.get('location', 'unknown'),
@@ -103,6 +109,13 @@ class RoomPatrolMixin:
         # 记录告警 ID 和日期，供 ack 时自动关闭
         self._fall_event["alert_id"] = alert["id"]
         self._fall_event["alert_date"] = alert["created_at"][:10]
+        # 立即取消当前导航，让巡逻线程尽快进入等待
+        try:
+            self.cancel_navigation()
+            if hasattr(self, '_nav_done_event'):
+                self._nav_done_event.set()
+        except Exception:
+            pass
 
     def _handle_fall_blocking(self):
         """Handle fall event — block until nurse acknowledges."""
@@ -602,17 +615,23 @@ class RoomPatrolMixin:
 
                 # Navigate/door failure → skip room (exit nav → stuck alert + wait)
                 if not success and step_type in ("navigate", "open_door"):
-                    if step_type == "navigate" and step.get("is_exit", False):
+                    # 如果是因为告警暂停导致的中断，不跳过房间，等待恢复后继续
+                    if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
+                        pass  # _check_fall/stuck_before_step 会在下一步前阻塞等待
+                    elif step_type == "navigate" and step.get("is_exit", False):
                         # Exit navigation failed — robot is stuck, wait for nurse
                         self._on_stuck_event(room_id)
                         self._handle_stuck_blocking()
                         room_result["error"] = "exit navigate failed (robot stuck)"
+                        room_success = False
+                        skip_room = True
+                        break
                     else:
                         room_result["error"] = f"{step_type} failed"
                         print(f"[room_patrol] {step_type} failed, skipping room {room_id}")
-                    room_success = False
-                    skip_room = True
-                    break
+                        room_success = False
+                        skip_room = True
+                        break
                 # Close door failure → log but continue to next room
                 if not success and step_type == "close_door":
                     room_result["error"] = "close_door failed"
@@ -797,9 +816,11 @@ class RoomPatrolMixin:
                     poll_connect_timeout = float(poll.get("connect_timeout", connect_timeout))
 
                     while time.time() < deadline:
-                        # 检查巡逻是否被停止
+                        # 检查巡逻是否被停止或有紧急事件
                         if not getattr(self, '_room_patrol_active', False):
                             return False, {"error": "patrol stopped"}
+                        if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
+                            return False, {"error": "patrol paused by alert"}
                         time.sleep(interval)
                         # fall_detection 使用持久连接
                         if meta_service == "fall_detection":
