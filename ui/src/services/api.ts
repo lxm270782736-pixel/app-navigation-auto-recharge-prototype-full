@@ -380,10 +380,11 @@ class ApiService {
     return this._post('/api/stuck/ack', {});
   }
 
-  async getAlerts(filter?: { status?: string; date?: string }): Promise<any[]> {
+  async getAlerts(filter?: { status?: string; date?: string; patrol_id?: string }): Promise<any[]> {
     const params = new URLSearchParams();
     if (filter?.status) params.set('status', filter.status);
     if (filter?.date) params.set('date', filter.date);
+    if (filter?.patrol_id) params.set('patrol_id', filter.patrol_id);
     const query = params.toString() ? `?${params}` : '';
     return this._get(`/api/alerts${query}`);
   }

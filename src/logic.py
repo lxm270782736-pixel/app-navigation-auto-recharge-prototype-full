@@ -90,7 +90,7 @@ class BusinessLogic(
         self._room_patrol_task_name = ""
         self._room_patrol_record: dict = {}
         self._room_patrol_rooms_list: list[dict] = []
-        self._room_patrol_current_step_index = -1
+        self._room_patrol_current_step_index = 0
         self._nav_done_event = threading.Event()
         self._nav_done_success = False
 

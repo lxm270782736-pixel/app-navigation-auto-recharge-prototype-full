@@ -87,9 +87,8 @@ export const HistoryTab: React.FC = () => {
     setSelectedRecord(record);
     setRecordAlerts([]);
     try {
-      const all = await apiService.getAlerts({ status: undefined });
-      const filtered = (Array.isArray(all) ? all : []).filter((a: Alert) => a.patrol_id === record.id);
-      setRecordAlerts(filtered);
+      const filtered = await apiService.getAlerts({ patrol_id: record.id });
+      setRecordAlerts(Array.isArray(filtered) ? filtered : []);
     } catch (e) {
       console.warn('Failed to load alerts for record:', e);
     }
@@ -97,20 +96,20 @@ export const HistoryTab: React.FC = () => {
 
   const handleConfirmAlert = async (alert: Alert) => {
     setActionLoading(alert.id);
-    const date = alert.created_at.slice(0, 10);
+    const date = alert.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0];
     const result = await apiService.confirmAlert(date, alert.id);
     setActionLoading(null);
     if (result.success) {
       message.success('告警已确认');
       if (selectedRecord) handleSelectRecord(selectedRecord);
     } else {
-      message.error(result.message);
+      message.error(result.message || '操作失败，请重试');
     }
   };
 
   const handleCloseAlert = async (alert: Alert) => {
     setActionLoading(alert.id);
-    const date = alert.created_at.slice(0, 10);
+    const date = alert.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0];
     const result = await apiService.closeAlert(date, alert.id);
     setActionLoading(null);
     if (result.success) {
@@ -118,7 +117,7 @@ export const HistoryTab: React.FC = () => {
       if (selectedAlert?.id === alert.id) setSelectedAlert(null);
       if (selectedRecord) handleSelectRecord(selectedRecord);
     } else {
-      message.error(result.message);
+      message.error(result.message || '操作失败，请重试');
     }
   };
 

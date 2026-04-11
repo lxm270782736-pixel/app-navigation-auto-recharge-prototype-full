@@ -338,6 +338,7 @@ export interface RoomPatrolState {
   active: boolean;
   status: string;
   patrol_id: string;
+  task_name?: string;
   current_room: string;
   current_step: string;
   current_step_index: number;
@@ -346,6 +347,7 @@ export interface RoomPatrolState {
   rooms_total: number;
   progress: number;
   error: string;
+  rooms?: Array<{ room_id: string; room_name: string; steps: any[] }>;
   fall_event?: {
     timestamp: number;
     location: string;

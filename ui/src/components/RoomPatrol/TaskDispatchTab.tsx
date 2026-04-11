@@ -141,6 +141,14 @@ export const TaskDispatchTab: React.FC = () => {
   const notifiedAlertIds = useRef<Set<string>>(new Set());
   const pendingNotifications = useRef<Array<{type: string, message: string, description: string}>>([]);
 
+  // 组件卸载时清理，防止重新挂载时重复弹窗
+  useEffect(() => {
+    return () => {
+      notifiedAlertIds.current.clear();
+      pendingNotifications.current = [];
+    };
+  }, []);
+
   const flushNotifications = useCallback(() => {
     for (const n of pendingNotifications.current) {
       notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
@@ -189,8 +197,9 @@ export const TaskDispatchTab: React.FC = () => {
       '/loc_high_freq',
       MESSAGE_TYPES.ODOMETRY,
       (msg) => {
-        const pos = msg.pose.pose.position;
-        const ori = msg.pose.pose.orientation;
+        const pos = msg?.pose?.pose?.position;
+        const ori = msg?.pose?.pose?.orientation;
+        if (!pos || !ori || typeof ori.w !== 'number') return;
         const theta = Math.atan2(
           2.0 * (ori.w * ori.z + ori.x * ori.y),
           1.0 - 2.0 * (ori.y * ori.y + ori.z * ori.z),
@@ -241,7 +250,7 @@ export const TaskDispatchTab: React.FC = () => {
     }
   };
 
-  const progressPercent = patrolState ? Math.round(patrolState.progress * 100) : 0;
+  const progressPercent = patrolState ? Math.round(Math.max(0, Math.min(1, patrolState.progress)) * 100) : 0;
 
   // Build ALL waypoints for map display: 3 points per room (door_outside, door_inside, bed_check)
   // Structure: [room1_outside, room1_inside, room1_bed, room2_outside, room2_inside, room2_bed, ...]
@@ -409,7 +418,7 @@ export const TaskDispatchTab: React.FC = () => {
 
         {/* Status */}
         {patrolState && patrolState.status !== 'idle' && (
-          <Card size="small" title={`巡房状态${(patrolState as any).task_name ? ` — ${(patrolState as any).task_name}` : ''}`}>
+          <Card size="small" title={`巡房状态${patrolState.task_name ? ` — ${patrolState.task_name}` : ''}`}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>状态</span>
@@ -465,7 +474,7 @@ export const TaskDispatchTab: React.FC = () => {
         {patrolState && patrolState.status !== 'idle' && (
           <Card size="small" title="房间进度" style={{ flex: 1, overflow: 'auto' }}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              {((patrolState as any).rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))).map((room: any) => {
+              {(patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))).map((room: any) => {
                 const rid = room.room_id;
                 const isDone = patrolState.rooms_completed.includes(rid);
                 const isFailed = patrolState.rooms_failed.includes(rid);

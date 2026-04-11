@@ -36,9 +36,10 @@ class RoomPatrolMixin:
     # ------ Fall detection thread (parallel to patrol) ------
 
     def _start_fall_monitor(self):
-        """Start fall detection monitoring thread (calls meta.fall_detection)."""
+        """Start fall detection monitoring thread."""
         self._fall_event = None
-        self._fall_monitor_enabled = True  # 开关：控制是否真正轮询检测
+        self._fall_monitor_enabled = True
+        self._fall_stop_event = threading.Event()
         self._fall_thread = threading.Thread(
             target=self._fall_monitor_loop,
             daemon=True,
@@ -48,18 +49,24 @@ class RoomPatrolMixin:
         logger.info("[fall] Monitor thread started")
 
     def _stop_fall_monitor(self):
-        """Stop fall monitoring (disable the switch)."""
+        """Stop fall monitoring."""
         self._fall_monitor_enabled = False
+        if hasattr(self, '_fall_stop_event'):
+            self._fall_stop_event.set()
 
     def _fall_monitor_loop(self):
-        """Background loop: poll meta.fall_detection status continuously."""
-        poll_interval = 2.0  # seconds between polls
+        """Background loop: poll meta.detection.get_fall_status() continuously."""
+        poll_interval = 2.0
         logger.info("[fall] Monitor loop started, polling every %ss", poll_interval)
 
+        stop_event = getattr(self, '_fall_stop_event', None)
+
         while getattr(self, '_room_patrol_active', False):
-            # 检查开关，如果禁用则跳过轮询
+            # 用 Event.wait 替代 sleep，stop 时可立即唤醒
+            if stop_event and stop_event.wait(timeout=poll_interval):
+                break
+
             if not getattr(self, '_fall_monitor_enabled', False):
-                time.sleep(poll_interval)
                 continue
 
             try:
@@ -68,7 +75,6 @@ class RoomPatrolMixin:
 
                 # 如果服务未激活或调用失败，跳过本次轮询
                 if not isinstance(status, dict) or status.get("success") is False:
-                    time.sleep(poll_interval)
                     continue
 
                 logger.info("[fall] poll: is_fall=%s", status.get("is_fall"))
@@ -90,12 +96,8 @@ class RoomPatrolMixin:
                     logger.info("[fall] Event acknowledged, cleared")
                     self._fall_event = None
 
-                time.sleep(poll_interval)
-
             except Exception as e:
-                # Silently ignore transient errors, keep monitoring
                 logger.debug("[fall] Monitor poll error: %s", e)
-                time.sleep(poll_interval)
 
         logger.info("[fall] Monitor thread stopped")
 
@@ -108,9 +110,10 @@ class RoomPatrolMixin:
             confidence=event.get('confidence', 0.0),
             photo=event.get('photo'),
         )
-        # 记录告警 ID 和日期，供 ack 时自动关闭
-        self._fall_event["alert_id"] = alert["id"]
-        self._fall_event["alert_date"] = alert["created_at"][:10]
+        # 先检查 _fall_event 是否还存在（可能已被 ack 清除）
+        if self._fall_event is event:
+            self._fall_event["alert_id"] = alert["id"]
+            self._fall_event["alert_date"] = alert["created_at"][:10]
         # 立即取消当前导航，让巡逻线程尽快进入等待
         try:
             self.cancel_navigation()
@@ -126,10 +129,11 @@ class RoomPatrolMixin:
 
         logger.info("[fall] Task paused, waiting for nurse confirmation...")
 
+        # 锁内只做状态更新，不睡眠
         with self._lock:
             self._room_patrol_status = "paused_fall"
 
-        # Block until event is cleared (nurse ack) or patrol stops
+        # 锁外等待，避免持锁睡眠
         while self._fall_event and self._room_patrol_active:
             time.sleep(1)
 
@@ -148,18 +152,21 @@ class RoomPatrolMixin:
 
     def _on_stuck_event(self, room_id: str):
         """Trigger stuck alert when exit navigation fails."""
-        self._stuck_event = {
+        stuck = {
             "timestamp": time.time(),
             "room_id": room_id,
         }
+        self._stuck_event = stuck
         logger.info("[stuck] Robot stuck in room %s", room_id)
         alert = self.create_alert(
             getattr(self, '_room_patrol_id', ''),
             room_id,
             "robot_stuck",
         )
-        self._stuck_event["alert_id"] = alert["id"]
-        self._stuck_event["alert_date"] = alert["created_at"][:10]
+        # 先检查 _stuck_event 是否还是同一个对象
+        if self._stuck_event is stuck:
+            self._stuck_event["alert_id"] = alert["id"]
+            self._stuck_event["alert_date"] = alert["created_at"][:10]
 
     def _handle_stuck_blocking(self):
         """Block patrol until nurse acknowledges stuck robot."""
@@ -168,6 +175,7 @@ class RoomPatrolMixin:
         logger.info("[stuck] Task paused, waiting for nurse confirmation...")
         with self._lock:
             self._room_patrol_status = "paused_stuck"
+        # 锁外等待
         while self._stuck_event and self._room_patrol_active:
             time.sleep(1)
         logger.info("[stuck] Task resumed")
@@ -441,12 +449,6 @@ class RoomPatrolMixin:
         self._stop_fall_monitor()
         self._fall_event = None
         self._stuck_event = None
-        # Wake up any blocked fall handler
-        if hasattr(self, '_fall_done_event'):
-            try:
-                self._fall_done_event.set()
-            except Exception:
-                pass
 
         # Cancel any pending navigation
         if was_active:

@@ -23,7 +23,9 @@ class AlertMixin:
     _pending_alerts: list
 
     def _init_alert_queue(self):
+        import threading
         self._pending_alerts = []
+        self._pending_alerts_lock = threading.Lock()
 
     def _get_storage(self) -> JsonDayStorage:
         return self._storage
@@ -56,9 +58,10 @@ class AlertMixin:
         storage.save("alerts", alert_id, alert, date)
         print(f"[alert] Created: {alert_type} for room {room_id}")
 
-        # 放入待推送队列
+        # 放入待推送队列（加锁保证线程安全）
         if hasattr(self, '_pending_alerts'):
-            self._pending_alerts.append(alert)
+            with self._pending_alerts_lock:
+                self._pending_alerts.append(alert)
 
         return alert
 
@@ -66,8 +69,9 @@ class AlertMixin:
         """取出并清空待推送告警队列（供 SSE get_state 消费）。"""
         if not hasattr(self, '_pending_alerts'):
             return []
-        alerts = list(self._pending_alerts)
-        self._pending_alerts.clear()
+        with self._pending_alerts_lock:
+            alerts = list(self._pending_alerts)
+            self._pending_alerts.clear()
         return alerts
 
     def get_alerts(self, status: str | None = None, date: str | None = None,

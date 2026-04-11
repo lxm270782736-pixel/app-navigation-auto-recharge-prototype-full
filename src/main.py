@@ -343,8 +343,11 @@ def acknowledge_stuck():
 
 
 @app.get("/api/alerts")
-def get_alerts(status: Optional[str] = None, date: Optional[str] = None):
-    return logic.get_alerts(status=status, date=date)
+def get_alerts(status: Optional[str] = None, date: Optional[str] = None, patrol_id: Optional[str] = None):
+    alerts = logic.get_alerts(status=status, date=date)
+    if patrol_id:
+        alerts = [a for a in alerts if a.get("patrol_id") == patrol_id]
+    return alerts
 
 
 @app.post("/api/alerts/{date}/{alert_id}/confirm")
