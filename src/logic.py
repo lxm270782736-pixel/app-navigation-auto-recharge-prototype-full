@@ -119,6 +119,7 @@ class BusinessLogic(
                 "meta_connected": self.meta_connected,
                 "loc_state": self._loc_state,
                 "nav_state": self._nav_state,
+                "fall_state": self._detection_state,
                 "nav_status": self._nav_status,
                 "nav_feedback": self._nav_feedback.copy(),
                 "current_map_name": self._current_map_name,

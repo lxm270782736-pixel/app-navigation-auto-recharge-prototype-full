@@ -10,13 +10,15 @@ import { apiService } from '@/services/api';
 const STATE_LABELS: Record<string, { text: string; color: string }> = {
   disconnected: { text: '未连接', color: '#8c8c8c' },
   connected: { text: '已连接', color: '#faad14' },
-  inactive: { text: '待激活', color: '#1890ff' },
+  unconfigured: { text: '未配置', color: '#fa8c16' },
+  inactive: { text: '未激活', color: '#1890ff' },
   active: { text: '运行中', color: '#52c41a' },
 };
 
 export const MetaLauncher: React.FC = () => {
   const [locState, setLocState] = useState('disconnected');
   const [navState, setNavState] = useState('disconnected');
+  const [detectionState, setDetectionState] = useState('disconnected');
   const [loading, setLoading] = useState(false);
 
   const isActive = locState === 'active' || navState === 'active';
@@ -26,6 +28,7 @@ export const MetaLauncher: React.FC = () => {
     const handler = (state: any) => {
       if (state.loc_state !== undefined) setLocState(state.loc_state);
       if (state.nav_state !== undefined) setNavState(state.nav_state);
+      if (state.fall_state !== undefined) setDetectionState(state.fall_state);
     };
     apiService.on('state', handler);
     return () => { apiService.off('state', handler); };
@@ -37,6 +40,7 @@ export const MetaLauncher: React.FC = () => {
       const s = await apiService.getMetaStatus();
       setLocState(s.loc_state || 'disconnected');
       setNavState(s.nav_state || 'disconnected');
+      setDetectionState(s.fall_state || 'disconnected');
     } catch { /* ignore */ }
   }, []);
 
@@ -119,9 +123,13 @@ export const MetaLauncher: React.FC = () => {
             <StatusDot state={locState} />
             <span>定位 (Localization): {STATE_LABELS[locState]?.text || locState}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
             <StatusDot state={navState} />
             <span>导航 (Navigation): {STATE_LABELS[navState]?.text || navState}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <StatusDot state={detectionState} />
+            <span>检测 (Detection): {STATE_LABELS[detectionState]?.text || detectionState}</span>
           </div>
         </div>
       </Space>

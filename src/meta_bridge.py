@@ -3,11 +3,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 生命周期状态: Unconfigured → configure → Inactive → activate → Active
-META_DISCONNECTED = "disconnected"
-META_CONNECTED = "connected"       # link 已连接，未 configure
-META_INACTIVE = "inactive"         # 已 configure，未 activate
-META_ACTIVE = "active"             # 已 activate，可调用业务方法
+# Bridge 连接状态（非 Meta 标准状态）
+META_DISCONNECTED = "disconnected"   # astribot_link 未连接
+
+# Meta 标准生命周期状态（与 meta_base 一一对应）
+META_UNCONFIGURED = "unconfigured"   # 初始状态，未 configure
+META_INACTIVE = "inactive"           # 已 configure，未 activate
+META_ACTIVE = "active"               # 已 activate，可调用业务方法
+META_FINALIZED = "finalized"         # 已 shutdown，不可恢复
+
+# 兼容旧代码：META_CONNECTED 等同于 META_UNCONFIGURED（link 已连接但服务未配置）
+META_CONNECTED = META_UNCONFIGURED
 
 
 def _is_success(result) -> bool:
@@ -101,7 +107,7 @@ class MetaBridgeMixin:
             # then auto-recover in background.
             if "unconfigured" in msg:
                 logger.warning("[loc] %s: service went back to unconfigured, triggering auto-recovery", method_name)
-                self._loc_state = META_CONNECTED
+                self._loc_state = META_UNCONFIGURED
                 self._trigger_auto_recovery()
             elif "inactive" in msg:
                 logger.warning("[loc] %s: service is inactive, triggering auto-recovery", method_name)
@@ -132,7 +138,7 @@ class MetaBridgeMixin:
             msg = str(e)
             if "unconfigured" in msg:
                 logger.warning("[fall] %s: service went back to unconfigured", method_name)
-                self._detection_state = META_CONNECTED
+                self._detection_state = META_UNCONFIGURED
             elif "inactive" in msg:
                 logger.warning("[fall] %s: service is inactive", method_name)
                 self._detection_state = META_INACTIVE
@@ -231,12 +237,13 @@ class MetaBridgeMixin:
         return {"success": True, "message": "Meta connected"}
 
     def _probe_service_state(self, proxy, name: str) -> str:
-        """Probe a Meta service's actual lifecycle state.
+        """Probe a Meta service's actual lifecycle state via get_status().
 
-        For localization: uses get_status().is_running (not require_active protected,
-        but is_running reliably reflects whether on_activate() has been called).
-        For navigation: also uses get_status().is_running for consistency.
-        For other services: also check state field for accurate state detection.
+        Meta 标准状态: unconfigured → inactive → active → finalized
+        Bridge 额外状态: disconnected（proxy 为 None）
+
+        优先使用 state 字段（新式服务），fallback 到 is_running/running（旧式服务）。
+        非标准 state 值（如 'reached', 'idle' 等业务状态）回退到 is_running 判断。
         """
         if proxy is None:
             return META_DISCONNECTED
@@ -244,26 +251,32 @@ class MetaBridgeMixin:
             status = proxy.get_status()
             logger.info("[meta] probe %s: status=%s", name, status)
 
-            # 优先检查 state 字段（新式 Meta 服务返回）
-            state_str = status.get("state")
-            if state_str:
-                if state_str == "active":
-                    return META_ACTIVE
-                elif state_str == "inactive":
-                    return META_INACTIVE
-                elif state_str in ("connected", "unconfigured"):
-                    return META_CONNECTED
-                # 其他状态视为 unconfigured
+            state_str = status.get("state", "")
 
-            # 兼容旧式返回格式：is_running 或 running
-            is_active = status.get("is_running") or status.get("running", False)
-            return META_ACTIVE if is_active else META_CONNECTED
+            # 标准 Meta 生命周期状态 — 直接映射
+            if state_str == "active":
+                return META_ACTIVE
+            if state_str == "inactive":
+                return META_INACTIVE
+            if state_str == "unconfigured":
+                return META_UNCONFIGURED
+            if state_str == "finalized":
+                return META_FINALIZED
+
+            # 非标准 state 值（旧式服务用业务状态如 'reached', 'idle'）
+            # 回退到 is_running / running 布尔判断
+            if status.get("is_running") or status.get("running", False):
+                return META_ACTIVE
+            return META_UNCONFIGURED
+
         except Exception as e:
             msg = str(e)
-            logger.info("[meta] probe %s → %s", name, msg)
+            logger.info("[meta] probe %s → exception: %s", name, msg)
             if "inactive" in msg:
                 return META_INACTIVE
-            return META_CONNECTED
+            if "unconfigured" in msg:
+                return META_UNCONFIGURED
+            return META_DISCONNECTED
 
     def _sync_meta_state(self):
         """Sync local state with actual Meta service state after connect."""
@@ -297,7 +310,7 @@ class MetaBridgeMixin:
         results = {}
         logger.info("[meta] configure_meta: loc_state=%s nav_state=%s", self._loc_state, self._nav_state)
 
-        if self._loc and self._loc_state == META_CONNECTED:
+        if self._loc and self._loc_state in (META_CONNECTED, META_UNCONFIGURED):
             try:
                 cfg = {**_DEFAULT_LOC_CONFIG, **(loc_config or {})}
                 logger.info("[meta] Configuring localization with: %s", cfg)
@@ -314,7 +327,7 @@ class MetaBridgeMixin:
                 results["localization"] = f"failed: {e}"
                 logger.warning("[meta] Localization configure failed: %s", e)
 
-        if self._nav and self._nav_state == META_CONNECTED:
+        if self._nav and self._nav_state in (META_CONNECTED, META_UNCONFIGURED):
             try:
                 cfg = {**_DEFAULT_NAV_CONFIG, **(nav_config or {})}
                 logger.info("[meta] Configuring navigation with: %s", cfg)
@@ -332,7 +345,7 @@ class MetaBridgeMixin:
                 logger.warning("[meta] Navigation configure failed: %s", e)
 
         # detection 配置（可选服务）
-        if self._detection and self._detection_state == META_CONNECTED:
+        if self._detection and self._detection_state in (META_CONNECTED, META_UNCONFIGURED):
             try:
                 result = self._detection.configure({"simulated": True})
                 logger.info("[meta] Fall detection configure result: %s", result)
@@ -373,13 +386,13 @@ class MetaBridgeMixin:
 
         # Auto-configure if still in connected state
         logger.info("[meta] activate_meta: checking for auto-configure, fall_state=%s", self._detection_state)
-        if self._loc_state == META_CONNECTED or self._nav_state == META_CONNECTED or self._detection_state == META_CONNECTED:
+        if self._loc_state in (META_CONNECTED, META_UNCONFIGURED) or self._nav_state in (META_CONNECTED, META_UNCONFIGURED) or self._detection_state in (META_CONNECTED, META_UNCONFIGURED):
             cfg_result = self.configure_meta(loc_config, nav_config)
             logger.info("[meta] configure_meta result: %s", cfg_result)
             # Check if any service failed to configure
             cfg_failures = {k: v for k, v in cfg_result.get("results", {}).items()
                            if v.startswith("failed")}
-            if cfg_failures and self._loc_state != META_INACTIVE and self._nav_state != META_INACTIVE and self._detection_state != META_INACTIVE:
+            if cfg_failures and self._loc_state not in (META_INACTIVE, META_ACTIVE) and self._nav_state not in (META_INACTIVE, META_ACTIVE) and self._detection_state not in (META_INACTIVE, META_ACTIVE):
                 return {"success": False, "message": f"Configure failed: {cfg_failures}"}
 
         results = {}
@@ -551,15 +564,23 @@ class MetaBridgeMixin:
         try:
             proxy = connect(service_name, timeout=_timeout)
 
-            # 探测当前状态，按需推进生命周期（不 deactivate，那是服务端自己的事）
+            # 探测当前状态，逐步推进生命周期到 active
             state = self._probe_service_state(proxy, service_name)
-            if state == META_CONNECTED:           # unconfigured
+
+            # disconnected → 无法继续
+            if state == META_DISCONNECTED:
+                return {"success": False, "message": f"{service_name} is disconnected"}
+
+            # connected / unconfigured → configure
+            if state in (META_CONNECTED, META_UNCONFIGURED):
                 cfg = proxy.configure({})
                 logger.info("[meta_call] %s.configure() returned: %s (type=%s)",
                             service_name, cfg, type(cfg).__name__)
                 if not _is_success(cfg):
                     return {"success": False, "message": f"{service_name} configure failed: {cfg}"}
                 state = META_INACTIVE
+
+            # inactive → activate
             if state == META_INACTIVE:
                 act = proxy.activate()
                 logger.info("[meta_call] %s.activate() returned: %s (type=%s)",
@@ -567,6 +588,9 @@ class MetaBridgeMixin:
                 if not _is_success(act):
                     logger.error("[meta_call] %s activate failed, service may have internal error. Check backend logs.", service_name)
                     return {"success": False, "message": f"{service_name} activate failed: {act}"}
+                state = META_ACTIVE
+
+            # active → 调用业务方法
 
             logger.info("[meta_call] Calling %s.%s()", service_name, method_name)
             result = getattr(proxy, method_name)(**kwargs)

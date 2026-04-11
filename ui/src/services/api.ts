@@ -449,7 +449,7 @@ class ApiService {
     return this._post('/api/meta/deactivate', {});
   }
 
-  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string }> {
+  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; fall_state: string }> {
     return this._get('/api/meta/status');
   }
 
