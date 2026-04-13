@@ -327,18 +327,33 @@ export const TaskConfigTab: React.FC = () => {
 
   const updateStep = (idx: number, patch: Partial<RoomTaskStep>) => {
     if (!selectedRoom) return;
-    if (patch.type && patch.type.startsWith('custom:') && patch.type !== selectedRoom.steps[idx].type) {
-      const customId = patch.type.split(':', 2)[1];
-      const def = customStepTypes.find(d => d.id === customId);
-      if (def) {
-        const defaultParams: Record<string, any> = {};
-        for (const p of def.parameters) {
-          if (p.default_value !== undefined) defaultParams[p.key] = p.default_value;
+    const oldStep = selectedRoom.steps[idx];
+    // 类型切换时清理旧类型的专属字段
+    if (patch.type && patch.type !== oldStep.type) {
+      if (patch.type === 'navigate') {
+        // 切换到 navigate：设置默认 target，清理其他字段
+        if (!patch.target) patch.target = 'door_outside';
+        patch.params = undefined as any;
+      } else {
+        // 切换离开 navigate：清理 target
+        (patch as any).target = undefined;
+      }
+      if (patch.type.startsWith('custom:')) {
+        const customId = patch.type.split(':', 2)[1];
+        const def = customStepTypes.find(d => d.id === customId);
+        if (def) {
+          const defaultParams: Record<string, any> = {};
+          for (const p of def.parameters) {
+            if (p.default_value !== undefined) defaultParams[p.key] = p.default_value;
+          }
+          patch.params = defaultParams;
         }
-        patch.params = defaultParams;
       }
     }
-    updateSteps(selectedRoom.steps.map((s, i) => i === idx ? { ...s, ...patch } : s));
+    // 合并时过滤掉 undefined 字段
+    const merged = { ...oldStep, ...patch };
+    if ((merged as any).target === undefined) delete (merged as any).target;
+    updateSteps(selectedRoom.steps.map((s, i) => i === idx ? merged : s));
   };
 
   const applyDefault = () => {
