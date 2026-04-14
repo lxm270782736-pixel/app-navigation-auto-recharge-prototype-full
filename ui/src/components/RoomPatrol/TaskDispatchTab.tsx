@@ -8,6 +8,7 @@ import {
   LoadingOutlined,
   EnvironmentOutlined,
   WarningFilled,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
@@ -40,6 +41,7 @@ export const TaskDispatchTab: React.FC = () => {
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
+  const [startPosition, setStartPosition] = useState<Pose | null>(null);
   const [taskRoomIds, setTaskRoomIds] = useState<string[]>([]);
   const [taskRoomSteps, setTaskRoomSteps] = useState<Record<string, any[]>>({});
   const [customStepTypes, setCustomStepTypes] = useState<any[]>([]);
@@ -95,6 +97,7 @@ export const TaskDispatchTab: React.FC = () => {
         apiService.getTaskPresets().catch(() => ({ presets: [] })),
       ]);
       setRoomConfigs(roomData.rooms || []);
+      setStartPosition(roomData.start_position || null);
       setCustomStepTypes(customData.custom_step_types || []);
       const loadedPresets = presetsData.presets || [];
       setPresets(loadedPresets);
@@ -250,10 +253,28 @@ export const TaskDispatchTab: React.FC = () => {
     }
   };
 
+  const handlePause = async () => {
+    const result = await apiService.pauseRoomPatrol();
+    if (result.success) {
+      message.info('巡房已暂停');
+    } else {
+      message.error(result.message);
+    }
+  };
+
+  const handleResume = async () => {
+    const result = await apiService.resumeRoomPatrol();
+    if (result.success) {
+      message.success('巡房已恢复');
+    } else {
+      message.error(result.message);
+    }
+  };
+
   const progressPercent = patrolState ? Math.round(Math.max(0, Math.min(1, patrolState.progress)) * 100) : 0;
 
-  // Build ALL waypoints for map display: 3 points per room (door_outside, door_inside, bed_check)
-  // Structure: [room1_outside, room1_inside, room1_bed, room2_outside, room2_inside, room2_bed, ...]
+  // Build ALL waypoints for map display: 3 points per room (door_outside, door_inside, bed_check) + start_position
+  // Structure: [room1_outside, room1_inside, room1_bed, room2_outside, ..., start_position]
   const roomLookup = new Map(roomConfigs.map(r => [r.room_id, r]));
   const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => r.door_outside).map(r => r.room_id);
   const waypoints: Pose[] = [];
@@ -279,6 +300,14 @@ export const TaskDispatchTab: React.FC = () => {
         waypointColors.push(WAYPOINT_TYPE_COLORS[p.type] || '#999');
       }
     }
+  }
+
+  // 起点：只要配置了就显示在地图上
+  if (startPosition) {
+    waypointMeta.push({ roomId: '', type: 'start_position', waypointIdx: waypoints.length });
+    waypoints.push(startPosition);
+    waypointLabels.push('S');
+    waypointColors.push('#722ed1');
   }
 
   // Determine current waypoint index: highlight the door_outside of the current room being visited
@@ -405,9 +434,20 @@ export const TaskDispatchTab: React.FC = () => {
             </div>
           )}
           {isActive ? (
-            <Button type="primary" danger block icon={<StopOutlined />} onClick={handleStop}>
-              停止巡房
-            </Button>
+            <Space.Compact block>
+              {patrolState?.status === 'paused_manual' ? (
+                <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleResume} style={{ flex: 1 }}>
+                  继续巡房
+                </Button>
+              ) : (
+                <Button icon={<PauseCircleOutlined />} onClick={handlePause} style={{ flex: 1 }}>
+                  暂停巡房
+                </Button>
+              )}
+              <Button type="primary" danger icon={<StopOutlined />} onClick={handleStop} style={{ flex: 1 }}>
+                停止巡房
+              </Button>
+            </Space.Compact>
           ) : (
             <Button type="primary" block icon={<PlayCircleOutlined />} onClick={handleStart}
               disabled={connectionStatus !== ConnectionStatus.CONNECTED}>
@@ -422,8 +462,16 @@ export const TaskDispatchTab: React.FC = () => {
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>状态</span>
-                <Tag color={isActive ? 'processing' : patrolState.status === 'completed' ? 'success' : patrolState.status === 'failed' ? 'error' : 'default'}>
+                <Tag color={
+                  patrolState.status === 'paused_manual' ? 'warning' :
+                  isActive ? 'processing' :
+                  patrolState.status === 'completed' ? 'success' :
+                  patrolState.status === 'failed' ? 'error' : 'default'
+                }>
                   {patrolState.status === 'running' ? '巡房中' :
+                   patrolState.status === 'paused_manual' ? '已暂停' :
+                   patrolState.status === 'paused_fall' ? '跌倒暂停' :
+                   patrolState.status === 'paused_stuck' ? '卡住暂停' :
                    patrolState.status === 'completed' ? '已完成' :
                    patrolState.status === 'stopped' ? '已停止' :
                    patrolState.status === 'failed' ? '失败' : patrolState.status}

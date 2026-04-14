@@ -1,0 +1,46 @@
+{
+  "services": [
+    {
+      "name": "meta.localization",
+      "startup": true,
+      "config": {
+        "map_folder": "map_default",
+        "map_name": "map_default.pcd",
+        "map_optimize_en": false,
+        "lidar_topic": "/livox/lidar",
+        "imu_topic": "/livox/imu",
+        "auto_relocalization": true,
+        "voxel_size": 0.2
+      }
+    },
+    {
+      "name": "meta.astribot_navigation",
+      "startup": true,
+      "config": {
+        "map_path": "",
+        "max_linear_velocity": 0.3,
+        "max_angular_velocity": 0.5,
+        "safety_distance": 0.4,
+        "planning_frequency": 5,
+        "control_frequency": 10
+      }
+    },
+    {
+      "name": "meta.detection",
+      "startup": true,
+      "config": {
+        "simulated": true
+      }
+    },
+    {
+      "name": "meta.sales_replay",
+      "startup": false,
+      "config": {}
+    },
+    {
+      "name": "meta.camera",
+      "startup": false,
+      "config": {}
+    }
+  ]
+}

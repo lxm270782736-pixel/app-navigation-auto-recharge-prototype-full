@@ -305,6 +305,16 @@ def stop_room_patrol():
     return logic.stop_room_patrol()
 
 
+@app.post("/api/room-patrol/pause")
+def pause_room_patrol():
+    return logic.pause_room_patrol()
+
+
+@app.post("/api/room-patrol/resume")
+def resume_room_patrol():
+    return logic.resume_room_patrol()
+
+
 @app.get("/api/room-patrol/status")
 def get_room_patrol_status():
     return logic.get_room_patrol_status()
@@ -500,7 +510,7 @@ def delete_custom_step_type(step_id: str):
 
 @app.post("/api/meta/start")
 def start_meta():
-    """一键启动：connect → configure → activate"""
+    """一键启动：connect → configure → activate all"""
     return logic.start_meta()
 
 
@@ -517,6 +527,29 @@ def activate_meta():
 @app.post("/api/meta/deactivate")
 def deactivate_meta():
     return logic.deactivate_meta()
+
+
+class MetaControlRequest(BaseModel):
+    service: str  # loc | nav | detection
+    action: str   # start | stop
+
+
+@app.post("/api/meta/control")
+def meta_control(req: MetaControlRequest):
+    """单服务控制。service: loc|nav|detection, action: start|stop"""
+    _MAP = {
+        ("loc",       "start"): logic.start_localization,
+        ("loc",       "stop"):  logic.stop_localization,
+        ("nav",       "start"): logic.start_navigation,
+        ("nav",       "stop"):  logic.stop_navigation,
+        ("detection", "start"): logic.start_detection,
+        ("detection", "stop"):  logic.stop_detection,
+    }
+    fn = _MAP.get((req.service, req.action))
+    if fn is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Unknown service/action: {req.service}/{req.action}")
+    return fn()
 
 
 @app.get("/api/meta/status")

@@ -1,31 +1,31 @@
-"""Meta bridge — astribot_link connection management for Meta services."""
+"""Meta bridge — unified Meta service registry with persistent connections.
+
+All services (startup or on-demand) maintain persistent connections after first use.
+Service list and startup configuration driven by saved_nav_configs/meta_services.json.
+"""
+import json
 import logging
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Bridge 连接状态（非 Meta 标准状态）
-META_DISCONNECTED = "disconnected"   # astribot_link 未连接
+# Meta lifecycle states (align with meta_base standard)
+META_DISCONNECTED = "disconnected"   # astribot_link not connected
+META_UNCONFIGURED = "unconfigured"   # connected, not yet configured
+META_INACTIVE     = "inactive"       # configured, not yet activated
+META_ACTIVE       = "active"         # activated, ready for business calls
+META_FINALIZED    = "finalized"      # shutdown, non-recoverable
 
-# Meta 标准生命周期状态（与 meta_base 一一对应）
-META_UNCONFIGURED = "unconfigured"   # 初始状态，未 configure
-META_INACTIVE = "inactive"           # 已 configure，未 activate
-META_ACTIVE = "active"               # 已 activate，可调用业务方法
-META_FINALIZED = "finalized"         # 已 shutdown，不可恢复
-
-# 兼容旧代码：META_CONNECTED 等同于 META_UNCONFIGURED（link 已连接但服务未配置）
+# Backward compat alias
 META_CONNECTED = META_UNCONFIGURED
 
+_SERVICES_CONFIG_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "meta_services.json"
 
-def _is_success(result) -> bool:
-    """Check transition result — handles string, dict, and enum (.value) returns."""
-    logger.debug("_is_success: result=%s (type=%s)", result, type(result).__name__)
-    if hasattr(result, 'value'):
-        return result.value == "success"
-    if isinstance(result, dict):
-        return result.get("success", False)
-    return result == "success"
-
-# 默认配置
+# Fallback default configs (used when meta_services.json is absent)
 _DEFAULT_LOC_CONFIG = {
     "map_folder": "map_default",
     "map_name": "map_default.pcd",
@@ -35,7 +35,6 @@ _DEFAULT_LOC_CONFIG = {
     "auto_relocalization": True,
     "voxel_size": 0.2,
 }
-
 _DEFAULT_NAV_CONFIG = {
     "map_path": "",
     "max_linear_velocity": 0.3,
@@ -44,570 +43,455 @@ _DEFAULT_NAV_CONFIG = {
     "planning_frequency": 5,
     "control_frequency": 10,
 }
+_DEFAULT_SERVICES = [
+    {"name": "meta.localization",        "startup": True,  "config": _DEFAULT_LOC_CONFIG},
+    {"name": "meta.astribot_navigation", "startup": True,  "config": _DEFAULT_NAV_CONFIG},
+    {"name": "meta.detection",           "startup": True,  "config": {"simulated": True}},
+    {"name": "meta.sales_replay",        "startup": False, "config": {}},
+    {"name": "meta.camera",              "startup": False, "config": {}},
+]
+
+
+def _is_success(result) -> bool:
+    """Check transition result — handles string, dict, and enum (.value) returns."""
+    if hasattr(result, 'value'):
+        return result.value == "success"
+    if isinstance(result, dict):
+        return result.get("success", False)
+    return result == "success"
+
+
+@dataclass
+class MetaServiceEntry:
+    """Registry entry for one Meta service."""
+    name: str
+    proxy: Any = None                    # astribot_link proxy, None if not connected
+    state: str = META_DISCONNECTED       # current lifecycle state
+    config: dict = field(default_factory=dict)  # passed to .configure()
+    startup: bool = False                # included in one-click start_meta()
+    _lock: Any = field(default_factory=threading.Lock, repr=False)
 
 
 class MetaBridgeMixin:
-    """Manages astribot_link connections to Meta localization and navigation."""
+    """Unified Meta service registry — persistent connections, config-driven startup."""
+
+    # =================== Init ===================
 
     def _init_meta(self):
-        """Initialize Meta service proxies (call in __init__)."""
-        self._loc = None
-        self._nav = None
-        self._detection = None
-        self._loc_state = META_DISCONNECTED
-        self._nav_state = META_DISCONNECTED
-        self._detection_state = META_DISCONNECTED
-        self._recovery_in_progress = False
+        """Initialize service registry. Call in __init__."""
+        self._services: dict[str, MetaServiceEntry] = {}
+        self._recovery_in_progress: dict[str, bool] = {}
+        self._load_service_configs()
 
-    def _trigger_auto_recovery(self):
-        """Spawn a background thread to re-run start_meta() after a brief delay.
+    def _load_service_configs(self):
+        """Load service definitions from meta_services.json (fallback to defaults)."""
+        service_defs = _DEFAULT_SERVICES
+        try:
+            with open(_SERVICES_CONFIG_FILE) as f:
+                data = json.load(f)
+            service_defs = data.get("services", _DEFAULT_SERVICES)
+            logger.info("[meta] Loaded %d service configs from %s", len(service_defs), _SERVICES_CONFIG_FILE)
+        except FileNotFoundError:
+            logger.debug("[meta] meta_services.json not found, using defaults")
+        except Exception as e:
+            logger.warning("[meta] Failed to load meta_services.json: %s, using defaults", e)
 
-        No-op if a recovery is already in progress.
+        for svc in service_defs:
+            name = svc["name"]
+            self._services[name] = MetaServiceEntry(
+                name=name,
+                config=svc.get("config", {}),
+                startup=svc.get("startup", False),
+            )
+
+    # =================== Core: ensure active ===================
+
+    def _ensure_service_active(self, name: str) -> MetaServiceEntry | None:
+        """Idempotently bring a service to active state: connect → configure → activate.
+
+        Returns the entry if active, None on failure.
+        Creates a transient entry if service is not in registry (on-demand unknown service).
         """
-        import threading
+        if name not in self._services:
+            self._services[name] = MetaServiceEntry(name=name, startup=False)
+
+        entry = self._services[name]
+
+        with entry._lock:
+            # Already active
+            if entry.state == META_ACTIVE and entry.proxy is not None:
+                return entry
+
+            # Connect if not connected
+            if entry.proxy is None or entry.state == META_DISCONNECTED:
+                try:
+                    from astribot_link import connect
+                    entry.proxy = connect(name)
+                    entry.state = META_UNCONFIGURED  # will probe below
+                    logger.info("[meta] Connected to %s", name)
+                except ImportError:
+                    logger.warning("[meta] astribot_link not installed")
+                    return None
+                except Exception as e:
+                    logger.warning("[meta] Failed to connect %s: %s", name, e)
+                    entry.proxy = None
+                    entry.state = META_DISCONNECTED
+                    return None
+
+            # Probe actual state
+            actual = self._probe_service_state(entry.proxy, name)
+            entry.state = actual
+
+            # Configure if unconfigured
+            if entry.state == META_UNCONFIGURED:
+                try:
+                    result = entry.proxy.configure(entry.config)
+                    logger.info("[meta] %s.configure() → %s", name, result)
+                    if not _is_success(result):
+                        logger.error("[meta] %s configure failed: %s", name, result)
+                        return None
+                    entry.state = META_INACTIVE
+                except Exception as e:
+                    logger.error("[meta] %s configure error: %s", name, e)
+                    return None
+
+            # Activate if inactive
+            if entry.state == META_INACTIVE:
+                try:
+                    result = entry.proxy.activate()
+                    logger.info("[meta] %s.activate() → %s", name, result)
+                    if not _is_success(result):
+                        logger.error("[meta] %s activate failed: %s", name, result)
+                        return None
+                    entry.state = META_ACTIVE
+                except Exception as e:
+                    logger.error("[meta] %s activate error: %s", name, e)
+                    return None
+
+            if entry.state == META_ACTIVE:
+                return entry
+            return None
+
+    def _call_service(self, name: str, method_name: str, **kwargs) -> dict:
+        """Unified call: ensure service active, then invoke method.
+
+        Auto-reconnects if service restarted (unconfigured/inactive error).
+        Gracefully returns error dict if service unavailable.
+        """
+        entry = self._ensure_service_active(name)
+        if entry is None:
+            return {"success": False, "message": f"{name} unavailable"}
+
+        try:
+            logger.info("[meta_call] Calling %s.%s()", name, method_name)
+            result = getattr(entry.proxy, method_name)(**kwargs)
+            if result is None:
+                return {"success": False, "message": f"{method_name} returned None"}
+            return result
+        except Exception as e:
+            msg = str(e)
+            if "unconfigured" in msg:
+                logger.warning("[meta] %s went back to unconfigured, re-activating", name)
+                with entry._lock:
+                    entry.state = META_UNCONFIGURED
+                # startup services: background recovery; on-demand: inline retry
+                if entry.startup:
+                    self._trigger_auto_recovery(name)
+                else:
+                    entry2 = self._ensure_service_active(name)
+                    if entry2:
+                        try:
+                            result = getattr(entry2.proxy, method_name)(**kwargs)
+                            return result if result is not None else {"success": False, "message": "returned None"}
+                        except Exception as e2:
+                            return {"success": False, "message": str(e2)}
+            elif "inactive" in msg:
+                logger.warning("[meta] %s is inactive, re-activating", name)
+                with entry._lock:
+                    entry.state = META_INACTIVE
+                if entry.startup:
+                    self._trigger_auto_recovery(name)
+                else:
+                    entry2 = self._ensure_service_active(name)
+                    if entry2:
+                        try:
+                            result = getattr(entry2.proxy, method_name)(**kwargs)
+                            return result if result is not None else {"success": False, "message": "returned None"}
+                        except Exception as e2:
+                            return {"success": False, "message": str(e2)}
+            else:
+                logger.error("[meta] %s.%s failed: %s", name, method_name, e)
+            return {"success": False, "message": msg}
+
+    # =================== Auto-recovery ===================
+
+    def _trigger_auto_recovery(self, name: str | None = None):
+        """Spawn background thread to re-activate a service (or all startup services)."""
         with self._lock:
-            if self._recovery_in_progress:
-                logger.info("[meta] Auto-recovery already in progress, skipping")
+            key = name or "_all"
+            if self._recovery_in_progress.get(key):
+                logger.info("[meta] Recovery already in progress for %s, skipping", key)
                 return
-            self._recovery_in_progress = True
+            self._recovery_in_progress[key] = True
 
         def _recover():
-            import time
             try:
                 time.sleep(1.0)
-                logger.info("[meta] Auto-recovery: calling start_meta()")
-                result = self.start_meta()
-                logger.info("[meta] Auto-recovery result: %s", result)
+                if name:
+                    logger.info("[meta] Auto-recovery: re-activating %s", name)
+                    self._ensure_service_active(name)
+                else:
+                    logger.info("[meta] Auto-recovery: re-activating all startup services")
+                    self.start_meta()
             finally:
                 with self._lock:
-                    self._recovery_in_progress = False
+                    self._recovery_in_progress.pop(key, None)
 
-        threading.Thread(target=_recover, daemon=True, name="meta-auto-recovery").start()
+        threading.Thread(target=_recover, daemon=True, name=f"meta-recovery-{name or 'all'}").start()
 
-    def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
-        """Call a method on the localization Meta proxy.
-
-        Args:
-            method_name: Name of the method to call on self._loc.
-            *args, **kwargs: Forwarded to the method.
-
-        Returns:
-            dict: {"success": bool, ...} — error dict if Meta not active.
-        """
-        if self._loc_state != "active" or not self._loc:
-            return {"success": False, "message": f"Localization Meta not active (state={self._loc_state})"}
-        try:
-            result = getattr(self._loc, method_name)(*args, **kwargs)
-            if result is None:
-                return {"success": False, "message": f"{method_name} returned None"}
-            return result
-        except Exception as e:
-            msg = str(e)
-            # Sync local state if Meta service was restarted externally,
-            # then auto-recover in background.
-            if "unconfigured" in msg:
-                logger.warning("[loc] %s: service went back to unconfigured, triggering auto-recovery", method_name)
-                self._loc_state = META_UNCONFIGURED
-                self._trigger_auto_recovery()
-            elif "inactive" in msg:
-                logger.warning("[loc] %s: service is inactive, triggering auto-recovery", method_name)
-                self._loc_state = META_INACTIVE
-                self._trigger_auto_recovery()
-            else:
-                logger.error("[loc] %s failed: %s", method_name, e)
-            return {"success": False, "message": msg}
-
-    def _detection_call(self, method_name: str, *args, **kwargs) -> dict:
-        """Call a method on the detection Meta proxy.
-
-        Args:
-            method_name: Name of the method to call on self._detection.
-            *args, **kwargs: Forwarded to the method.
-
-        Returns:
-            dict: {"success": bool, ...} — error dict if Meta not active.
-        """
-        if self._detection_state != "active" or not self._detection:
-            return {"success": False, "message": f"Fall detection Meta not active (state={self._detection_state})"}
-        try:
-            result = getattr(self._detection, method_name)(*args, **kwargs)
-            if result is None:
-                return {"success": False, "message": f"{method_name} returned None"}
-            return result
-        except Exception as e:
-            msg = str(e)
-            if "unconfigured" in msg:
-                logger.warning("[fall] %s: service went back to unconfigured", method_name)
-                self._detection_state = META_UNCONFIGURED
-            elif "inactive" in msg:
-                logger.warning("[fall] %s: service is inactive", method_name)
-                self._detection_state = META_INACTIVE
-            else:
-                logger.error("[fall] %s failed: %s", method_name, e)
-            return {"success": False, "message": msg}
-
-    def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
-        """Call a slow localization method using a dedicated connection with extended timeout.
-
-        Use this instead of _loc_call for operations known to take longer than the
-        default connection timeout (e.g. apply_map which reloads map data).
-        The temporary connection is always closed in a finally block to prevent leaks.
-
-        Args:
-            method_name: Name of the method to call on the localization proxy.
-            timeout: Per-connection timeout in seconds.
-            *args, **kwargs: Forwarded to the method.
-
-        Returns:
-            dict: {"success": bool, ...} — error dict if Meta not active or call fails.
-        """
-        if self._loc_state != "active":
-            return {"success": False, "message": f"Localization Meta not active (state={self._loc_state})"}
-        try:
-            from astribot_link import connect
-        except ImportError:
-            return {"success": False, "message": "astribot_link not installed"}
-
-        loc = None
-        try:
-            loc = connect("localization", timeout=timeout)
-            result = getattr(loc, method_name)(*args, **kwargs)
-            if result is None:
-                return {"success": False, "message": f"{method_name} returned None"}
-            return result
-        except Exception as e:
-            logger.error("[loc] %s (timeout=%.0fs) failed: %s", method_name, timeout, e)
-            return {"success": False, "message": str(e)}
-        finally:
-            if loc is not None:
-                try:
-                    loc.close()
-                except Exception:
-                    pass
-
-    def connect_meta(self) -> dict:
-        """Connect to Meta localization and navigation services via astribot_link.
-
-        Returns:
-            dict: {"success": bool, "message": str}
-            success is True if at least one service connected.
-        """
-        try:
-            from astribot_link import connect
-        except ImportError:
-            logger.warning("[meta] astribot_link not installed, Meta disabled")
-            return {"success": False, "message": "astribot_link not installed"}
-
-        errors = []
-
-        try:
-            self._loc = connect("meta.localization")
-            self._loc_state = META_CONNECTED
-            logger.info("[meta] Connected to localization")
-        except Exception as e:
-            self._loc = None
-            errors.append(f"localization: {e}")
-            logger.warning("[meta] Failed to connect localization: %s", e)
-
-        try:
-            self._nav = connect("meta.astribot_navigation")
-            self._nav_state = META_CONNECTED
-            logger.info("[meta] Connected to astribot_navigation")
-        except Exception as e:
-            self._nav = None
-            errors.append(f"navigation: {e}")
-            logger.warning("[meta] Failed to connect astribot_navigation: %s", e)
-
-        try:
-            self._detection = connect("meta.detection")
-            self._detection_state = META_CONNECTED
-            logger.info("[meta] Connected to detection")
-        except Exception as e:
-            self._detection = None
-            # detection 是可选的，不加入错误列表
-            logger.debug("[meta] Failed to connect detection (optional): %s", e)
-
-        # Sync local state with actual Meta state
-        if self.meta_connected:
-            self._sync_meta_state()
-
-        if errors:
-            return {"success": self.meta_connected,
-                    "message": f"Partial: {'; '.join(errors)}"}
-        return {"success": True, "message": "Meta connected"}
+    # =================== Probe ===================
 
     def _probe_service_state(self, proxy, name: str) -> str:
-        """Probe a Meta service's actual lifecycle state via get_status().
-
-        Meta 标准状态: unconfigured → inactive → active → finalized
-        Bridge 额外状态: disconnected（proxy 为 None）
-
-        优先使用 state 字段（新式服务），fallback 到 is_running/running（旧式服务）。
-        非标准 state 值（如 'reached', 'idle' 等业务状态）回退到 is_running 判断。
-        """
+        """Probe actual lifecycle state via get_status()."""
         if proxy is None:
             return META_DISCONNECTED
         try:
             status = proxy.get_status()
             logger.info("[meta] probe %s: status=%s", name, status)
-
             state_str = status.get("state", "")
-
-            # 标准 Meta 生命周期状态 — 直接映射
-            if state_str == "active":
-                return META_ACTIVE
-            if state_str == "inactive":
-                return META_INACTIVE
-            if state_str == "unconfigured":
-                return META_UNCONFIGURED
-            if state_str == "finalized":
-                return META_FINALIZED
-
-            # 非标准 state 值（旧式服务用业务状态如 'reached', 'idle'）
-            # 回退到 is_running / running 布尔判断
+            if state_str == "active":    return META_ACTIVE
+            if state_str == "inactive":  return META_INACTIVE
+            if state_str == "unconfigured": return META_UNCONFIGURED
+            if state_str == "finalized": return META_FINALIZED
+            # Non-standard state (e.g. 'reached', 'idle') — fall back to is_running
             if status.get("is_running") or status.get("running", False):
                 return META_ACTIVE
             return META_UNCONFIGURED
-
         except Exception as e:
             msg = str(e)
             logger.info("[meta] probe %s → exception: %s", name, msg)
-            if "inactive" in msg:
-                return META_INACTIVE
-            if "unconfigured" in msg:
-                return META_UNCONFIGURED
+            if "inactive"     in msg: return META_INACTIVE
+            if "unconfigured" in msg: return META_UNCONFIGURED
             return META_DISCONNECTED
 
-    def _sync_meta_state(self):
-        """Sync local state with actual Meta service state after connect."""
-        if self._loc:
-            self._loc_state = self._probe_service_state(self._loc, "localization")
-            logger.info("[meta] Localization actual state: %s", self._loc_state)
-        if self._nav:
-            self._nav_state = self._probe_service_state(self._nav, "navigation")
-            logger.info("[meta] Navigation actual state: %s", self._nav_state)
-        if self._detection:
-            self._detection_state = self._probe_service_state(self._detection, "detection")
-            logger.info("[meta] Fall detection actual state: %s", self._detection_state)
-
-    def configure_meta(self, loc_config: dict | None = None,
-                       nav_config: dict | None = None) -> dict:
-        """Configure Meta services with the given parameters.
-
-        Only takes effect when services are in the connected (unconfigured) state.
-        Merges provided values on top of _DEFAULT_LOC_CONFIG / _DEFAULT_NAV_CONFIG.
-
-        Args:
-            loc_config: Override keys for localization config (e.g. map_folder, voxel_size).
-            nav_config: Override keys for navigation config (e.g. max_linear_velocity).
-
-        Returns:
-            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
-        """
-        if not self.meta_connected:
-            return {"success": False, "message": "Meta not connected"}
-
-        results = {}
-        logger.info("[meta] configure_meta: loc_state=%s nav_state=%s", self._loc_state, self._nav_state)
-
-        if self._loc and self._loc_state in (META_CONNECTED, META_UNCONFIGURED):
-            try:
-                cfg = {**_DEFAULT_LOC_CONFIG, **(loc_config or {})}
-                logger.info("[meta] Configuring localization with: %s", cfg)
-                result = self._loc.configure(cfg)
-                logger.info("[meta] Localization configure result: %s", result)
-                if _is_success(result):
-                    self._loc_state = META_INACTIVE
-                    results["localization"] = "configured"
-                    logger.info("[meta] Localization configured")
-                else:
-                    results["localization"] = f"failed: {result}"
-                    logger.warning("[meta] Localization configure returned: %s", result)
-            except Exception as e:
-                results["localization"] = f"failed: {e}"
-                logger.warning("[meta] Localization configure failed: %s", e)
-
-        if self._nav and self._nav_state in (META_CONNECTED, META_UNCONFIGURED):
-            try:
-                cfg = {**_DEFAULT_NAV_CONFIG, **(nav_config or {})}
-                logger.info("[meta] Configuring navigation with: %s", cfg)
-                result = self._nav.configure(cfg)
-                logger.info("[meta] Navigation configure result: %s", result)
-                if _is_success(result):
-                    self._nav_state = META_INACTIVE
-                    results["navigation"] = "configured"
-                    logger.info("[meta] Navigation configured")
-                else:
-                    results["navigation"] = f"failed: {result}"
-                    logger.warning("[meta] Navigation configure returned: %s", result)
-            except Exception as e:
-                results["navigation"] = f"failed: {e}"
-                logger.warning("[meta] Navigation configure failed: %s", e)
-
-        # detection 配置（可选服务）
-        if self._detection and self._detection_state in (META_CONNECTED, META_UNCONFIGURED):
-            try:
-                result = self._detection.configure({"simulated": True})
-                logger.info("[meta] Fall detection configure result: %s", result)
-                if _is_success(result):
-                    self._detection_state = META_INACTIVE
-                    results["detection"] = "configured"
-                    logger.info("[meta] Fall detection configured")
-                else:
-                    results["detection"] = f"failed: {result}"
-                    logger.warning("[meta] Fall detection configure returned: %s", result)
-            except Exception as e:
-                results["detection"] = f"failed: {e}"
-                logger.warning("[meta] Fall detection configure failed: %s", e)
-
-        return {"success": True, "results": results}
-
-    def activate_meta(self, loc_config: dict | None = None,
-                      nav_config: dict | None = None) -> dict:
-        """Configure (if needed) then activate Meta services.
-
-        Skips configure if services are already in inactive/active state.
-        Idempotent — safe to call when already active.
-
-        Args:
-            loc_config: Optional localization config overrides passed to configure_meta.
-            nav_config: Optional navigation config overrides passed to configure_meta.
-
-        Returns:
-            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
-            success is True if at least one service reached active state.
-        """
-        if not self.meta_connected:
-            return {"success": False, "message": "Meta not connected"}
-
-        # Already active — nothing to do
-        if self._loc_state == META_ACTIVE and self._nav_state == META_ACTIVE and self._detection_state == META_ACTIVE:
-            return {"success": True, "results": {"localization": "already active", "navigation": "already active", "detection": "already active"}}
-
-        # Auto-configure if still in connected state
-        logger.info("[meta] activate_meta: checking for auto-configure, fall_state=%s", self._detection_state)
-        if self._loc_state in (META_CONNECTED, META_UNCONFIGURED) or self._nav_state in (META_CONNECTED, META_UNCONFIGURED) or self._detection_state in (META_CONNECTED, META_UNCONFIGURED):
-            cfg_result = self.configure_meta(loc_config, nav_config)
-            logger.info("[meta] configure_meta result: %s", cfg_result)
-            # Check if any service failed to configure
-            cfg_failures = {k: v for k, v in cfg_result.get("results", {}).items()
-                           if v.startswith("failed")}
-            if cfg_failures and self._loc_state not in (META_INACTIVE, META_ACTIVE) and self._nav_state not in (META_INACTIVE, META_ACTIVE) and self._detection_state not in (META_INACTIVE, META_ACTIVE):
-                return {"success": False, "message": f"Configure failed: {cfg_failures}"}
-
-        results = {}
-        logger.info("[meta] activate_meta: loc_state=%s nav_state=%s", self._loc_state, self._nav_state)
-
-        if self._loc and self._loc_state == META_INACTIVE:
-            try:
-                logger.info("[meta] Activating localization...")
-                result = self._loc.activate()
-                logger.info("[meta] Localization activate result: %s", result)
-                if _is_success(result):
-                    self._loc_state = META_ACTIVE
-                    results["localization"] = "activated"
-                    logger.info("[meta] Localization activated")
-                else:
-                    results["localization"] = f"failed: {result}"
-            except Exception as e:
-                results["localization"] = f"failed: {e}"
-                logger.warning("[meta] Localization activate failed: %s", e)
-        elif self._loc and self._loc_state == META_ACTIVE:
-            results["localization"] = "already active"
-
-        if self._nav and self._nav_state == META_INACTIVE:
-            try:
-                logger.info("[meta] Activating navigation...")
-                result = self._nav.activate()
-                logger.info("[meta] Navigation activate result: %s", result)
-                if _is_success(result):
-                    self._nav_state = META_ACTIVE
-                    results["navigation"] = "activated"
-                    logger.info("[meta] Navigation activated")
-                else:
-                    results["navigation"] = f"failed: {result}"
-            except Exception as e:
-                results["navigation"] = f"failed: {e}"
-                logger.warning("[meta] Navigation activate failed: %s", e)
-        elif self._nav and self._nav_state == META_ACTIVE:
-            results["navigation"] = "already active"
-
-        # detection 也是可选的
-        if self._detection and self._detection_state == META_INACTIVE:
-            try:
-                logger.info("[meta] Activating detection...")
-                result = self._detection.activate()
-                logger.info("[meta] Fall detection activate result: %s", result)
-                if _is_success(result):
-                    self._detection_state = META_ACTIVE
-                    results["detection"] = "activated"
-                    logger.info("[meta] Fall detection activated")
-                else:
-                    results["detection"] = f"failed: {result}"
-            except Exception as e:
-                results["detection"] = f"failed: {e}"
-                logger.warning("[meta] Fall detection activate failed: %s", e)
-        elif self._detection and self._detection_state == META_ACTIVE:
-            results["detection"] = "already active"
-
-        ok = self._loc_state == META_ACTIVE or self._nav_state == META_ACTIVE
-        return {"success": ok, "results": results}
-
-    def deactivate_meta(self) -> dict:
-        """Deactivate active Meta services (localization and navigation).
-
-        Returns:
-            dict: {"success": bool, "results": {"localization": str, "navigation": str}}
-        """
-        results = {}
-
-        if self._loc and self._loc_state == META_ACTIVE:
-            try:
-                self._loc.deactivate()
-                self._loc_state = META_INACTIVE
-                results["localization"] = "deactivated"
-                logger.info("[meta] Localization deactivated")
-            except Exception as e:
-                results["localization"] = f"failed: {e}"
-                logger.warning("[meta] Localization deactivate failed: %s", e)
-
-        if self._nav and self._nav_state == META_ACTIVE:
-            try:
-                self._nav.deactivate()
-                self._nav_state = META_INACTIVE
-                results["navigation"] = "deactivated"
-                logger.info("[meta] Navigation deactivated")
-            except Exception as e:
-                results["navigation"] = f"failed: {e}"
-                logger.warning("[meta] Navigation deactivate failed: %s", e)
-
-        return {"success": True, "results": results}
+    # =================== Public API ===================
 
     def start_meta(self) -> dict:
-        """One-shot startup: connect → configure → activate.
+        """One-click startup: activate all startup=True services."""
+        results = {}
+        for name, entry in self._services.items():
+            if not entry.startup:
+                continue
+            e = self._ensure_service_active(name)
+            short = name.split(".")[-1]
+            results[short] = "active" if e else "failed"
+        ok = any(v == "active" for v in results.values())
+        return {"success": ok, "results": results}
 
-        Returns:
-            dict: {"success": bool, "results": {...}} from activate_meta,
-            or {"success": False, "message": str} if connect fails.
-        """
-        # Step 1: connect
-        if not self.meta_connected:
-            result = self.connect_meta()
-            if not result.get("success") and not self.meta_connected:
-                return {"success": False, "message": f"Connect failed: {result.get('message')}"}
-
-        # Step 2: activate (auto-configures if needed)
-        return self.activate_meta()
-
-    def get_meta_status(self) -> dict:
-        """Return current Meta service lifecycle states.
-
-        Returns:
-            dict: {"meta_connected": bool, "loc_state": str, "nav_state": str, "fall_state": str}
-            State values: "disconnected" | "connected" | "inactive" | "active"
-        """
-        return {
-            "meta_connected": self.meta_connected,
-            "loc_state": self._loc_state,
-            "nav_state": self._nav_state,
-            "fall_state": self._detection_state,
-        }
-
-    def _meta_call(self, service_name: str, method_name: str, _timeout: float = 30.0, **kwargs) -> dict:
-        """Call a method on an arbitrary Meta service proxy.
-
-        Routes to existing proxies when service_name matches known services,
-        otherwise opens a temporary astribot_link connection.
-
-        Args:
-            service_name: Meta service identifier.
-                          "localization" → self._loc
-                          "navigation" / "astribot_navigation" → self._nav
-                          "detection" → self._detection
-                          anything else → temporary astribot_link.connect(service_name)
-            method_name: Name of the method to call on the proxy.
-            _timeout: Timeout for temporary connection (default 30s).
-                      Use keyword argument only, not positional.
-            **kwargs: Keyword arguments forwarded to the method.
-
-        Returns:
-            dict: {"success": bool, ...} — error dict on failure.
-        """
-        _NAV_ALIASES = {"navigation", "astribot_navigation"}
-
-        # --- Route to existing proxy ---
-        if service_name == "localization":
-            return self._loc_call(method_name, **kwargs)
-
-        if service_name == "detection":
-            return self._detection_call(method_name, **kwargs)
-
-        if service_name in _NAV_ALIASES:
-            if self._nav_state != "active" or not self._nav:
-                return {"success": False, "message": f"Navigation Meta not active (state={self._nav_state})"}
-            try:
-                result = getattr(self._nav, method_name)(**kwargs)
-                if result is None:
-                    return {"success": False, "message": f"{method_name} returned None"}
-                return result
-            except Exception as e:
-                logger.error("[meta_call] nav.%s failed: %s", method_name, e)
-                return {"success": False, "message": str(e)}
-
-        # --- Temporary connection for any other Meta service ---
+    def connect_meta(self) -> dict:
+        """Connect all startup services (without configuring/activating)."""
         try:
             from astribot_link import connect
         except ImportError:
             return {"success": False, "message": "astribot_link not installed"}
 
-        proxy = None
+        errors = []
+        for name, entry in self._services.items():
+            if not entry.startup:
+                continue
+            if entry.proxy is not None:
+                continue
+            try:
+                entry.proxy = connect(name)
+                entry.state = self._probe_service_state(entry.proxy, name)
+                logger.info("[meta] Connected to %s (state=%s)", name, entry.state)
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+                logger.warning("[meta] Failed to connect %s: %s", name, e)
+
+        connected = any(e.proxy is not None for e in self._services.values() if e.startup)
+        if errors:
+            return {"success": connected, "message": f"Partial: {'; '.join(errors)}"}
+        return {"success": True, "message": "Meta connected"}
+
+    def activate_meta(self) -> dict:
+        """Activate all startup services (auto-configures if needed)."""
+        return self.start_meta()
+
+    def deactivate_meta(self) -> dict:
+        """Deactivate all active startup services."""
+        results = {}
+        for name, entry in self._services.items():
+            if not entry.startup:
+                continue
+            short = name.split(".")[-1]
+            if entry.state == META_ACTIVE and entry.proxy:
+                try:
+                    entry.proxy.deactivate()
+                    entry.state = META_INACTIVE
+                    results[short] = "deactivated"
+                    logger.info("[meta] %s deactivated", name)
+                except Exception as e:
+                    results[short] = f"failed: {e}"
+                    logger.warning("[meta] %s deactivate failed: %s", name, e)
+        return {"success": True, "results": results}
+
+    def get_meta_status(self) -> dict:
+        """Return state of all registered services."""
+        status = {
+            "meta_connected": self.meta_connected,
+        }
+        for name, entry in self._services.items():
+            short = name.split(".")[-1]
+            status[f"{short}_state"] = entry.state
+        # Ensure backward-compat keys always present
+        status.setdefault("loc_state", META_DISCONNECTED)
+        status.setdefault("nav_state", META_DISCONNECTED)
+        status.setdefault("fall_state", META_DISCONNECTED)
+        return status
+
+    # =================== Single service control ===================
+
+    def _ctrl_service(self, name: str, action: str) -> dict:
+        """start or stop a named service."""
+        if action == "start":
+            e = self._ensure_service_active(name)
+            return {"success": bool(e), "state": e.state if e else META_DISCONNECTED}
+        elif action == "stop":
+            entry = self._services.get(name)
+            if not entry or entry.state != META_ACTIVE or not entry.proxy:
+                return {"success": False, "message": f"{name} not active"}
+            try:
+                entry.proxy.deactivate()
+                entry.state = META_INACTIVE
+                return {"success": True, "state": META_INACTIVE}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+        return {"success": False, "message": f"Unknown action: {action}"}
+
+    def start_localization(self) -> dict:
+        return self._ctrl_service("meta.localization", "start")
+
+    def stop_localization(self) -> dict:
+        return self._ctrl_service("meta.localization", "stop")
+
+    def start_navigation(self) -> dict:
+        return self._ctrl_service("meta.astribot_navigation", "start")
+
+    def stop_navigation(self) -> dict:
+        return self._ctrl_service("meta.astribot_navigation", "stop")
+
+    def start_detection(self) -> dict:
+        return self._ctrl_service("meta.detection", "start")
+
+    def stop_detection(self) -> dict:
+        return self._ctrl_service("meta.detection", "stop")
+
+    # =================== Backward-compat call methods ===================
+
+    def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
+        """Call localization service. Supports positional args for backward compat."""
+        entry = self._ensure_service_active("meta.localization")
+        if entry is None:
+            return {"success": False, "message": "Localization unavailable"}
         try:
-            proxy = connect(service_name, timeout=_timeout)
-
-            # 探测当前状态，逐步推进生命周期到 active
-            state = self._probe_service_state(proxy, service_name)
-
-            # disconnected → 无法继续
-            if state == META_DISCONNECTED:
-                return {"success": False, "message": f"{service_name} is disconnected"}
-
-            # connected / unconfigured → configure
-            if state in (META_CONNECTED, META_UNCONFIGURED):
-                cfg = proxy.configure({})
-                logger.info("[meta_call] %s.configure() returned: %s (type=%s)",
-                            service_name, cfg, type(cfg).__name__)
-                if not _is_success(cfg):
-                    return {"success": False, "message": f"{service_name} configure failed: {cfg}"}
-                state = META_INACTIVE
-
-            # inactive → activate
-            if state == META_INACTIVE:
-                act = proxy.activate()
-                logger.info("[meta_call] %s.activate() returned: %s (type=%s)",
-                            service_name, act, type(act).__name__)
-                if not _is_success(act):
-                    logger.error("[meta_call] %s activate failed, service may have internal error. Check backend logs.", service_name)
-                    return {"success": False, "message": f"{service_name} activate failed: {act}"}
-                state = META_ACTIVE
-
-            # active → 调用业务方法
-
-            logger.info("[meta_call] Calling %s.%s()", service_name, method_name)
-            result = getattr(proxy, method_name)(**kwargs)
+            result = getattr(entry.proxy, method_name)(*args, **kwargs)
             if result is None:
                 return {"success": False, "message": f"{method_name} returned None"}
             return result
         except Exception as e:
-            logger.error("[meta_call] %s.%s failed: %s", service_name, method_name, e)
+            msg = str(e)
+            if "unconfigured" in msg:
+                entry.state = META_UNCONFIGURED
+                self._trigger_auto_recovery("meta.localization")
+            elif "inactive" in msg:
+                entry.state = META_INACTIVE
+                self._trigger_auto_recovery("meta.localization")
+            else:
+                logger.error("[loc] %s failed: %s", method_name, e)
+            return {"success": False, "message": msg}
+
+    def _detection_call(self, method_name: str, **kwargs) -> dict:
+        return self._call_service("meta.detection", method_name, **kwargs)
+
+    def _loc_call_timeout(self, method_name: str, timeout: float, *args, **kwargs) -> dict:
+        """Call localization with extended timeout (uses fresh temp connection)."""
+        entry = self._services.get("meta.localization")
+        if not entry or entry.state != META_ACTIVE:
+            return {"success": False, "message": f"Localization not active"}
+        try:
+            from astribot_link import connect
+        except ImportError:
+            return {"success": False, "message": "astribot_link not installed"}
+        loc = None
+        try:
+            loc = connect("meta.localization", timeout=timeout)
+            result = getattr(loc, method_name)(*args, **kwargs)
+            return result if result is not None else {"success": False, "message": "returned None"}
+        except Exception as e:
+            logger.error("[loc] %s (timeout=%.0fs) failed: %s", method_name, timeout, e)
             return {"success": False, "message": str(e)}
         finally:
-            if proxy is not None:
-                try:
-                    proxy.close()
-                except Exception:
-                    pass
+            if loc:
+                try: loc.close()
+                except Exception: pass
+
+    def _meta_call(self, service_name: str, method_name: str, **kwargs) -> dict:
+        """Unified meta call — routes all services through _call_service (persistent connection)."""
+        return self._call_service(service_name, method_name, **kwargs)
+
+    # =================== Backward-compat properties ===================
+
+    @property
+    def _loc(self):
+        e = self._services.get("meta.localization")
+        return e.proxy if e else None
+
+    @property
+    def _loc_state(self) -> str:
+        e = self._services.get("meta.localization")
+        return e.state if e else META_DISCONNECTED
+
+    @_loc_state.setter
+    def _loc_state(self, value: str):
+        e = self._services.get("meta.localization")
+        if e: e.state = value
+
+    @property
+    def _nav(self):
+        e = self._services.get("meta.astribot_navigation")
+        return e.proxy if e else None
+
+    @property
+    def _nav_state(self) -> str:
+        e = self._services.get("meta.astribot_navigation")
+        return e.state if e else META_DISCONNECTED
+
+    @_nav_state.setter
+    def _nav_state(self, value: str):
+        e = self._services.get("meta.astribot_navigation")
+        if e: e.state = value
+
+    @property
+    def _detection(self):
+        e = self._services.get("meta.detection")
+        return e.proxy if e else None
+
+    @property
+    def _detection_state(self) -> str:
+        e = self._services.get("meta.detection")
+        return e.state if e else META_DISCONNECTED
+
+    @_detection_state.setter
+    def _detection_state(self, value: str):
+        e = self._services.get("meta.detection")
+        if e: e.state = value
 
     @property
     def meta_connected(self) -> bool:
-        """True if at least one Meta service has been connected (not disconnected)."""
-        return self._loc_state != META_DISCONNECTED or self._nav_state != META_DISCONNECTED or self._detection_state != META_DISCONNECTED
+        """True if at least one startup service is not disconnected."""
+        return any(
+            e.state != META_DISCONNECTED
+            for e in self._services.values()
+            if e.startup
+        )

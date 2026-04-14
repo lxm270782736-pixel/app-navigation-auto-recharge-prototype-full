@@ -51,6 +51,7 @@ const NAV_TARGETS = [
   { value: 'door_outside', label: '门外' },
   { value: 'door_inside', label: '门内' },
   { value: 'bed_check', label: '床位' },
+  { value: 'start_position', label: '起点' },
 ];
 
 // Default inspection steps for a room

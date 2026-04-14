@@ -20,16 +20,18 @@ class NavigationMixin:
             return {"success": False, "message": f"Navigation Meta not active (state={self._nav_state})"}
 
         try:
-            result = self._nav.navigate_to(x=x, y=y, yaw=theta)
+            # 生成唯一 goal_id，用时间戳标识本次导航任务
+            goal_id = f"nav_{int(time.time() * 1000)}"
+            result = self._nav.navigate_to(x=x, y=y, yaw=theta, goal_id=goal_id)
             with self._lock:
                 self._nav_status = "navigating"
                 self._nav_feedback = {}
-                # Increment generation so any lingering poller from the previous
-                # goal ignores results that belong to this new goal.
                 self._nav_generation = getattr(self, '_nav_generation', 0) + 1
+                self._nav_goal_id = goal_id
                 my_gen = self._nav_generation
-            logger.info("[nav] %s Meta navigate_to(%.3f, %.3f, %.3f): %s", _ts(), x, y, theta, result)
-            self._start_nav_status_poller(my_gen)
+            logger.info("[nav] %s Meta navigate_to(%.3f, %.3f, %.3f) goal_id=%s: %s",
+                        _ts(), x, y, theta, goal_id, result)
+            self._start_nav_status_poller(my_gen, goal_id)
             return {"success": result.get("status") == "success",
                     "message": result.get("message", "")}
         except Exception as e:
@@ -38,16 +40,12 @@ class NavigationMixin:
                 self._nav_status = "failed"
             return {"success": False, "message": str(e)}
 
-    def _start_nav_status_poller(self, generation: int):
+    def _start_nav_status_poller(self, generation: int, goal_id: str = ""):
         """Poll Meta navigation status until terminal state for the given generation."""
         with self._lock:
             self._nav_polling = True
 
         def _poll():
-            # Wait for Meta's state to leave any terminal state inherited from a
-            # prior goal before accepting a new terminal state.  Meta may linger
-            # in "reached" after a previous navigation and only transition to
-            # "navigating" (or "idle") once it starts processing the new goal.
             stale_cleared = False
             try:
                 while True:
@@ -55,7 +53,6 @@ class NavigationMixin:
                     if not self._nav:
                         break
                     with self._lock:
-                        # Abort if a newer navigate_to has taken over
                         if getattr(self, '_nav_generation', 0) != generation:
                             logger.info("[nav] poller gen=%d superseded, exiting", generation)
                             break
@@ -68,30 +65,36 @@ class NavigationMixin:
                         continue
 
                     state = status.get("state", "idle")
+                    returned_goal_id = status.get("goal_id", "")
+
                     with self._lock:
-                        # Double-check generation after the (potentially slow) RPC
                         if getattr(self, '_nav_generation', 0) != generation:
                             logger.info("[nav] poller gen=%d superseded after RPC, exiting", generation)
                             break
                         self._nav_feedback = status
 
+                    # goal_id 验证：如果 meta 返回的 goal_id 和本次不匹配，说明是旧任务的结果
+                    if goal_id and returned_goal_id and returned_goal_id != goal_id:
+                        logger.info("[nav] poller gen=%d goal_id mismatch (got=%s expected=%s), ignoring",
+                                    generation, returned_goal_id, goal_id)
+                        stale_cleared = False
+                        continue
+
                     if not stale_cleared:
                         if state in ("reached", "failed"):
-                            # Still seeing old terminal state from a prior goal — keep waiting
                             logger.info("[nav] poller gen=%d ignoring stale state=%s", generation, state)
                             continue
-                        # State has moved away from terminal (e.g. "navigating" / "idle")
                         stale_cleared = True
                         logger.info("[nav] poller gen=%d stale cleared, now state=%s", generation, state)
 
                     if state in ("reached", "failed"):
                         success = state == "reached"
-                        logger.info("[nav] %s Meta nav result: state=%s (gen=%d)", _ts(), state, generation)
+                        logger.info("[nav] %s Meta nav result: state=%s (gen=%d goal_id=%s)",
+                                    _ts(), state, generation, goal_id)
                         self._on_nav_completed(success, status)
                         break
             finally:
                 with self._lock:
-                    # Only clear the flag if we are still the active generation
                     if getattr(self, '_nav_generation', 0) == generation:
                         self._nav_polling = False
 
@@ -130,6 +133,8 @@ class NavigationMixin:
         if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
             logger.info("[nav] %s Signaling room_patrol: success=%s", _ts(), success)
             self._nav_done_success = success
+            # 写入序列号，让 _patrol_navigate_and_wait 验证结果是否属于当前导航
+            self._nav_result_seq = getattr(self, '_nav_done_seq', 0)
             self._nav_done_event.set()
 
     def cancel_navigation(self) -> dict:

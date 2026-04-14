@@ -358,6 +358,14 @@ class ApiService {
     return this._post('/api/room-patrol/stop', {});
   }
 
+  async pauseRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/pause', {});
+  }
+
+  async resumeRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/resume', {});
+  }
+
   async getRoomPatrolStatus(): Promise<any> {
     return this._get('/api/room-patrol/status');
   }
@@ -447,6 +455,10 @@ class ApiService {
 
   async deactivateMeta(): Promise<{ success: boolean; results: Record<string, string> }> {
     return this._post('/api/meta/deactivate', {});
+  }
+
+  async metaControl(service: 'loc' | 'nav' | 'detection', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
+    return this._post('/api/meta/control', { service, action });
   }
 
   async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; fall_state: string }> {
