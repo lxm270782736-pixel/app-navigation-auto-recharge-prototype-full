@@ -44,9 +44,11 @@ class NavigationMixin:
             self._nav_polling = True
 
         def _poll():
-            # Must observe "navigating" at least once before accepting a terminal
-            # state, to avoid consuming a stale "reached" left over from a prior goal.
-            seen_navigating = False
+            # Wait for Meta's state to leave any terminal state inherited from a
+            # prior goal before accepting a new terminal state.  Meta may linger
+            # in "reached" after a previous navigation and only transition to
+            # "navigating" (or "idle") once it starts processing the new goal.
+            stale_cleared = False
             try:
                 while True:
                     time.sleep(0.5)
@@ -73,15 +75,16 @@ class NavigationMixin:
                             break
                         self._nav_feedback = status
 
-                    if state == "navigating":
-                        seen_navigating = True
+                    if not stale_cleared:
+                        if state in ("reached", "failed"):
+                            # Still seeing old terminal state from a prior goal — keep waiting
+                            logger.info("[nav] poller gen=%d ignoring stale state=%s", generation, state)
+                            continue
+                        # State has moved away from terminal (e.g. "navigating" / "idle")
+                        stale_cleared = True
+                        logger.info("[nav] poller gen=%d stale cleared, now state=%s", generation, state)
 
                     if state in ("reached", "failed"):
-                        if not seen_navigating:
-                            # Stale result from a previous goal — wait for Meta to
-                            # transition to "navigating" before trusting any terminal state.
-                            logger.info("[nav] poller gen=%d ignoring stale state=%s (not yet seen navigating)", generation, state)
-                            continue
                         success = state == "reached"
                         logger.info("[nav] %s Meta nav result: state=%s (gen=%d)", _ts(), state, generation)
                         self._on_nav_completed(success, status)
