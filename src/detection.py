@@ -18,6 +18,7 @@ class DetectionMixin:
         return {
             "is_abnormal": False,
             "in_bed": True,
+            "person_detected": False,
             "confidence": 0.0,
             "description": "检测不可用",
             "photos": [],

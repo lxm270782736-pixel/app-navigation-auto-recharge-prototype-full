@@ -697,8 +697,9 @@ class RoomPatrolMixin:
                             )
                             room_result["alerts"].append(alert["id"])
                     elif step_type == "detect_floor":
-                        clutter = self.detect_floor_clutter(room_id)
-                        water = self.detect_floor_water(room_id)
+                        floor = self._detect_floor_full(room_id)
+                        clutter = floor.get("clutter") or {}
+                        water = floor.get("water") or {}
                         detail = {"clutter": clutter, "water": water}
                         success = True
                         if clutter.get("is_abnormal"):
@@ -708,7 +709,7 @@ class RoomPatrolMixin:
                                 photo=clutter.get("photo"),
                             )
                             room_result["alerts"].append(alert["id"])
-                        if water.get("is_abnormal"):
+                        if water and water.get("is_abnormal"):
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "floor_water",
                                 confidence=water.get("confidence", 0),
