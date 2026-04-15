@@ -187,7 +187,10 @@ export const HistoryTab: React.FC = () => {
                       const st = ALERT_STATUS[alert.status] || { color: 'default', text: alert.status };
                       return (
                         <div key={alert.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fff', borderRadius: 4, cursor: 'pointer' }} onClick={() => setSelectedAlert(alert)}>
-                          {alert.photo && <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />}
+                          {alert.photo
+                            ? <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                            : <div style={{ width: 32, height: 32, background: '#f5f5f5', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><PictureOutlined style={{ color: '#ccc', fontSize: 14 }} /></div>
+                          }
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 12 }}><Tag color={st.color} style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>{st.text}</Tag>{alert.room_id} — 置信度 {alert.confidence ? `${(alert.confidence * 100).toFixed(0)}%` : '—'}</div>
                             <div style={{ fontSize: 11, color: '#999' }}>{alert.created_at?.replace('T', ' ')}</div>
@@ -259,9 +262,10 @@ export const HistoryTab: React.FC = () => {
                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fafafa', borderRadius: 4, borderLeft: `3px solid ${borderColor}`, cursor: 'pointer' }}
                             onClick={() => setSelectedAlert(alert)}
                           >
-                            {alert.photo && (
-                              <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
-                            )}
+                            {alert.photo
+                              ? <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                              : <div style={{ width: 32, height: 32, background: '#f5f5f5', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><PictureOutlined style={{ color: '#ccc', fontSize: 14 }} /></div>
+                            }
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12 }}>
                                 <Tag color={st.color} style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>{st.text}</Tag>

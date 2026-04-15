@@ -352,6 +352,7 @@ export interface RoomPatrolState {
     timestamp: number;
     location: string;
     confidence: number;
+    photo?: string | null;
   } | null;
   stuck_event?: {
     timestamp: number;

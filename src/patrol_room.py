@@ -82,7 +82,7 @@ class RoomPatrolMixin:
                 if not isinstance(status, dict) or status.get("success") is False:
                     continue
 
-                logger.info("[fall] poll: is_fall=%s", status.get("is_fall"))
+                logger.info("[fall] poll: is_fall=%s has_photo=%s", status.get("is_fall"), bool(status.get("photo")))
 
                 # New fall detected
                 if status.get("is_fall") and not self._fall_event:
@@ -742,15 +742,25 @@ class RoomPatrolMixin:
                 logger.info("[room_patrol] step=%s success=%s alert_interrupted=%s fall_event=%s",
                             step_type, success, getattr(self, '_alert_interrupted', False), bool(getattr(self, '_fall_event', None)))
 
-                # 步骤被告警中断 → 无论成功失败都重试当前步骤
+                # 步骤被告警中断
                 if getattr(self, '_alert_interrupted', False):
-                    logger.info("[room_patrol] Step %s interrupted by alert (success=%s), retrying after ack", step_type, success)
-                    self._handle_fall_blocking()
-                    self._handle_stuck_blocking()
-                    if not self._room_patrol_active:
-                        break
-                    logger.info("[room_patrol] Retrying step %s", step_type)
-                    continue
+                    if success:
+                        # 步骤已完成，等待护工确认后继续下一步
+                        logger.info("[room_patrol] Step %s completed before alert ack, waiting then continuing", step_type)
+                        self._handle_fall_blocking()
+                        self._handle_stuck_blocking()
+                        if not self._room_patrol_active:
+                            break
+                        # 不重试，继续下一步
+                    else:
+                        # 步骤被中断未完成，等待护工确认后重试
+                        logger.info("[room_patrol] Step %s interrupted by alert, retrying after ack", step_type)
+                        self._handle_fall_blocking()
+                        self._handle_stuck_blocking()
+                        if not self._room_patrol_active:
+                            break
+                        logger.info("[room_patrol] Retrying step %s", step_type)
+                        continue
 
                 room_result["steps"].append(step_result)
                 print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
@@ -987,11 +997,19 @@ class RoomPatrolMixin:
                     poll_connect_timeout = float(poll.get("connect_timeout", connect_timeout))
 
                     while time.time() < deadline:
-                        # 检查巡逻是否被停止或有紧急事件
+                        # 检查巡逻是否被停止
                         if not getattr(self, '_room_patrol_active', False):
                             return False, {"error": "patrol stopped"}
+                        # 有告警事件时暂停轮询，等待护工确认后继续
                         if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
-                            return False, {"error": "patrol paused by alert"}
+                            # 等待告警被确认（_fall_event/_stuck_event 被清除）
+                            while (getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None)) and getattr(self, '_room_patrol_active', False):
+                                time.sleep(0.5)
+                            if not getattr(self, '_room_patrol_active', False):
+                                return False, {"error": "patrol stopped"}
+                            # 告警已确认，继续轮询（不重试步骤）
+                            logger.info("[meta_poll] Alert acknowledged, resuming poll for %s.%s", meta_service, poll_method)
+                            deadline = time.time() + timeout  # 重置超时
                         time.sleep(interval)
                         # fall_detection 使用持久连接
                         if meta_service == "detection":

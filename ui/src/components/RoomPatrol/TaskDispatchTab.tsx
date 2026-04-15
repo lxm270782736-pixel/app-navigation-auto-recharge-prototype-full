@@ -9,6 +9,7 @@ import {
   EnvironmentOutlined,
   WarningFilled,
   PauseCircleOutlined,
+  PictureOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
@@ -333,7 +334,7 @@ export const TaskDispatchTab: React.FC = () => {
         maskClosable={false}
         footer={null}
         centered
-        width={420}
+        width={460}
       >
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <WarningFilled style={{ fontSize: 56, color: '#ff4d4f' }} />
@@ -344,6 +345,17 @@ export const TaskDispatchTab: React.FC = () => {
             <div style={{ color: '#666', marginBottom: 8 }}>
               位置：<strong>{fallEvent.location}</strong>
               &nbsp;&nbsp;置信度：<strong>{(fallEvent.confidence * 100).toFixed(0)}%</strong>
+            </div>
+          )}
+          {/* 跌倒现场照片 */}
+          {fallEvent?.photo ? (
+            <img
+              src={`data:image/png;base64,${fallEvent.photo}`}
+              style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 8, marginBottom: 16 }}
+            />
+          ) : (
+            <div style={{ width: '100%', height: 120, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <PictureOutlined style={{ fontSize: 32, color: '#ccc' }} />
             </div>
           )}
           <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
