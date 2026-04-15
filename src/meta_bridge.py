@@ -263,8 +263,12 @@ class MetaBridgeMixin:
             if state_str == "inactive":  return META_INACTIVE
             if state_str == "unconfigured": return META_UNCONFIGURED
             if state_str == "finalized": return META_FINALIZED
-            # Non-standard state (e.g. 'reached', 'idle') — fall back to is_running
+            # Non-standard state (e.g. 'reached', 'idle', 'mode') — fall back to is_running
             if status.get("is_running") or status.get("running", False):
+                return META_ACTIVE
+            # Service responded but has no standard lifecycle state field —
+            # treat as already active to avoid spurious configure/activate calls.
+            if "state" not in status:
                 return META_ACTIVE
             return META_UNCONFIGURED
         except Exception as e:
