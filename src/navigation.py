@@ -24,8 +24,12 @@ class NavigationMixin:
             with self._lock:
                 self._nav_status = "navigating"
                 self._nav_feedback = {}
+                # Increment generation so any lingering poller from the previous
+                # goal ignores results that belong to this new goal.
+                self._nav_generation = getattr(self, '_nav_generation', 0) + 1
+                my_gen = self._nav_generation
             logger.info("[nav] %s Meta navigate_to(%.3f, %.3f, %.3f): %s", _ts(), x, y, theta, result)
-            self._start_nav_status_poller()
+            self._start_nav_status_poller(my_gen)
             return {"success": result.get("status") == "success",
                     "message": result.get("message", "")}
         except Exception as e:
@@ -34,11 +38,9 @@ class NavigationMixin:
                 self._nav_status = "failed"
             return {"success": False, "message": str(e)}
 
-    def _start_nav_status_poller(self):
-        """Poll Meta navigation status until terminal state. No-op if already polling."""
+    def _start_nav_status_poller(self, generation: int):
+        """Poll Meta navigation status until terminal state for the given generation."""
         with self._lock:
-            if getattr(self, '_nav_polling', False):
-                return
             self._nav_polling = True
 
         def _poll():
@@ -48,6 +50,10 @@ class NavigationMixin:
                     if not self._nav:
                         break
                     with self._lock:
+                        # Abort if a newer navigate_to has taken over
+                        if getattr(self, '_nav_generation', 0) != generation:
+                            logger.info("[nav] poller gen=%d superseded, exiting", generation)
+                            break
                         if self._nav_status not in ("navigating",):
                             break
                     try:
@@ -58,16 +64,22 @@ class NavigationMixin:
 
                     state = status.get("state", "idle")
                     with self._lock:
+                        # Double-check generation after the (potentially slow) RPC
+                        if getattr(self, '_nav_generation', 0) != generation:
+                            logger.info("[nav] poller gen=%d superseded after RPC, exiting", generation)
+                            break
                         self._nav_feedback = status
 
                     if state in ("reached", "failed"):
                         success = state == "reached"
-                        logger.info("[nav] %s Meta nav result: state=%s", _ts(), state)
+                        logger.info("[nav] %s Meta nav result: state=%s (gen=%d)", _ts(), state, generation)
                         self._on_nav_completed(success, status)
                         break
             finally:
                 with self._lock:
-                    self._nav_polling = False
+                    # Only clear the flag if we are still the active generation
+                    if getattr(self, '_nav_generation', 0) == generation:
+                        self._nav_polling = False
 
         threading.Thread(target=_poll, daemon=True, name="nav-meta-poller").start()
 
