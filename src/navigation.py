@@ -46,7 +46,6 @@ class NavigationMixin:
             self._nav_polling = True
 
         def _poll():
-            stale_cleared = False
             try:
                 while True:
                     time.sleep(0.5)
@@ -66,6 +65,8 @@ class NavigationMixin:
 
                     state = status.get("state", "idle")
                     returned_goal_id = status.get("goal_id", "")
+                    logger.info("[nav] poller gen=%d poll: state=%s returned_goal_id=%r expected=%r",
+                                generation, state, returned_goal_id, goal_id)
 
                     with self._lock:
                         if getattr(self, '_nav_generation', 0) != generation:
@@ -73,19 +74,11 @@ class NavigationMixin:
                             break
                         self._nav_feedback = status
 
-                    # goal_id 验证：如果 meta 返回的 goal_id 和本次不匹配，说明是旧任务的结果
+                    # goal_id 不匹配 → 旧任务残留，跳过
                     if goal_id and returned_goal_id and returned_goal_id != goal_id:
-                        logger.info("[nav] poller gen=%d goal_id mismatch (got=%s expected=%s), ignoring",
-                                    generation, returned_goal_id, goal_id)
-                        stale_cleared = False
+                        logger.info("[nav] poller gen=%d DISCARD stale goal_id (got=%r expected=%r) state=%s",
+                                    generation, returned_goal_id, goal_id, state)
                         continue
-
-                    if not stale_cleared:
-                        if state in ("reached", "failed"):
-                            logger.info("[nav] poller gen=%d ignoring stale state=%s", generation, state)
-                            continue
-                        stale_cleared = True
-                        logger.info("[nav] poller gen=%d stale cleared, now state=%s", generation, state)
 
                     if state in ("reached", "failed"):
                         success = state == "reached"
@@ -146,6 +139,8 @@ class NavigationMixin:
                 logger.warning("[nav] Meta cancel failed: %s", e)
 
         with self._lock:
+            # 递增 generation，让所有正在运行的 poller 线程退出
+            self._nav_generation = getattr(self, '_nav_generation', 0) + 1
             self._nav_status = "idle"
             self._nav_feedback = {}
             if self._patrol_active:
