@@ -137,11 +137,36 @@ export const TaskDispatchTab: React.FC = () => {
 
   // Subscribe to SSE room patrol state
   useEffect(() => {
+    const ALERT_TYPE_LABELS: Record<string, string> = {
+      bed_absence: '老人离床',
+      floor_clutter: '地面有杂物',
+      floor_water: '地面有水渍',
+    };
     const handler = (data: RoomPatrolState) => {
-      if (data.new_alerts?.length) {
-        console.log('[patrol] room-patrol-state received with new_alerts:', data.new_alerts.map((a: any) => a.id));
-      }
       setPatrolState(data);
+      // 直接在 handler 里处理 alert，不依赖 patrolState state 更新后的 useEffect
+      const alerts = data.new_alerts;
+      if (!alerts?.length) return;
+      console.log('[patrol] room-patrol-state received with new_alerts:', alerts.map((a: any) => a.id));
+      const hasModal = !!data.fall_event || !!data.stuck_event;
+      for (const alert of alerts) {
+        if (notifiedAlertIds.current.has(alert.id)) continue;
+        if (['fall_detected', 'robot_stuck'].includes(alert.alert_type)) continue;
+        notifiedAlertIds.current.add(alert.id);
+        const label = ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type;
+        const n = {
+          type: alert.alert_type,
+          message: label,
+          description: `${alert.room_id} — ${alert.message}`,
+        };
+        if (hasModal) {
+          console.log('[alert] queued (modal open):', alert.id, alert.alert_type);
+          pendingNotifications.current.push(n);
+        } else {
+          console.log('[alert] showing notification:', alert.id, alert.alert_type);
+          notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
+        }
+      }
     };
     apiService.on('room-patrol-state', handler);
     return () => apiService.off('room-patrol-state', handler);
@@ -165,43 +190,7 @@ export const TaskDispatchTab: React.FC = () => {
     pendingNotifications.current = [];
   }, []);
 
-  // 监听 patrolState.new_alerts，弹出非阻塞通知（有 Modal 时排队，Modal 关闭后显示）
-  useEffect(() => {
-    const alerts = patrolState?.new_alerts;
-    if (!alerts?.length) return;
-    console.log('[alert] new_alerts received:', alerts.map(a => ({ id: a.id, type: a.alert_type })));
-    const ALERT_TYPE_LABELS: Record<string, string> = {
-      bed_absence: '老人离床',
-      floor_clutter: '地面有杂物',
-      floor_water: '地面有水渍',
-    };
-    const hasModal = !!fallEvent || !!stuckEvent;
-    for (const alert of alerts) {
-      if (notifiedAlertIds.current.has(alert.id)) {
-        console.log('[alert] skip duplicate:', alert.id);
-        continue;
-      }
-      if (['fall_detected', 'robot_stuck'].includes(alert.alert_type)) {
-        console.log('[alert] skip fall/stuck (handled by modal):', alert.alert_type);
-        continue;
-      }
-      notifiedAlertIds.current.add(alert.id);
-      const n = {
-        type: alert.alert_type,
-        message: ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type,
-        description: `${alert.room_id} — ${alert.message}`,
-      };
-      if (hasModal) {
-        console.log('[alert] queued (modal open):', alert.id, alert.alert_type);
-        pendingNotifications.current.push(n);
-      } else {
-        console.log('[alert] showing notification:', alert.id, alert.alert_type);
-        notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
-      }
-    }
-  }, [patrolState?.new_alerts, fallEvent, stuckEvent]);
-
-  // Modal 关闭后 flush 排队的 notification
+  // Modal 关闭後 flush 排队的 notification
   useEffect(() => {
     if (!fallEvent && !stuckEvent) {
       flushNotifications();
