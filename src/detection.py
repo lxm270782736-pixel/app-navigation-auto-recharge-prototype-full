@@ -13,6 +13,10 @@ class DetectionMixin:
         """在床检测 — 调用 meta.detection.detect_bed()。"""
         result = self._detection_call("detect_bed", room_id=room_id)
         if isinstance(result, dict) and "is_abnormal" in result:
+            logger.info("[detection] detect_bed room=%s is_abnormal=%s in_bed=%s person_detected=%s confidence=%.2f description=%s",
+                        room_id, result.get("is_abnormal"), result.get("in_bed"),
+                        result.get("person_detected"), result.get("confidence", 0.0),
+                        result.get("description", ""))
             return result
         logger.warning("[detection] detect_bed unavailable for room %s", room_id)
         return {
@@ -45,6 +49,12 @@ class DetectionMixin:
             return cached
         result = self._detection_call("detect_floor", room_id=room_id)
         if isinstance(result, dict) and "clutter" in result:
+            clutter = result.get("clutter") or {}
+            water = result.get("water") or {}
+            logger.info("[detection] detect_floor room=%s clutter=is_abnormal:%s,confidence:%.2f water=%s any_abnormal=%s",
+                        room_id, clutter.get("is_abnormal"), clutter.get("confidence", 0.0),
+                        "is_abnormal:%s,confidence:%.2f" % (water.get("is_abnormal"), water.get("confidence", 0.0)) if water else "N/A",
+                        result.get("any_abnormal"))
             setattr(self, cache_key, result)
             return result
         logger.warning("[detection] detect_floor unavailable for room %s", room_id)
