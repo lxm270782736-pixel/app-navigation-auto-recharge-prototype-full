@@ -388,6 +388,7 @@ export const TaskConfigTab: React.FC = () => {
         room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS],
       })),
       retry_limit: 3,
+      fall_detection_enabled: true,
     };
     const result = await apiService.saveTaskPreset(preset);
     if (result.success) {
@@ -564,8 +565,20 @@ export const TaskConfigTab: React.FC = () => {
 
       {/* Col 2: Room list */}
       <div style={{ width: col2Width, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>巡房顺序</span>
+          {editingPreset && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}>
+              跌倒检测
+              <Switch
+                size="small"
+                checked={editingPreset.fall_detection_enabled ?? true}
+                onChange={v => setEditingPreset({ ...editingPreset, fall_detection_enabled: v })}
+              />
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Checkbox checked={allEnabled} onChange={toggleAll} style={{ fontSize: 12 }}>全选</Checkbox>
         </div>
         <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与巡房的房间</div>

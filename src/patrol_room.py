@@ -493,10 +493,16 @@ class RoomPatrolMixin:
         self._last_photo = None
         self._stuck_event = None
         self._replay_paused_by = None
-        self._paused_replay_id = ""  # 记录 replay 被谁暂停
+        self._paused_replay_id = ""
 
-        # Fall detection always runs throughout the entire patrol
-        self._start_fall_monitor()
+        # Fall detection — 由任务配置控制，默认开启
+        fall_detection_enabled = config.get("fall_detection_enabled", True)
+        if fall_detection_enabled:
+            self._start_fall_monitor()
+        else:
+            logger.info("[fall] Fall detection disabled for this patrol")
+            self._fall_monitor_enabled = False
+            self._fall_event = None
 
         # Run patrol in background thread
         t = threading.Thread(
