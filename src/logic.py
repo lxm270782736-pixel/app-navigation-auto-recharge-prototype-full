@@ -99,7 +99,7 @@ class BusinessLogic(
 
     # ------ SSE State ------
 
-    def get_state(self) -> dict:
+    def get_state(self, seen_alert_ids: set | None = None) -> dict:
         """Return full application state snapshot for SSE push (every 500 ms).
 
         Returns:
@@ -114,8 +114,12 @@ class BusinessLogic(
             except Exception:
                 pass
 
-        # pop_pending_alerts 有自己的锁，必须在 self._lock 外调用，避免锁竞争
-        new_alerts = self.pop_pending_alerts()
+        # 每个 SSE 连接维护自己的 seen_ids，避免多连接时 alert 被第一个连接消费掉
+        if seen_alert_ids is None:
+            seen_alert_ids = set()
+        new_alerts = self.get_pending_alerts(seen_alert_ids)
+        for a in new_alerts:
+            seen_alert_ids.add(a["id"])
 
         with self._lock:
             raw = {

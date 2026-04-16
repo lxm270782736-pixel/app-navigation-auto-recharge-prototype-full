@@ -22,13 +22,15 @@ _ALERT_MESSAGES = {
 class AlertMixin:
     """Alert CRUD with JsonDayStorage backend."""
 
-    # 内存队列：存放待推送给前端的新告警
+    # 内存队列：存放待推送给前端的新告警（不清空，每个连接自己跟踪已推送的 id）
     _pending_alerts: list
 
     def _init_alert_queue(self):
         import threading
         self._pending_alerts = []
         self._pending_alerts_lock = threading.Lock()
+        # 最多保留最近 N 条，防止内存无限增长
+        self._pending_alerts_max = 50
 
     def _get_storage(self) -> JsonDayStorage:
         return self._storage
@@ -66,21 +68,26 @@ class AlertMixin:
         if hasattr(self, '_pending_alerts'):
             with self._pending_alerts_lock:
                 self._pending_alerts.append(alert)
+                # 只保留最近 N 条
+                if len(self._pending_alerts) > self._pending_alerts_max:
+                    self._pending_alerts = self._pending_alerts[-self._pending_alerts_max:]
                 logger.info("[alert] queued for SSE push, queue_size=%d", len(self._pending_alerts))
 
         return alert
 
-    def pop_pending_alerts(self) -> list:
-        """取出并清空待推送告警队列（供 SSE get_state 消费）。"""
+    def get_pending_alerts(self, seen_ids: set) -> list:
+        """返回 seen_ids 中没有的新 alert，不清空队列。每个 SSE 连接维护自己的 seen_ids。"""
         if not hasattr(self, '_pending_alerts'):
             return []
         with self._pending_alerts_lock:
-            alerts = list(self._pending_alerts)
-            self._pending_alerts.clear()
-        if alerts:
-            logger.info("[alert] SSE pop: pushing %d alerts: %s",
-                        len(alerts), [a["id"] for a in alerts])
-        return alerts
+            new = [a for a in self._pending_alerts if a["id"] not in seen_ids]
+        if new:
+            logger.info("[alert] SSE get_pending: returning %d new alerts", len(new))
+        return new
+
+    def pop_pending_alerts(self) -> list:
+        """取出并清空待推送告警队列（供 SSE get_state 消费）。已废弃，保留兼容。"""
+        return self.get_pending_alerts(set())
 
     def get_alerts(self, status: str | None = None, date: str | None = None,
                    days: int = 7) -> list[dict]:
