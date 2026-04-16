@@ -13,9 +13,9 @@ class DetectionMixin:
         """在床检测 — 调用 meta.detection.detect_bed()。"""
         result = self._detection_call("detect_bed", room_id=room_id)
         if isinstance(result, dict) and "is_abnormal" in result:
-            logger.info("[detection] detect_bed room=%s is_abnormal=%s in_bed=%s person_detected=%s confidence=%.2f description=%s",
+            logger.info("[detection] detect_bed room=%s is_abnormal=%s in_bed=%s person_detected=%s confidence=%s description=%s",
                         room_id, result.get("is_abnormal"), result.get("in_bed"),
-                        result.get("person_detected"), result.get("confidence", 0.0),
+                        result.get("person_detected"), result.get("confidence"),
                         result.get("description", ""))
             return result
         logger.warning("[detection] detect_bed unavailable for room %s", room_id)
@@ -31,15 +31,13 @@ class DetectionMixin:
 
     def detect_floor_clutter(self, room_id: str) -> dict:
         """杂物检测 — 调用 meta.detection.detect_floor()。"""
-        return self._detect_floor_full(room_id).get(
-            "clutter", {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
-        )
+        return self._detect_floor_full(room_id).get("clutter") or \
+            {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
 
     def detect_floor_water(self, room_id: str) -> dict:
         """水渍检测 — 调用 meta.detection.detect_floor()。"""
-        return self._detect_floor_full(room_id).get(
-            "water", {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
-        )
+        return self._detect_floor_full(room_id).get("water") or \
+            {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
 
     def _detect_floor_full(self, room_id: str) -> dict:
         """调用 meta.detection.detect_floor()，同一房间同一步骤只调用一次。"""
@@ -51,9 +49,10 @@ class DetectionMixin:
         if isinstance(result, dict) and "clutter" in result:
             clutter = result.get("clutter") or {}
             water = result.get("water") or {}
-            logger.info("[detection] detect_floor room=%s clutter=is_abnormal:%s,confidence:%.2f water=%s any_abnormal=%s",
-                        room_id, clutter.get("is_abnormal"), clutter.get("confidence", 0.0),
-                        "is_abnormal:%s,confidence:%.2f" % (water.get("is_abnormal"), water.get("confidence", 0.0)) if water else "N/A",
+            logger.info("[detection] detect_floor room=%s clutter={is_abnormal:%s, confidence:%s} water=%s any_abnormal=%s",
+                        room_id,
+                        clutter.get("is_abnormal"), clutter.get("confidence"),
+                        "{is_abnormal:%s, confidence:%s}" % (water.get("is_abnormal"), water.get("confidence")) if water else "N/A",
                         result.get("any_abnormal"))
             setattr(self, cache_key, result)
             return result
