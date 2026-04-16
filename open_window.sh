@@ -52,6 +52,29 @@ xdotool key Return
 
 
 ################################
+# 在左下角再垂直分割出一个新终端（新增的c窗口）
+################################
+
+sleep 1
+xdotool key Ctrl+Shift+E
+sleep 1
+
+
+################################
+# Terminal 2.5 (左下右 - 新增的c窗口)
+################################
+
+xdotool type "cd /home/astribot/workspace/liyifan/meta_camera_detection_yifanli"
+xdotool key Return
+
+xdotool type "source /home/astribot/workspace/liyifan/miniconda3/bin/activate kangyang"
+xdotool key Return
+
+xdotool type "python3 -m meta_base src.api:Detection"
+xdotool key Return
+
+
+################################
 # 切换到右列
 ################################
 
