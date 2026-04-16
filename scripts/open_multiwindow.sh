@@ -1,4 +1,5 @@
 #!/bin/bash
+"$(dirname "$0")/kill_all.sh"
 terminator &
 sleep 2
 ################################
