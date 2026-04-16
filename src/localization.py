@@ -8,7 +8,7 @@ class LocalizationMixin:
         return self._loc_call("start_mapping")
 
     def stop_mapping(self) -> dict:
-        return self._loc_call("stop")
+        return self._loc_call("stop_mapping")
 
     def start_localization(self) -> dict:
         return self._loc_call("start_localization")

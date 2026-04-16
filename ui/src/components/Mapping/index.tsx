@@ -341,7 +341,7 @@ export const Mapping: React.FC = () => {
     try {
       // 步骤 1: 停止建图节点（如果启动时跳过了，则停止时也跳过）
       if (!skipMappingNode) {
-        const stopResult = await apiService.stopLocalization();
+        const stopResult = await apiService.stopMapping();
         if (!stopResult.success) {
           // 停止建图失败
           setSavingModalVisible(false);

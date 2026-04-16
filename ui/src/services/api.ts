@@ -519,8 +519,8 @@ class ApiService {
     return this._post('/api/localization/shutdown', {});
   }
 
-  async stopMapping(): Promise<void> {
-    await this.stopLocalization();
+  async stopMapping(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/localization/stop-mapping', {});
   }
 
   subscribeLocalizationStatus(callback: (status: any) => void): () => void {
