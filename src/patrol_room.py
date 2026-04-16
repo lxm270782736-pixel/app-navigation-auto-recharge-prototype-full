@@ -526,11 +526,6 @@ class RoomPatrolMixin:
             self.cancel_navigation()
             if hasattr(self, '_nav_done_event'):
                 self._nav_done_event.set()
-            # 停止 replay
-            try:
-                self._meta_call("meta.sales_replay", "stop_replay")
-            except Exception:
-                pass
             print("[room_patrol] Stopped by user")
 
         return {"success": True, "message": "Room patrol stopped"}
@@ -906,14 +901,6 @@ class RoomPatrolMixin:
         self._fall_event = None
         self._stuck_event = None
         self._replay_paused_by = None
-
-        # 任务结束时停止 replay（如果还在运行）
-        try:
-            status = self._meta_call("meta.sales_replay", "get_replay_status")
-            if isinstance(status, dict) and (status.get("is_playing") or status.get("is_paused")):
-                self._meta_call("meta.sales_replay", "stop_replay")
-        except Exception:
-            pass
 
         # Save record to disk
         storage = self._get_storage()
