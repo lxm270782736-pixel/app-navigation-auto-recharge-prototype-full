@@ -385,6 +385,14 @@ def get_patrol_record(date: str, record_id: str):
     return logic.get_patrol_record(record_id, date)
 
 
+class DeletePatrolRecordsRequest(BaseModel):
+    records: list[dict]  # [{"id": str, "date": str}, ...]
+
+@app.post("/api/patrol-records/delete")
+def delete_patrol_records(req: DeletePatrolRecordsRequest):
+    return logic.delete_patrol_records(req.records)
+
+
 # ==================== 底盘控制 ====================
 
 

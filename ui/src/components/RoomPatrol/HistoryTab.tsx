@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Tag, Button, Empty, Space, message, Modal, Image, Descriptions, Table } from 'antd';
-import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled, PictureOutlined } from '@ant-design/icons';
+import { Card, Tag, Button, Empty, Space, message, Modal, Image, Descriptions, Table, Popconfirm } from 'antd';
+import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled, PictureOutlined, DeleteOutlined } from '@ant-design/icons';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
@@ -50,11 +50,13 @@ export const HistoryTab: React.FC = () => {
   const { connectionStatus } = useRobot();
   const [records, setRecords] = useState<PatrolRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PatrolRecord | null>(null);
-  const [recordAlerts, setRecordAlerts] = useState<Alert[]>([]);  // 当前选中任务的告警
+  const [recordAlerts, setRecordAlerts] = useState<Alert[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Dynamic step labels
   const stepLabels = useMemo(() => {
@@ -121,14 +123,54 @@ export const HistoryTab: React.FC = () => {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (!selectedRowKeys.length) return;
+    setDeleteLoading(true);
+    const toDelete = records
+      .filter(r => selectedRowKeys.includes(r.id))
+      .map(r => ({ id: r.id, date: r.started_at?.split('T')[0] ?? '' }));
+    try {
+      const result = await apiService.deletePatrolRecords(toDelete);
+      if (result.success) {
+        message.success(`已删除 ${result.deleted} 条记录`);
+        setSelectedRowKeys([]);
+        if (selectedRecord && selectedRowKeys.includes(selectedRecord.id)) {
+          setSelectedRecord(null);
+          setRecordAlerts([]);
+        }
+        loadData();
+      } else {
+        message.error('删除失败');
+      }
+    } catch (e) {
+      message.error('删除失败');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const tableExtra = (
+    <Space>
+      {selectedRowKeys.length > 0 && (
+        <Popconfirm
+          title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`}
+          onConfirm={handleDeleteSelected}
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+        >
+          <Button size="small" danger icon={<DeleteOutlined />} loading={deleteLoading}>
+            删除 ({selectedRowKeys.length})
+          </Button>
+        </Popconfirm>
+      )}
+      <Button size="small" icon={<ReloadOutlined />} onClick={loadData} loading={loading}>刷新</Button>
+    </Space>
+  );
+
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Patrol records */}
-      <Card
-        size="small"
-        title="巡房记录"
-        extra={<Button size="small" icon={<ReloadOutlined />} onClick={loadData} loading={loading}>刷新</Button>}
-      >
+      <Card size="small" title="巡房记录" extra={tableExtra}>
         {records.length === 0 ? (
           <Empty description="暂无巡房记录" />
         ) : (
@@ -137,6 +179,10 @@ export const HistoryTab: React.FC = () => {
             rowKey="id"
             size="small"
             pagination={{ pageSize: 10 }}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+            }}
             onRow={(record) => ({
               onClick: () => handleSelectRecord(record),
               style: { cursor: 'pointer', background: selectedRecord?.id === record.id ? '#e6f7ff' : undefined },

@@ -935,6 +935,18 @@ class RoomPatrolMixin:
         """Get a single patrol record."""
         return self._get_storage().load("records", record_id, date)
 
+    def delete_patrol_records(self, records: list[dict]) -> dict:
+        """Delete patrol records by id+date. records: [{"id": str, "date": str}, ...]"""
+        storage = self._get_storage()
+        deleted, failed = 0, 0
+        for r in records:
+            ok = storage.delete("records", r["id"], r["date"])
+            if ok:
+                deleted += 1
+            else:
+                failed += 1
+        return {"success": True, "deleted": deleted, "failed": failed}
+
     # ------ Custom step execution ------
 
     def _execute_custom_step(self, step_id: str, params: dict) -> tuple[bool, dict | None]:

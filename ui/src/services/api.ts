@@ -418,6 +418,10 @@ class ApiService {
     return this._get(`/api/patrol-records/${date}/${recordId}`);
   }
 
+  async deletePatrolRecords(records: { id: string; date: string }[]): Promise<{ success: boolean; deleted: number; failed: number }> {
+    return this._post('/api/patrol-records/delete', { records });
+  }
+
   // ------ Task Presets (任务预设) ------
 
   async getTaskPresets(): Promise<{ presets: any[] }> {
