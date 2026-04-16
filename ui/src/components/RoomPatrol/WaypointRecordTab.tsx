@@ -9,6 +9,20 @@ import {
   EnvironmentOutlined,
   DragOutlined,
 } from '@ant-design/icons';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -22,6 +36,82 @@ const WAYPOINT_TYPES = [
   { key: 'door_inside', label: '门内', color: '#52c41a' },
   { key: 'bed_check', label: '床位', color: '#ff4d4f' },
 ] as const;
+
+interface SortableRoomCardProps {
+  room: any;
+  roomIdx: number;
+  isRoomReady: (room: any) => any;
+  onDelete: (roomId: string) => void;
+  waypointTypes: typeof WAYPOINT_TYPES;
+  onRecord: (roomId: string, wpType: string) => void;
+  onEdit: (roomId: string, wpType: string, label: string, pose: any) => void;
+  robotPose: any;
+}
+
+const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
+  room, roomIdx, isRoomReady, onDelete, waypointTypes, onRecord, onEdit, robotPose,
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.room_id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card
+        size="small"
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* 房间拖拽 handle — 始终显示 */}
+              <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', display: 'flex', alignItems: 'center' }}>
+                <DragOutlined />
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#1890ff', color: '#fff', fontSize: 11, fontWeight: 'bold', flexShrink: 0 }}>{roomIdx + 1}</span>
+              {room.room_name || room.room_id}
+              {isRoomReady(room) ? (
+                <Tag color="green" style={{ marginLeft: 8, fontSize: '11px' }}>就绪</Tag>
+              ) : (
+                <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
+              )}
+            </span>
+            <Tooltip title="删除房间">
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => onDelete(room.room_id)} />
+            </Tooltip>
+          </div>
+        }
+      >
+        {waypointTypes.map(({ key, label, color }) => {
+          const pose = room[key];
+          return (
+            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
+              <span style={{ fontSize: '13px' }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
+                {label}
+              </span>
+              {pose ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
+                    ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}, {(pose.theta * 180 / Math.PI).toFixed(1)}°)
+                  </span>
+                  <Button size="small" type="link" icon={<EditOutlined />} style={{ fontSize: '11px', padding: 0 }}
+                    onClick={() => onEdit(room.room_id, key, `${room.room_name} ${label}`, pose)} />
+                  <Button size="small" type="link" style={{ fontSize: '11px', padding: 0 }}
+                    onClick={() => onRecord(room.room_id, key)}>重录</Button>
+                </div>
+              ) : (
+                <Button size="small" type="primary" ghost icon={<AimOutlined />}
+                  onClick={() => onRecord(room.room_id, key)} disabled={!robotPose}>录制</Button>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+    </div>
+  );
+};
 
 export const WaypointRecordTab: React.FC = () => {
   const { connectionStatus } = useRobot();
@@ -208,6 +298,20 @@ export const WaypointRecordTab: React.FC = () => {
         }
       },
     });
+  };
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleRoomDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !config) return;
+    const oldIdx = config.rooms.findIndex(r => r.room_id === active.id);
+    const newIdx = config.rooms.findIndex(r => r.room_id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const newRooms = arrayMove(config.rooms, oldIdx, newIdx);
+    const updated = { ...config, rooms: newRooms };
+    setConfig(updated);
+    apiService.saveRoomConfig(updated).catch(() => message.error('保存顺序失败'));
   };
 
   // 录制点位
@@ -521,90 +625,29 @@ export const WaypointRecordTab: React.FC = () => {
             <Empty description="暂无房间，点击下方按钮添加" style={{ padding: '20px 0' }} />
           )}
 
-          {config?.rooms.map((room, roomIdx) => (
-            <Card
-              key={room.room_id}
-              size="small"
-              title={
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#1890ff', color: '#fff', fontSize: 11, fontWeight: 'bold', flexShrink: 0 }}>{roomIdx + 1}</span>
-                    {room.room_name || room.room_id}
-                    {isRoomReady(room) ? (
-                      <Tag color="green" style={{ marginLeft: 8, fontSize: '11px' }}>就绪</Tag>
-                    ) : (
-                      <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
-                    )}
-                  </span>
-                  <Tooltip title="删除房间">
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteRoom(room.room_id)}
-                    />
-                  </Tooltip>
-                </div>
-              }
-            >
-              {WAYPOINT_TYPES.map(({ key, label, color }) => {
-                const pose = room[key as keyof RoomConfigType] as Pose | null;
-                return (
-                  <div
-                    key={key}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '4px 0',
-                      borderBottom: '1px solid #f5f5f5',
-                    }}
-                  >
-                    <span style={{ fontSize: '13px' }}>
-                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
-                      {label}
-                    </span>
-                    {pose ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                          ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}, {(pose.theta * 180 / Math.PI).toFixed(1)}°)
-                        </span>
-                        <Button
-                          size="small"
-                          type="link"
-                          icon={<EditOutlined />}
-                          style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => openEditModal(room.room_id, key, `${room.room_name} ${label}`, pose)}
-                        />
-                        <Button
-                          size="small"
-                          type="link"
-                          style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => handleRecord(room.room_id, key)}
-                          loading={loading}
-                        >
-                          重录
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        size="small"
-                        type="primary"
-                        ghost
-                        icon={<AimOutlined />}
-                        onClick={() => handleRecord(room.room_id, key)}
-                        loading={loading}
-                        disabled={!robotPose}
-                      >
-                        录制
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </Card>
-          ))}
+          <DndContext sensors={sensors} onDragEnd={handleRoomDragEnd}>
+            <SortableContext items={config?.rooms.map(r => r.room_id) ?? []} strategy={verticalListSortingStrategy}>
+              {config?.rooms.map((room, roomIdx) => (
+                <SortableRoomCard
+                  key={room.room_id}
+                  room={room}
+                  roomIdx={roomIdx}
+                  isRoomReady={isRoomReady}
+                  onDelete={handleDeleteRoom}
+                  waypointTypes={WAYPOINT_TYPES}
+                  onRecord={handleRecord}
+                  onEdit={(roomId, wpType, label, pose) => {
+                    setEditTarget({ roomId, waypointType: wpType, label });
+                    setEditX(pose?.x ?? 0);
+                    setEditY(pose?.y ?? 0);
+                    setEditTheta(pose?.theta ?? 0);
+                    setEditModalVisible(true);
+                  }}
+                  robotPose={robotPose}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
 
           {/* 新建房间按钮 */}
           <Button

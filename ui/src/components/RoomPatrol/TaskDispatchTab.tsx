@@ -533,15 +533,18 @@ export const TaskDispatchTab: React.FC = () => {
           </Card>
         )}
 
-        {/* Room progress list with step detail */}
-        {patrolState && patrolState.status !== 'idle' && (
-          <Card size="small" title="房间进度" style={{ flex: 1, overflow: 'auto' }}>
+        {/* Room progress list with step detail — 选中任务后即显示，执行时显示进度 */}
+        {displayRoomIds.length > 0 && (
+          <Card size="small" title={patrolState && patrolState.status !== 'idle' ? "房间进度" : "任务预览"} style={{ flex: 1, overflow: 'auto' }}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              {(patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))).map((room: any) => {
+              {(patrolState && patrolState.status !== 'idle'
+                ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
+                : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))
+              ).map((room: any) => {
                 const rid = room.room_id;
-                const isDone = patrolState.rooms_completed.includes(rid);
-                const isFailed = patrolState.rooms_failed.includes(rid);
-                const isCurrent = patrolState.active && patrolState.current_room === rid;
+                const isDone = patrolState?.rooms_completed?.includes(rid) ?? false;
+                const isFailed = patrolState?.rooms_failed?.includes(rid) ?? false;
+                const isCurrent = (patrolState?.active ?? false) && patrolState?.current_room === rid;
                 const isPending = !isDone && !isFailed && !isCurrent;
                 const steps = room.steps || [];
 
@@ -568,17 +571,19 @@ export const TaskDispatchTab: React.FC = () => {
                       {isPending && <Tag style={{ margin: 0 }}>等待</Tag>}
                     </div>
 
-                    {/* Step progress — only show for current room */}
-                    {isCurrent && steps.length > 0 && (
+                    {/* Step progress — 执行中显示进度，预览时展开所有步骤 */}
+                    {steps.length > 0 && (isCurrent || (!patrolState || patrolState.status === 'idle')) && (
                       <Steps
                         size="small"
                         direction="vertical"
-                        current={currentStepIdx >= 0 ? currentStepIdx : 0}
+                        current={isCurrent && currentStepIdx >= 0 ? currentStepIdx : -1}
                         style={{ marginTop: 4 }}
                         items={steps.map((step: any, si: number) => {
                           let status: 'wait' | 'process' | 'finish' | 'error' = 'wait';
-                          if (si < currentStepIdx) status = 'finish';
-                          else if (si === currentStepIdx) status = 'process';
+                          if (isCurrent) {
+                            if (si < currentStepIdx) status = 'finish';
+                            else if (si === currentStepIdx) status = 'process';
+                          }
 
                           const label = stepLabels[step.type] || step.type;
                           const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';

@@ -568,8 +568,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return () => { container.removeEventListener('wheel', handleWheel); };
   }, [scale, offset, minScale, maxScale]);
 
+  // 点位拖拽时，在 window 上监听 mousemove/mouseup，确保鼠标移出容器也能继续拖动
+  useEffect(() => {
+    if (draggingWaypointIndex < 0) return;
+
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      if (!containerRef.current || !onWaypointDrag) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+      const canvasX = (mouseX - offset.x) / scale;
+      const canvasY = (mouseY - offset.y) / scale;
+      const worldPos = mapToWorld(canvasX, canvasY, mapData);
+      onWaypointDrag(draggingWaypointIndex, {
+        x: worldPos.x,
+        y: worldPos.y,
+        theta: waypoints[draggingWaypointIndex].theta,
+      });
+    };
+
+    const handleWindowMouseUp = () => {
+      if (onWaypointDragEnd) {
+        onWaypointDragEnd(draggingWaypointIndex, waypoints[draggingWaypointIndex]);
+      }
+      setDraggingWaypointIndex(-1);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [draggingWaypointIndex, offset, scale, mapData, waypoints, onWaypointDrag, onWaypointDragEnd]);
+
   // 处理鼠标按下
-  const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     const mousePos = getMousePosition(event);
     if (!mousePos) return;
     const canvasPos = containerToCanvas(mousePos.x, mousePos.y);
@@ -806,12 +840,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       {/* 地图容器 */}
       <div
         ref={containerRef}
+        onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={() => { handleMouseUp(); setBrushPreviewPos(null); }}
+        onMouseLeave={() => { if (draggingWaypointIndex < 0) { handleMouseUp(); setBrushPreviewPos(null); } }}
         onContextMenu={handleContextMenu}
         style={{
-          width: '100%', height: '100%', overflow: 'hidden',
+          width: '100%', height: '100%', overflow: 'visible',
           cursor: isDragging ? 'grabbing' : 'default',
           position: 'relative',
         }}
@@ -820,7 +855,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         {/* Canvas 层：仅占据栅格位图 */}
         <canvas
           ref={canvasRef}
-          onMouseDown={handleMouseDown}
           onClick={handleClick}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
