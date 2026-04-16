@@ -137,7 +137,12 @@ export const TaskDispatchTab: React.FC = () => {
 
   // Subscribe to SSE room patrol state
   useEffect(() => {
-    const handler = (data: RoomPatrolState) => setPatrolState(data);
+    const handler = (data: RoomPatrolState) => {
+      if (data.new_alerts?.length) {
+        console.log('[patrol] room-patrol-state received with new_alerts:', data.new_alerts.map((a: any) => a.id));
+      }
+      setPatrolState(data);
+    };
     apiService.on('room-patrol-state', handler);
     return () => apiService.off('room-patrol-state', handler);
   }, []);

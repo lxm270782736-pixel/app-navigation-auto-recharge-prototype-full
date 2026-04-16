@@ -41,6 +41,8 @@ const API_BASE = window.location.port === String(__BACKEND_PORT__)
 
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
+  // Cache latest state for late-subscribing components
+  private _latestRoomPatrolState: any = null;
   private topicCallbacks: Map<string, Set<(data: any) => void>> = new Map();
   private eventSource: EventSource | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -127,6 +129,7 @@ class ApiService {
 
         // Dispatch room patrol state
         if (state.room_patrol) {
+          this._latestRoomPatrolState = state.room_patrol;
           this.emit('room-patrol-state', state.room_patrol);
         }
       } catch (e) {
@@ -175,7 +178,7 @@ class ApiService {
   }
 
   // Heavy topics polled via REST instead of SSE (too large for SSE)
-  private static HEAVY_TOPICS = new Set(['/map', '/scan', '/visualizer/mincoPath']);
+  private static HEAVY_TOPICS = new Set(['/scan', '/visualizer/mincoPath']);
   private pollingTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
 
   // ------ Topic Subscribe ------
@@ -677,6 +680,10 @@ class ApiService {
       this.listeners.set(event, new Set());
     }
     this.listeners.get(event)!.add(callback);
+    // Replay latest cached state for late-subscribing components
+    if (event === 'room-patrol-state' && this._latestRoomPatrolState) {
+      callback(this._latestRoomPatrolState);
+    }
   }
 
   off(event: string, callback: (data: any) => void) {
