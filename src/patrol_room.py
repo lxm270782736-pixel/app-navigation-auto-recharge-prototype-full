@@ -722,8 +722,14 @@ class RoomPatrolMixin:
                         success = True
                         detail = {"label": step.get("label", ""), "has_photo": photo_b64 is not None}
                     elif step_type == "wait":
-                        duration = step.get("duration", 1)
-                        time.sleep(duration)
+                        duration_ms = float(step.get("duration", 1000))
+                        deadline = time.time() + duration_ms / 1000.0
+                        while time.time() < deadline:
+                            if not self._room_patrol_active:
+                                break
+                            if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
+                                break
+                            time.sleep(0.2)
                         success = True
                     elif step_type.startswith("custom:"):
                         custom_id = step_type.split(":", 1)[1]

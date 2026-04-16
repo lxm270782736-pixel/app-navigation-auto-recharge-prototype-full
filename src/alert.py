@@ -1,8 +1,11 @@
 """Alert management — create, query, confirm, close alerts."""
+import logging
 import time
 import uuid
 
 from .storage import JsonDayStorage
+
+logger = logging.getLogger(__name__)
 
 # Alert message templates (from PRD)
 _ALERT_MESSAGES = {
@@ -56,12 +59,14 @@ class AlertMixin:
             "closed_at": None,
         }
         storage.save("alerts", alert_id, alert, date)
-        print(f"[alert] Created: {alert_type} for room {room_id}")
+        logger.info("[alert] created: type=%s room=%s id=%s is_abnormal_photo=%s",
+                    alert_type, room_id, alert_id, photo is not None)
 
         # 放入待推送队列（加锁保证线程安全）
         if hasattr(self, '_pending_alerts'):
             with self._pending_alerts_lock:
                 self._pending_alerts.append(alert)
+                logger.info("[alert] queued for SSE push, queue_size=%d", len(self._pending_alerts))
 
         return alert
 
@@ -72,6 +77,9 @@ class AlertMixin:
         with self._pending_alerts_lock:
             alerts = list(self._pending_alerts)
             self._pending_alerts.clear()
+        if alerts:
+            logger.info("[alert] SSE pop: pushing %d alerts: %s",
+                        len(alerts), [a["id"] for a in alerts])
         return alerts
 
     def get_alerts(self, status: str | None = None, date: str | None = None,

@@ -114,6 +114,9 @@ class BusinessLogic(
             except Exception:
                 pass
 
+        # pop_pending_alerts 有自己的锁，必须在 self._lock 外调用，避免锁竞争
+        new_alerts = self.pop_pending_alerts()
+
         with self._lock:
             raw = {
                 "meta_connected": self.meta_connected,
@@ -150,7 +153,7 @@ class BusinessLogic(
                     "rooms": [{"room_id": r.get("room_id"), "room_name": r.get("room_name"), "steps": r.get("steps", [])} for r in self._room_patrol_rooms_list],
                     "fall_event": getattr(self, '_fall_event', None),
                     "stuck_event": getattr(self, '_stuck_event', None),
-                    "new_alerts": self.pop_pending_alerts(),
+                    "new_alerts": new_alerts,
                 },
             }
 

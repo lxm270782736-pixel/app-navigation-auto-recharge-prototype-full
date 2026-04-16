@@ -164,6 +164,7 @@ export const TaskDispatchTab: React.FC = () => {
   useEffect(() => {
     const alerts = patrolState?.new_alerts;
     if (!alerts?.length) return;
+    console.log('[alert] new_alerts received:', alerts.map(a => ({ id: a.id, type: a.alert_type })));
     const ALERT_TYPE_LABELS: Record<string, string> = {
       bed_absence: '老人离床',
       floor_clutter: '地面有杂物',
@@ -171,8 +172,14 @@ export const TaskDispatchTab: React.FC = () => {
     };
     const hasModal = !!fallEvent || !!stuckEvent;
     for (const alert of alerts) {
-      if (notifiedAlertIds.current.has(alert.id)) continue;
-      if (['fall_detected', 'robot_stuck'].includes(alert.alert_type)) continue;
+      if (notifiedAlertIds.current.has(alert.id)) {
+        console.log('[alert] skip duplicate:', alert.id);
+        continue;
+      }
+      if (['fall_detected', 'robot_stuck'].includes(alert.alert_type)) {
+        console.log('[alert] skip fall/stuck (handled by modal):', alert.alert_type);
+        continue;
+      }
       notifiedAlertIds.current.add(alert.id);
       const n = {
         type: alert.alert_type,
@@ -180,8 +187,10 @@ export const TaskDispatchTab: React.FC = () => {
         description: `${alert.room_id} — ${alert.message}`,
       };
       if (hasModal) {
+        console.log('[alert] queued (modal open):', alert.id, alert.alert_type);
         pendingNotifications.current.push(n);
       } else {
+        console.log('[alert] showing notification:', alert.id, alert.alert_type);
         notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
       }
     }

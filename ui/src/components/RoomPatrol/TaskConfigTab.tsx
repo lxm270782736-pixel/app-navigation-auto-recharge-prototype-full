@@ -318,7 +318,7 @@ export const TaskConfigTab: React.FC = () => {
 
   const addStep = () => {
     if (!selectedRoom) return;
-    updateSteps([...selectedRoom.steps, { type: 'wait', duration: 1 }]);
+    updateSteps([...selectedRoom.steps, { type: 'wait', duration: 1000 }]);
   };
 
   const removeStep = (idx: number) => {
@@ -634,6 +634,19 @@ export const TaskConfigTab: React.FC = () => {
                       />
                       {step.type === 'navigate' && (
                         <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }} options={NAV_TARGETS} />
+                      )}
+                      {step.type === 'wait' && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <InputNumber
+                            size="small"
+                            min={100}
+                            step={500}
+                            value={step.duration ?? 1000}
+                            onChange={(v) => updateStep(idx, { duration: v ?? 1000 })}
+                            style={{ width: 80 }}
+                          />
+                          <span style={{ fontSize: 11, color: '#999' }}>ms</span>
+                        </span>
                       )}
                       {step.type === 'photo' && (
                         <input placeholder="标签" value={step.label || ''} onChange={(e) => updateStep(idx, { label: e.target.value })}
