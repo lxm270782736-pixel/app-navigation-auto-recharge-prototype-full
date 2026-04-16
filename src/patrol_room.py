@@ -687,9 +687,8 @@ class RoomPatrolMixin:
                     elif step_type == "detect_bed":
                         detail = self.detect_bed_occupancy(room_id)
                         success = True
-                        # 取第一张照片作为告警附图（正常/异常都有）
                         bed_photo = detail.get("photos", [{}])[0].get("photo") if detail.get("photos") else None
-                        if detail.get("is_abnormal"):
+                        if not detail.get("in_bed", True):
                             alert = self.create_alert(
                                 self._room_patrol_id, room_id, "bed_absence",
                                 confidence=detail.get("confidence", 0),
