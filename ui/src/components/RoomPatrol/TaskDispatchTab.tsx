@@ -535,16 +535,20 @@ export const TaskDispatchTab: React.FC = () => {
 
         {/* Room progress list with step detail — 选中任务后即显示，执行时显示进度 */}
         {displayRoomIds.length > 0 && (
-          <Card size="small" title={patrolState && patrolState.status !== 'idle' ? "房间进度" : "任务预览"} style={{ flex: 1, overflow: 'auto' }}>
+          (() => {
+            const isRunning = patrolState?.status === 'running';
+            const title = isRunning ? "房间进度" : "任务预览";
+            const roomList = isRunning
+              ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
+              : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }));
+            return (
+          <Card size="small" title={title} style={{ flex: 1, overflow: 'auto' }}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              {(patrolState && patrolState.status !== 'idle'
-                ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
-                : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }))
-              ).map((room: any) => {
+              {roomList.map((room: any) => {
                 const rid = room.room_id;
-                const isDone = patrolState?.rooms_completed?.includes(rid) ?? false;
-                const isFailed = patrolState?.rooms_failed?.includes(rid) ?? false;
-                const isCurrent = (patrolState?.active ?? false) && patrolState?.current_room === rid;
+                const isDone = isRunning && (patrolState?.rooms_completed?.includes(rid) ?? false);
+                const isFailed = isRunning && (patrolState?.rooms_failed?.includes(rid) ?? false);
+                const isCurrent = isRunning && (patrolState?.active ?? false) && patrolState?.current_room === rid;
                 const isPending = !isDone && !isFailed && !isCurrent;
                 const steps = room.steps || [];
 
@@ -572,7 +576,7 @@ export const TaskDispatchTab: React.FC = () => {
                     </div>
 
                     {/* Step progress — 执行中显示进度，预览时展开所有步骤 */}
-                    {steps.length > 0 && (isCurrent || (!patrolState || patrolState.status === 'idle')) && (
+                    {steps.length > 0 && (isCurrent || !isRunning) && (
                       <Steps
                         size="small"
                         direction="vertical"
@@ -600,6 +604,8 @@ export const TaskDispatchTab: React.FC = () => {
               })}
             </Space>
           </Card>
+            );
+          })()
         )}
       </div>
     </div>
