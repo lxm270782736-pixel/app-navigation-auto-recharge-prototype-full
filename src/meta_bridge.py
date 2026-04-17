@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -173,7 +174,11 @@ class MetaBridgeMixin:
             return None
 
     def _call_service(self, name: str, method_name: str, **kwargs) -> dict:
-        """Unified call: ensure service active, then invoke method.
+        """Unified call: ensure service active, then invoke method (keyword args only)."""
+        return self._call_service_with_args(name, method_name, **kwargs)
+
+    def _call_service_with_args(self, name: str, method_name: str, *args, **kwargs) -> dict:
+        """Unified call with positional + keyword arg support.
 
         Auto-reconnects if service restarted (unconfigured/inactive error).
         Gracefully returns error dict if service unavailable.
@@ -184,44 +189,40 @@ class MetaBridgeMixin:
 
         try:
             logger.info("[meta_call] Calling %s.%s()", name, method_name)
-            result = getattr(entry.proxy, method_name)(**kwargs)
+            result = getattr(entry.proxy, method_name)(*args, **kwargs)
             if result is None:
                 return {"success": False, "message": f"{method_name} returned None"}
             return result
         except Exception as e:
-            msg = str(e)
-            if "unconfigured" in msg:
-                logger.warning("[meta] %s went back to unconfigured, re-activating", name)
-                with entry._lock:
-                    entry.state = META_UNCONFIGURED
-                # startup services: background recovery; on-demand: inline retry
-                if entry.startup:
-                    self._trigger_auto_recovery(name)
-                else:
-                    entry2 = self._ensure_service_active(name)
-                    if entry2:
-                        try:
-                            result = getattr(entry2.proxy, method_name)(**kwargs)
-                            return result if result is not None else {"success": False, "message": "returned None"}
-                        except Exception as e2:
-                            return {"success": False, "message": str(e2)}
-            elif "inactive" in msg:
-                logger.warning("[meta] %s is inactive, re-activating", name)
-                with entry._lock:
-                    entry.state = META_INACTIVE
-                if entry.startup:
-                    self._trigger_auto_recovery(name)
-                else:
-                    entry2 = self._ensure_service_active(name)
-                    if entry2:
-                        try:
-                            result = getattr(entry2.proxy, method_name)(**kwargs)
-                            return result if result is not None else {"success": False, "message": "returned None"}
-                        except Exception as e2:
-                            return {"success": False, "message": str(e2)}
+            return self._handle_call_error(entry, method_name, e, *args, **kwargs)
+
+    def _handle_call_error(self, entry: 'MetaServiceEntry', method_name: str,
+                           error: Exception, *args, **kwargs) -> dict:
+        """Handle unconfigured/inactive errors with auto-recovery or inline retry."""
+        msg = str(error)
+        new_state = None
+        if "unconfigured" in msg:
+            new_state = META_UNCONFIGURED
+        elif "inactive" in msg:
+            new_state = META_INACTIVE
+
+        if new_state:
+            logger.warning("[meta] %s went to %s, re-activating", entry.name, new_state)
+            with entry._lock:
+                entry.state = new_state
+            if entry.startup:
+                self._trigger_auto_recovery(entry.name)
             else:
-                logger.error("[meta] %s.%s failed: %s", name, method_name, e)
-            return {"success": False, "message": msg}
+                entry2 = self._ensure_service_active(entry.name)
+                if entry2:
+                    try:
+                        result = getattr(entry2.proxy, method_name)(*args, **kwargs)
+                        return result if result is not None else {"success": False, "message": "returned None"}
+                    except Exception as e2:
+                        return {"success": False, "message": str(e2)}
+        else:
+            logger.error("[meta] %s.%s failed: %s", entry.name, method_name, error)
+        return {"success": False, "message": msg}
 
     # =================== Auto-recovery ===================
 
@@ -274,14 +275,20 @@ class MetaBridgeMixin:
     # =================== Public API ===================
 
     def start_meta(self) -> dict:
-        """One-click startup: activate all startup=True services."""
+        """One-click startup: activate all startup=True services concurrently."""
+        startup = [(n, e) for n, e in self._services.items() if e.startup]
+        if not startup:
+            return {"success": False, "results": {}}
         results = {}
-        for name, entry in self._services.items():
-            if not entry.startup:
-                continue
-            e = self._ensure_service_active(name)
-            short = name.split(".")[-1]
-            results[short] = "active" if e else "failed"
+        with ThreadPoolExecutor(max_workers=len(startup)) as pool:
+            futures = {pool.submit(self._ensure_service_active, n): n for n, _ in startup}
+            for f in as_completed(futures):
+                name = futures[f]
+                short = name.split(".")[-1]
+                try:
+                    results[short] = "active" if f.result() else "failed"
+                except Exception as e:
+                    results[short] = f"failed: {e}"
         ok = any(v == "active" for v in results.values())
         return {"success": ok, "results": results}
 
@@ -387,26 +394,8 @@ class MetaBridgeMixin:
     # =================== Backward-compat call methods ===================
 
     def _loc_call(self, method_name: str, *args, **kwargs) -> dict:
-        """Call localization service. Supports positional args for backward compat."""
-        entry = self._ensure_service_active("meta.localization")
-        if entry is None:
-            return {"success": False, "message": "Localization unavailable"}
-        try:
-            result = getattr(entry.proxy, method_name)(*args, **kwargs)
-            if result is None:
-                return {"success": False, "message": f"{method_name} returned None"}
-            return result
-        except Exception as e:
-            msg = str(e)
-            if "unconfigured" in msg:
-                entry.state = META_UNCONFIGURED
-                self._trigger_auto_recovery("meta.localization")
-            elif "inactive" in msg:
-                entry.state = META_INACTIVE
-                self._trigger_auto_recovery("meta.localization")
-            else:
-                logger.error("[loc] %s failed: %s", method_name, e)
-            return {"success": False, "message": msg}
+        """Localization shorthand — delegates to unified call with positional arg support."""
+        return self._call_service_with_args("meta.localization", method_name, *args, **kwargs)
 
     def _detection_call(self, method_name: str, **kwargs) -> dict:
         return self._call_service("meta.detection", method_name, **kwargs)
@@ -433,9 +422,6 @@ class MetaBridgeMixin:
                 try: loc.close()
                 except Exception: pass
 
-    def _meta_call(self, service_name: str, method_name: str, **kwargs) -> dict:
-        """Unified meta call — routes all services through _call_service (persistent connection)."""
-        return self._call_service(service_name, method_name, **kwargs)
 
     # =================== Backward-compat properties ===================
 

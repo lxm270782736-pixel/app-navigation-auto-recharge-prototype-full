@@ -43,7 +43,7 @@ logic = BusinessLogic()
 
 @app.get("/api/state")
 async def state_stream():
-    """Push full state every 500ms — includes raw ROS topic data."""
+    """Push full state at adaptive interval (500ms active, 2s idle)."""
     seen_alert_ids: set = set()
 
     async def generate():
@@ -51,7 +51,13 @@ async def state_stream():
         while True:
             state = await loop.run_in_executor(None, lambda: logic.get_state(seen_alert_ids))
             yield {"data": json.dumps(state)}
-            await asyncio.sleep(0.5)
+            # Adaptive interval: 500ms when active, 2s when idle
+            active = (
+                state.get("nav_status") not in (None, "idle")
+                or state.get("patrol", {}).get("active")
+                or state.get("room_patrol", {}).get("active")
+            )
+            await asyncio.sleep(0.5 if active else 2.0)
     return EventSourceResponse(generate())
 
 

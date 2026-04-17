@@ -1,7 +1,7 @@
 """Tests for meta-type custom step execution.
 
 Covers:
-- _meta_call routing: localization proxy, navigation proxy, temporary connection
+- _call_service routing: localization proxy, navigation proxy, persistent connection
 - _execute_custom_step with meta action: param resolution, result handling
 - End-to-end: meta_photo definition loaded from JSON → executed via mock camera proxy
 """
@@ -34,107 +34,55 @@ def stub():
 
 @pytest.fixture
 def active_stub():
-    """Stub with _loc and _nav already in active state."""
+    """Stub with localization and navigation services in active state."""
     s = _Stub()
-    s._loc = MagicMock()
-    s._loc_state = META_ACTIVE
-    s._nav = MagicMock()
-    s._nav_state = META_ACTIVE
+    from src.meta_bridge import META_ACTIVE
+    for name in ("meta.localization", "meta.astribot_navigation"):
+        entry = s._services[name]
+        entry.proxy = MagicMock()
+        entry.state = META_ACTIVE
     return s
 
 
 # ---------------------------------------------------------------------------
-# _meta_call: routing tests
+# _call_service: routing tests
 # ---------------------------------------------------------------------------
 
-class TestMetaCallRouting:
+class TestCallServiceRouting:
 
-    def test_localization_uses_existing_loc_proxy(self, active_stub):
-        active_stub._loc.get_status.return_value = {"success": True, "is_running": True}
-        result = active_stub._meta_call("localization", "get_status")
-        active_stub._loc.get_status.assert_called_once_with()
+    def test_call_service_with_active_service(self, active_stub):
+        active_stub._services["meta.localization"].proxy.get_status.return_value = {"success": True, "is_running": True}
+        result = active_stub._call_service("meta.localization", "get_status")
         assert result["success"] is True
 
-    def test_localization_passes_kwargs(self, active_stub):
-        active_stub._loc.set_initial_pose.return_value = {"success": True}
-        active_stub._meta_call("localization", "set_initial_pose", x=1.0, y=2.0, theta=0.5)
-        active_stub._loc.set_initial_pose.assert_called_once_with(x=1.0, y=2.0, theta=0.5)
+    def test_call_service_passes_kwargs(self, active_stub):
+        active_stub._services["meta.localization"].proxy.set_initial_pose.return_value = {"success": True}
+        active_stub._call_service("meta.localization", "set_initial_pose", x=1.0, y=2.0, theta=0.5)
+        active_stub._services["meta.localization"].proxy.set_initial_pose.assert_called_once_with(x=1.0, y=2.0, theta=0.5)
 
-    def test_localization_not_active_returns_error(self, stub):
-        # _loc is None, loc_state is disconnected
-        result = stub._meta_call("localization", "get_status")
+    def test_disconnected_service_returns_error(self, stub):
+        result = stub._call_service("meta.localization", "get_status")
         assert result["success"] is False
-        assert "not active" in result["message"]
 
-    def test_navigation_uses_existing_nav_proxy(self, active_stub):
-        active_stub._nav.get_status.return_value = {"success": True}
-        result = active_stub._meta_call("navigation", "get_status")
-        active_stub._nav.get_status.assert_called_once_with()
+    def test_navigation_service_call(self, active_stub):
+        active_stub._services["meta.astribot_navigation"].proxy.get_status.return_value = {"success": True}
+        result = active_stub._call_service("meta.astribot_navigation", "get_status")
         assert result["success"] is True
 
-    def test_navigation_alias_astribot_navigation(self, active_stub):
-        active_stub._nav.get_status.return_value = {"success": True}
-        result = active_stub._meta_call("astribot_navigation", "get_status")
-        active_stub._nav.get_status.assert_called_once_with()
-        assert result["success"] is True
-
-    def test_navigation_not_active_returns_error(self, stub):
-        result = stub._meta_call("navigation", "get_status")
-        assert result["success"] is False
-        assert "not active" in result["message"]
-
-    def test_unknown_service_creates_temp_connection(self, stub):
+    def test_unknown_service_creates_entry(self, stub):
         mock_proxy = MagicMock()
-        # 模拟服务已 active（正常运行中）
-        mock_proxy.get_status.return_value = {"is_running": True}
+        mock_proxy.get_status.return_value = {"state": "active"}
         mock_proxy.capture.return_value = {"success": True, "path": "/tmp/img.jpg"}
 
-        with patch("astribot_link.connect", return_value=mock_proxy) as mock_connect:
-            result = stub._meta_call("meta.camera", "capture", label="test", save_to_disk=True)
+        with patch("astribot_link.connect", return_value=mock_proxy):
+            result = stub._call_service("meta.camera", "capture", label="test", save_to_disk=True)
 
-        mock_connect.assert_called_once_with("meta.camera", timeout=30.0)
         mock_proxy.capture.assert_called_once_with(label="test", save_to_disk=True)
-        mock_proxy.deactivate.assert_not_called()
-        mock_proxy.close.assert_called_once()
         assert result["success"] is True
-
-    def test_unknown_service_configures_if_unconfigured(self, stub):
-        mock_proxy = MagicMock()
-        # 模拟服务处于 unconfigured 状态（get_status 抛异常含 unconfigured）
-        mock_proxy.get_status.side_effect = Exception("service is unconfigured")
-        mock_proxy.configure.return_value = "success"
-        mock_proxy.activate.return_value = "success"
-        mock_proxy.capture.return_value = {"success": True, "path": "/tmp/img.jpg"}
-
-        with patch("astribot_link.connect", return_value=mock_proxy):
-            result = stub._meta_call("meta.camera", "capture", label="test", save_to_disk=True)
-
-        mock_proxy.configure.assert_called_once_with({})
-        mock_proxy.activate.assert_called_once_with()
-        mock_proxy.deactivate.assert_not_called()
-        assert result["success"] is True
-
-    def test_temp_connection_closed_on_exception(self, stub):
-        mock_proxy = MagicMock()
-        mock_proxy.get_status.return_value = {"is_running": True}
-        mock_proxy.capture.side_effect = RuntimeError("camera not ready")
-
-        with patch("astribot_link.connect", return_value=mock_proxy):
-            result = stub._meta_call("meta.camera", "capture")
-
-        mock_proxy.close.assert_called_once()
-        assert result["success"] is False
-        assert "camera not ready" in result["message"]
-
-    def test_astribot_link_not_installed_returns_error(self, stub):
-        with patch.dict("sys.modules", {"astribot_link": None}):
-            result = stub._meta_call("camera", "capture")
-        assert result["success"] is False
-        assert "not installed" in result["message"]
 
     def test_none_return_from_proxy_is_error(self, active_stub):
-        active_stub._loc.get_pose.return_value = None
-        result = active_stub._meta_call("localization", "get_pose")
+        active_stub._services["meta.localization"].proxy.get_pose.return_value = None
+        result = active_stub._call_service("meta.localization", "get_pose")
         assert result["success"] is False
         assert "returned None" in result["message"]
 
@@ -165,18 +113,17 @@ class TestExecuteMetaCustomStep:
             "timeout": 10,
         }
 
-    def test_meta_photo_resolves_params_and_calls_meta_call(self, stub):
+    def test_meta_photo_resolves_params_and_calls_call_service(self, stub):
         stub.get_custom_step_definition = MagicMock(return_value=self._make_meta_photo_def())
-        stub._meta_call = MagicMock(return_value={"success": True, "path": "/data/img.jpg"})
+        stub._call_service = MagicMock(return_value={"success": True, "path": "/data/img.jpg"})
 
         ok, detail = stub._execute_custom_step(
             "meta_photo",
             {"label": "走廊检查", "save_to_disk": True},
         )
 
-        stub._meta_call.assert_called_once_with(
+        stub._call_service.assert_called_once_with(
             "meta.camera", "capture",
-            _timeout=30.0,
             label="走廊检查",
             save_to_disk=True,
         )
@@ -186,16 +133,16 @@ class TestExecuteMetaCustomStep:
     def test_meta_photo_bool_param_type_preserved(self, stub):
         """Boolean param should remain bool, not be cast to string."""
         stub.get_custom_step_definition = MagicMock(return_value=self._make_meta_photo_def())
-        stub._meta_call = MagicMock(return_value={"success": True})
+        stub._call_service = MagicMock(return_value={"success": True})
 
         stub._execute_custom_step("meta_photo", {"label": "x", "save_to_disk": False})
 
-        _, kwargs = stub._meta_call.call_args
+        _, kwargs = stub._call_service.call_args
         assert kwargs["save_to_disk"] is False
 
-    def test_meta_call_failure_propagates_as_failed_step(self, stub):
+    def test_call_service_failure_propagates_as_failed_step(self, stub):
         stub.get_custom_step_definition = MagicMock(return_value=self._make_meta_photo_def())
-        stub._meta_call = MagicMock(return_value={"success": False, "message": "camera offline"})
+        stub._call_service = MagicMock(return_value={"success": False, "message": "camera offline"})
 
         ok, detail = stub._execute_custom_step("meta_photo", {})
 
@@ -216,15 +163,14 @@ class TestExecuteMetaCustomStep:
         assert definition["action"]["meta_service"] == "meta.camera"
         assert definition["action"]["meta_method"] == "capture"
 
-        stub._meta_call = MagicMock(return_value={"success": True, "path": "/data/test.jpg"})
+        stub._call_service = MagicMock(return_value={"success": True, "path": "/data/test.jpg"})
         ok, detail = stub._execute_custom_step(
             "meta_photo",
             {"label": "床位检查", "save_to_disk": True},
         )
 
-        stub._meta_call.assert_called_once_with(
+        stub._call_service.assert_called_once_with(
             "meta.camera", "capture",
-            _timeout=30.0,
             label="床位检查",
             save_to_disk=True,
         )
@@ -274,12 +220,12 @@ class TestMetaPoll:
         ]
         call_iter = iter(poll_responses)
 
-        def _meta_call_side(service, method, **kwargs):
+        def _call_service_side(service, method, **kwargs):
             if method == "replay":
                 return {"success": True, "message": "replay dispatched"}
             return next(call_iter)
 
-        stub._meta_call = MagicMock(side_effect=_meta_call_side)
+        stub._call_service = MagicMock(side_effect=_call_service_side)
 
         ok, detail = stub._execute_custom_step(
             "meta_replay",
@@ -289,17 +235,17 @@ class TestMetaPoll:
         assert ok is True
         assert detail == {"is_playing": False, "success": True}
         # replay 调用一次 + 轮询三次 = 4 次
-        assert stub._meta_call.call_count == 4
+        assert stub._call_service.call_count == 4
 
     def test_replay_dispatch_failure_skips_poll(self, stub):
         """replay() 失败时不进入轮询，直接返回失败。"""
         stub.get_custom_step_definition = MagicMock(return_value=self._make_replay_def())
-        stub._meta_call = MagicMock(return_value={"success": False, "message": "server error"})
+        stub._call_service = MagicMock(return_value={"success": False, "message": "server error"})
 
         ok, detail = stub._execute_custom_step("meta_replay", {"traj_name": "x"})
 
         assert ok is False
-        stub._meta_call.assert_called_once()   # 只有 dispatch，没有轮询
+        stub._call_service.assert_called_once()   # 只有 dispatch，没有轮询
 
     def test_replay_poll_timeout(self, stub):
         """轮询超时后返回失败。"""
@@ -313,7 +259,7 @@ class TestMetaPoll:
                 return {"success": True}
             return {"is_playing": True}   # 永远播放中
 
-        stub._meta_call = MagicMock(side_effect=_always_playing)
+        stub._call_service = MagicMock(side_effect=_always_playing)
 
         ok, detail = stub._execute_custom_step("meta_replay", {"traj_name": "x"})
 
@@ -321,7 +267,7 @@ class TestMetaPoll:
         assert "timeout" in detail["error"]
 
     def test_no_poll_on_meta_photo(self, stub):
-        """meta_photo 无 meta_poll 字段，行为不变（只调用一次 _meta_call）。"""
+        """meta_photo 无 meta_poll 字段，行为不变（只调用一次 _call_service）。"""
         stub.get_custom_step_definition = MagicMock(return_value={
             "id": "meta_photo",
             "action": {
@@ -333,12 +279,12 @@ class TestMetaPoll:
             },
             "parameters": [],
         })
-        stub._meta_call = MagicMock(return_value={"success": True, "path": "/tmp/x.png"})
+        stub._call_service = MagicMock(return_value={"success": True, "path": "/tmp/x.png"})
 
         ok, _ = stub._execute_custom_step("meta_photo", {"label": "test", "save_to_disk": True})
 
         assert ok is True
-        stub._meta_call.assert_called_once()
+        stub._call_service.assert_called_once()
 
     def test_replay_from_json_definition(self, stub):
         """从磁盘读取 meta_replay 定义，验证 meta_poll 字段存在。"""

@@ -17,6 +17,7 @@ Mixins:
   - RoomPatrolMixin     (patrol_room.py)   — room patrol orchestration
 """
 import threading
+import time
 
 from .meta_bridge import MetaBridgeMixin
 from .localization import LocalizationMixin
@@ -52,6 +53,9 @@ class BusinessLogic(
         then restores any in-progress patrol from disk.
         """
         self._lock = threading.Lock()
+        self._patrol_state_lock = threading.Lock()  # protects _fall_event, _stuck_event, _alert_interrupted
+        self._pause_event = threading.Event()  # replaces _paused_manually bool
+        self._pause_event.set()  # initially not paused (set = unblocked)
 
         # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
         self._storage = JsonDayStorage()
@@ -65,6 +69,7 @@ class BusinessLogic(
         # Processed state
         self._nav_status = "idle"
         self._nav_feedback: dict = {}
+        self._nav_result_timestamp: float = 0
         self._current_map_name = ""
 
         # Patrol state (multi-waypoint navigation)
@@ -94,8 +99,32 @@ class BusinessLogic(
         self._nav_done_event = threading.Event()
         self._nav_done_success = False
 
+        # Cached pose updated by background poller to avoid blocking SSE
+        self._cached_pose: dict | None = None
+        self._pose_poller_thread: threading.Thread | None = None
+        self._pose_poller_stop = threading.Event()
+        self._start_pose_poller()
+
         # Load saved patrol config (if any)
         self._try_resume_patrol()
+
+    def _start_pose_poller(self):
+        """Background thread: poll loc.get_pose() every 500ms, cache result for SSE."""
+        if self._pose_poller_thread and self._pose_poller_thread.is_alive():
+            return
+        self._pose_poller_stop.clear()
+
+        def _poll():
+            while not self._pose_poller_stop.is_set():
+                if self._loc_state == "active" and self._loc:
+                    try:
+                        self._cached_pose = self._loc.get_pose()
+                    except Exception:
+                        pass
+                self._pose_poller_stop.wait(timeout=0.5)
+
+        self._pose_poller_thread = threading.Thread(target=_poll, daemon=True, name="pose-poller")
+        self._pose_poller_thread.start()
 
     # ------ SSE State ------
 
@@ -106,13 +135,8 @@ class BusinessLogic(
             dict with keys: meta_connected, loc_state, nav_state, nav_status,
             nav_feedback, current_map_name, pose, patrol, room_patrol.
         """
-        # Poll Meta pose if localization is active
-        pose = None
-        if self._loc_state == "active" and self._loc:
-            try:
-                pose = self._loc.get_pose()
-            except Exception:
-                pass
+        # Use cached pose from background poller (non-blocking)
+        pose = self._cached_pose
 
         # 每个 SSE 连接维护自己的 seen_ids，避免多连接时 alert 被第一个连接消费掉
         if seen_alert_ids is None:
@@ -122,6 +146,12 @@ class BusinessLogic(
             seen_alert_ids.add(a["id"])
 
         with self._lock:
+            # Auto-reset nav status after 2s (timestamp-based, replaces timer thread)
+            if self._nav_status in ("succeeded", "failed"):
+                ts = getattr(self, '_nav_result_timestamp', 0)
+                if ts and (time.time() - ts > 2):
+                    self._nav_status = "idle"
+                    self._nav_feedback = {}
             raw = {
                 "meta_connected": self.meta_connected,
                 "loc_state": self._loc_state,

@@ -51,7 +51,7 @@ class _Stub(MetaBridgeMixin, AlertMixin, RoomPatrolMixin):
         """Acknowledge fall event - test stub implementation."""
         self._fall_event = None
         try:
-            self._meta_call("meta.fall_detection", "ack_fall")
+            self._call_service("meta.fall_detection", "ack_fall")
         except Exception:
             pass
         return {"success": True, "message": "跌倒事件已确认"}
@@ -119,7 +119,7 @@ class TestFallDetection:
     def test_acknowledge_fall_clears_event(self, stub):
         """Acknowledging fall should clear the event."""
         stub._fall_event = {"timestamp": time.time(), "location": "101", "confidence": 0.9}
-        stub._meta_call = MagicMock(return_value={"success": True})
+        stub._detection_call = MagicMock(return_value={"success": True})
 
         result = stub.acknowledge_fall()
 
@@ -143,7 +143,7 @@ class TestFallMonitorLoop:
 
     def test_monitor_calls_get_fall_status(self, stub):
         """Monitor should periodically call get_fall_status."""
-        stub._meta_call = MagicMock(return_value={"is_fall": False, "acknowledged": False})
+        stub._detection_call = MagicMock(return_value={"is_fall": False, "acknowledged": False})
         stub._room_patrol_active = True
 
         # Run for a short time then stop
@@ -157,7 +157,7 @@ class TestFallMonitorLoop:
         thread.join(timeout=1.0)
 
         # Should have called at least once
-        assert stub._meta_call.call_count >= 1
+        assert stub._detection_call.call_count >= 1
 
     def test_monitor_sets_fall_event_on_detection(self, stub):
         """Monitor should set _fall_event when is_fall=True."""
@@ -169,7 +169,7 @@ class TestFallMonitorLoop:
                 return {"is_fall": True, "location": "101", "confidence": 0.9}
             return {"is_fall": False, "acknowledged": True}
 
-        stub._meta_call = MagicMock(side_effect=mock_call)
+        stub._detection_call = MagicMock(side_effect=mock_call)
         stub._room_patrol_active = True
         stub.create_alert = MagicMock()
 
@@ -191,7 +191,7 @@ class TestFallMonitorLoop:
         """Monitor should clear _fall_event when acknowledged=True."""
         stub._fall_event = {"timestamp": time.time(), "location": "101", "confidence": 0.9}
 
-        stub._meta_call = MagicMock(return_value={"is_fall": False, "acknowledged": True})
+        stub._detection_call = MagicMock(return_value={"is_fall": False, "acknowledged": True})
         stub._room_patrol_active = True
 
         # Run briefly

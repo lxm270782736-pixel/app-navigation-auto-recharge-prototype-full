@@ -97,38 +97,38 @@ class NavigationMixin:
         """Handle navigation result — drive patrol/room-patrol logic."""
         with self._lock:
             patrol_active = self._patrol_active
-            patrol_index = self._patrol_current_index
 
         if patrol_active:
-            with self._lock:
-                self._nav_status = "succeeded" if success else "failed"
-                self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
-                if success:
-                    self._patrol_completed.append(patrol_index)
-                else:
-                    self._patrol_skipped.append(patrol_index)
-                    self._patrol_error = f"路径点 {patrol_index + 1} 导航失败"
-            self._advance_patrol()
+            self._on_nav_completed_patrol(success, status)
         else:
-            with self._lock:
-                self._nav_status = "succeeded" if success else "failed"
-                self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
-
-            def _reset():
-                time.sleep(2)
-                with self._lock:
-                    if self._nav_status in ("succeeded", "failed"):
-                        self._nav_status = "idle"
-                        self._nav_feedback = {}
-            threading.Thread(target=_reset, daemon=True).start()
+            self._on_nav_completed_standalone(success, status)
 
         # Signal room patrol thread
         if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
             logger.info("[nav] %s Signaling room_patrol: success=%s", _ts(), success)
             self._nav_done_success = success
-            # 写入序列号，让 _patrol_navigate_and_wait 验证结果是否属于当前导航
             self._nav_result_seq = getattr(self, '_nav_done_seq', 0)
             self._nav_done_event.set()
+
+    def _on_nav_completed_patrol(self, success: bool, status: dict):
+        """Handle nav result during multi-waypoint patrol."""
+        with self._lock:
+            patrol_index = self._patrol_current_index
+            self._nav_status = "succeeded" if success else "failed"
+            self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
+            if success:
+                self._patrol_completed.append(patrol_index)
+            else:
+                self._patrol_skipped.append(patrol_index)
+                self._patrol_error = f"路径点 {patrol_index + 1} 导航失败"
+        self._advance_patrol()
+
+    def _on_nav_completed_standalone(self, success: bool, status: dict):
+        """Handle nav result for single-point navigation — auto-reset via timestamp."""
+        with self._lock:
+            self._nav_status = "succeeded" if success else "failed"
+            self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
+            self._nav_result_timestamp = time.time()
 
     def cancel_navigation(self) -> dict:
         if self._nav_state == "active" and self._nav:

@@ -118,21 +118,22 @@ class RoomPatrolMixin:
             confidence=event.get('confidence', 0.0),
             photo=event.get('photo'),
         )
-        # 先检查 _fall_event 是否还存在（可能已被 ack 清除）
-        if self._fall_event is event:
-            self._fall_event["alert_id"] = alert["id"]
-            self._fall_event["alert_date"] = alert["created_at"][:10]
-        # 标记当前步骤被告警中断（即使 _fall_event 被快速 ack 清除，步骤也能感知到）
-        self._alert_interrupted = True
+        with self._patrol_state_lock:
+            # 先检查 _fall_event 是否还存在（可能已被 ack 清除）
+            if self._fall_event is event:
+                self._fall_event["alert_id"] = alert["id"]
+                self._fall_event["alert_date"] = alert["created_at"][:10]
+            # 标记当前步骤被告警中断（即使 _fall_event 被快速 ack 清除，步骤也能感知到）
+            self._alert_interrupted = True
         # 立即取消导航 + 暂停 replay（if playing）
         self._suspend_motion("fall")
 
     def _pause_replay_if_playing(self, reason: str) -> bool:
         """暂停 replay（如果正在播放），返回是否实际暂停了。"""
         try:
-            status = self._meta_call("meta.sales_replay", "get_replay_status")
+            status = self._call_service("meta.sales_replay", "get_replay_status")
             if isinstance(status, dict) and status.get("is_playing") and not status.get("is_paused"):
-                result = self._meta_call("meta.sales_replay", "pause_replay")
+                result = self._call_service("meta.sales_replay", "pause_replay")
                 if isinstance(result, dict) and result.get("success"):
                     # 记住被暂停的 replay_id，恢复时验证
                     self._paused_replay_id = result.get("replay_id", "")
@@ -147,7 +148,7 @@ class RoomPatrolMixin:
         if getattr(self, '_replay_paused_by', None) != reason:
             return
         try:
-            self._meta_call("meta.sales_replay", "resume_replay")
+            self._call_service("meta.sales_replay", "resume_replay")
             logger.info("[replay] Resumed after %s", reason)
         except Exception:
             pass
@@ -158,7 +159,7 @@ class RoomPatrolMixin:
         """暂停导航（记住目标点）+ 暂停 replay（if playing）。"""
         try:
             # 优先用 pause_navigation（记住目标点），fallback 到 cancel
-            result = self._meta_call("meta.astribot_navigation", "pause_navigation")
+            result = self._call_service("meta.astribot_navigation", "pause_navigation")
             if not (isinstance(result, dict) and result.get("success")):
                 self.cancel_navigation()
                 if hasattr(self, '_nav_done_event'):
@@ -179,7 +180,7 @@ class RoomPatrolMixin:
     def _restore_motion(self, reason: str):
         """恢复导航（重新下发目标点）+ 恢复 replay（if paused by same reason）。"""
         try:
-            self._meta_call("meta.astribot_navigation", "resume_navigation")
+            self._call_service("meta.astribot_navigation", "resume_navigation")
         except Exception:
             pass
         self._resume_replay_if_paused_by(reason)
@@ -545,9 +546,11 @@ class RoomPatrolMixin:
                 return {"success": False, "message": "Already paused"}
             self._room_patrol_status = "paused_manual"
             self._paused_manually = True
+        self._pause_event.clear()  # block waiting threads
 
         # 取消导航 + 暂停 replay，标记步骤中断（恢复后重试）
-        self._alert_interrupted = True
+        with self._patrol_state_lock:
+            self._alert_interrupted = True
         self._suspend_motion("manual")
         logger.info("[room_patrol] Paused by user")
         return {"success": True, "message": "Room patrol paused"}
@@ -561,6 +564,7 @@ class RoomPatrolMixin:
                 return {"success": False, "message": "Patrol is not manually paused"}
             self._room_patrol_status = "running"
             self._paused_manually = False
+        self._pause_event.set()  # unblock waiting threads
 
         # 恢复 replay（只有手动暂停的才恢复）
         self._restore_motion("manual")
@@ -600,8 +604,6 @@ class RoomPatrolMixin:
         """Main patrol loop — runs in background thread."""
         with self._lock:
             self._room_patrol_rooms_list = rooms
-
-        start_pos = self.get_room_config().get("start_position")
 
         for idx, room in enumerate(rooms):
             with self._lock:
@@ -643,9 +645,23 @@ class RoomPatrolMixin:
                         skip_room = True
                         break
 
+                # Skip disabled steps
+                if not step.get("enabled", True):
+                    step_type = step.get("type", "")
+                    step_target = step.get("target", step.get("label", ""))
+                    room_result["steps"].append({
+                        "step": step_type, "target": step_target,
+                        "status": "skipped", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+                    print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → SKIPPED (disabled)")
+                    step_idx += 1
+                    continue
+
                 # 手动暂停：等待恢复
-                while getattr(self, '_paused_manually', False) and self._room_patrol_active:
-                    time.sleep(0.5)
+                while not getattr(self, '_pause_event', threading.Event()).wait(timeout=0.5):
+                    if not self._room_patrol_active:
+                        break
 
                 # Check fall/stuck event before executing step
                 if not self._check_fall_before_step() or not self._check_stuck_before_step():
@@ -667,76 +683,15 @@ class RoomPatrolMixin:
                 self._alert_interrupted = False  # 每步开始前重置
 
                 try:
-                    if step_type == "navigate":
-                        target = step.get("target", "")
-                        # 特殊 target: start_position → 从 room config 取起点
-                        if target == "start_position":
-                            pose = self.get_room_config().get("start_position")
-                        else:
-                            pose = waypoints.get(target)
-                        if pose:
-                            success = self._patrol_navigate_and_wait(pose, retry_limit)
-                            if not success and getattr(self, '_alert_interrupted', False):
-                                pass
-                        else:
-                            print(f"[room_patrol] Unknown nav target: '{target}' (available: {list(waypoints.keys()) + ['start_position']})")
-                            success = False
-                    elif step_type == "open_door":
-                        success = self._mock_open_door(retry_limit)
-                    elif step_type == "close_door":
-                        success = self._mock_close_door(retry_limit)
-                    elif step_type == "detect_bed":
-                        detail = self.detect_bed_occupancy(room_id)
-                        success = True
-                        bed_photo = detail.get("photos", [{}])[0].get("photo") if detail.get("photos") else None
-                        if not detail.get("in_bed", True):
-                            alert = self.create_alert(
-                                self._room_patrol_id, room_id, "bed_absence",
-                                confidence=detail.get("confidence", 0),
-                                photo=bed_photo,
-                            )
-                            room_result["alerts"].append(alert["id"])
-                    elif step_type == "detect_floor":
-                        floor = self._detect_floor_full(room_id)
-                        clutter = floor.get("clutter") or {}
-                        water = floor.get("water") or {}
-                        detail = {"clutter": clutter, "water": water}
-                        success = True
-                        if clutter.get("is_abnormal"):
-                            alert = self.create_alert(
-                                self._room_patrol_id, room_id, "floor_clutter",
-                                confidence=clutter.get("confidence", 0),
-                                photo=clutter.get("photo"),
-                            )
-                            room_result["alerts"].append(alert["id"])
-                        if water and water.get("is_abnormal"):
-                            alert = self.create_alert(
-                                self._room_patrol_id, room_id, "floor_water",
-                                confidence=water.get("confidence", 0),
-                                photo=water.get("photo"),
-                            )
-                            room_result["alerts"].append(alert["id"])
-                    elif step_type == "photo":
-                        photo_b64 = self.capture_image()
-                        self._last_photo = photo_b64
-                        success = True
-                        detail = {"label": step.get("label", ""), "has_photo": photo_b64 is not None}
-                    elif step_type == "wait":
-                        duration_ms = float(step.get("duration", 1000))
-                        deadline = time.time() + duration_ms / 1000.0
-                        while time.time() < deadline:
-                            if not self._room_patrol_active:
-                                break
-                            if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
-                                break
-                            time.sleep(0.2)
-                        success = True
+                    handler = self._STEP_HANDLERS.get(step_type)
+                    if handler:
+                        success, detail = getattr(self, handler)(room_id, step, waypoints, retry_limit, room_result)
                     elif step_type.startswith("custom:"):
                         custom_id = step_type.split(":", 1)[1]
                         success, detail = self._execute_custom_step(custom_id, step.get("params", {}))
                     else:
                         print(f"[room_patrol] Unknown step type: {step_type}")
-                        success = True  # Skip unknown steps
+                        success, detail = True, None
                 except Exception as e:
                     print(f"[room_patrol] Step {step_type} error: {e}")
                     success = False
@@ -815,6 +770,84 @@ class RoomPatrolMixin:
         # Finish
         self._finish_room_patrol()
 
+    # ------ Step handler registry ------
+
+    _STEP_HANDLERS = {
+        "navigate": "_step_navigate",
+        "open_door": "_step_open_door",
+        "close_door": "_step_close_door",
+        "detect_bed": "_step_detect_bed",
+        "detect_floor": "_step_detect_floor",
+        "photo": "_step_photo",
+        "wait": "_step_wait",
+    }
+
+    def _step_navigate(self, room_id, step, waypoints, retry_limit, room_result):
+        target = step.get("target", "")
+        if target == "start_position":
+            pose = self.get_room_config().get("start_position")
+        else:
+            pose = waypoints.get(target)
+        if pose:
+            ok = self._patrol_navigate_and_wait(pose, retry_limit)
+            return ok, None
+        print(f"[room_patrol] Unknown nav target: '{target}' (available: {list(waypoints.keys()) + ['start_position']})")
+        return False, None
+
+    def _step_open_door(self, room_id, step, waypoints, retry_limit, room_result):
+        return self._mock_open_door(retry_limit), None
+
+    def _step_close_door(self, room_id, step, waypoints, retry_limit, room_result):
+        return self._mock_close_door(retry_limit), None
+
+    def _step_detect_bed(self, room_id, step, waypoints, retry_limit, room_result):
+        detail = self.detect_bed_occupancy(room_id)
+        bed_photo = detail.get("photos", [{}])[0].get("photo") if detail.get("photos") else None
+        if not detail.get("in_bed", True):
+            alert = self.create_alert(
+                self._room_patrol_id, room_id, "bed_absence",
+                confidence=detail.get("confidence", 0), photo=bed_photo,
+            )
+            room_result["alerts"].append(alert["id"])
+        return True, detail
+
+    def _step_detect_floor(self, room_id, step, waypoints, retry_limit, room_result):
+        floor = self._detect_floor_full(room_id)
+        clutter = floor.get("clutter") or {}
+        water = floor.get("water") or {}
+        detail = {"clutter": clutter, "water": water}
+        if clutter.get("is_abnormal"):
+            alert = self.create_alert(
+                self._room_patrol_id, room_id, "floor_clutter",
+                confidence=clutter.get("confidence", 0), photo=clutter.get("photo"),
+            )
+            room_result["alerts"].append(alert["id"])
+        if water and water.get("is_abnormal"):
+            alert = self.create_alert(
+                self._room_patrol_id, room_id, "floor_water",
+                confidence=water.get("confidence", 0), photo=water.get("photo"),
+            )
+            room_result["alerts"].append(alert["id"])
+        return True, detail
+
+    def _step_photo(self, room_id, step, waypoints, retry_limit, room_result):
+        photo_b64 = self.capture_image()
+        self._last_photo = photo_b64
+        return True, {"label": step.get("label", ""), "has_photo": photo_b64 is not None}
+
+    def _step_wait(self, room_id, step, waypoints, retry_limit, room_result):
+        duration_ms = float(step.get("duration", 1000))
+        deadline = time.time() + duration_ms / 1000.0
+        while time.time() < deadline:
+            if not self._room_patrol_active:
+                break
+            if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
+                break
+            time.sleep(0.2)
+        return True, None
+
+    # ------ Navigation helpers ------
+
     def _patrol_navigate_and_wait(self, pose: dict, retry_limit: int) -> bool:
         """Navigate to a pose and block until result, with retries."""
         x, y, theta = pose.get("x", 0), pose.get("y", 0), pose.get("theta", 0)
@@ -825,8 +858,9 @@ class RoomPatrolMixin:
                     return False
 
             # 手动暂停时等待恢复后再下发导航
-            while getattr(self, '_paused_manually', False) and self._room_patrol_active:
-                time.sleep(0.5)
+            while not getattr(self, '_pause_event', threading.Event()).wait(timeout=0.5):
+                if not self._room_patrol_active:
+                    break
 
             if not self._room_patrol_active:
                 return False
@@ -983,14 +1017,12 @@ class RoomPatrolMixin:
                 raw_kwargs = action.get("meta_kwargs", {})
                 resolved_kwargs = self._resolve_params(raw_kwargs, params)
                 poll = action.get("meta_poll")
-                # 支持在配置中指定连接超时（秒），默认 30 秒
-                connect_timeout = float(action.get("connect_timeout", 30.0))
 
-                # fall_detection 使用持久连接，其他服务使用 _meta_call
+                # fall_detection 使用持久连接，其他服务使用 _call_service
                 if meta_service == "detection":
                     result = self._detection_call(meta_method, **resolved_kwargs)
                 else:
-                    result = self._meta_call(meta_service, meta_method, **resolved_kwargs)
+                    result = self._call_service(meta_service, meta_method, **resolved_kwargs)
                 ok = result.get("success", True) if isinstance(result, dict) else True
                 if not ok:
                     return False, result
@@ -1003,9 +1035,7 @@ class RoomPatrolMixin:
                     interval    = float(poll.get("interval", 0.5))
                     timeout     = float(poll.get("timeout", 120))
                     deadline    = time.time() + timeout
-                    poll_kwargs = poll.get("kwargs", {})  # 轮询方法可能需要的参数
-                    # 轮询也使用相同的超时配置
-                    poll_connect_timeout = float(poll.get("connect_timeout", connect_timeout))
+                    poll_kwargs = poll.get("kwargs", {})
 
                     while time.time() < deadline:
                         # 检查巡逻是否被停止
@@ -1026,7 +1056,7 @@ class RoomPatrolMixin:
                         if meta_service == "detection":
                             status = self._detection_call(poll_method, **poll_kwargs)
                         else:
-                            status = self._meta_call(meta_service, poll_method, **poll_kwargs)
+                            status = self._call_service(meta_service, poll_method, **poll_kwargs)
                         if not isinstance(status, dict):
                             continue
                         if status.get(done_key) == done_value:

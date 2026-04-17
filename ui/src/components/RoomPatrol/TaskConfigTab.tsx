@@ -638,11 +638,13 @@ export const TaskConfigTab: React.FC = () => {
                   return (
                     <SortableStepItem key={stepIds[idx]} id={stepIds[idx]} borderColor={stepColors[step.type] || '#999'}>
                       <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
+                      <Switch size="small" checked={step.enabled !== false} onChange={(v) => updateStep(idx, { enabled: v })} />
                       <Select
                         size="small"
                         value={step.type}
                         onChange={(v) => updateStep(idx, { type: v as any })}
-                        style={{ width: 140 }}
+                        style={{ width: 140, opacity: step.enabled === false ? 0.45 : 1 }}
+                        disabled={step.enabled === false}
                         options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
                       />
                       {step.type === 'navigate' && (

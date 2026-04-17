@@ -228,6 +228,7 @@ export interface RoomTaskStep {
   label?: string;
   duration?: number;
   params?: Record<string, any>;  // 自定义步骤参数
+  enabled?: boolean;  // 步骤使能开关，默认 true
 }
 
 // 自定义步骤参数定义
