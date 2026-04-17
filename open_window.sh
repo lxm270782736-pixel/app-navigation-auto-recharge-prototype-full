@@ -1,7 +1,16 @@
 #!/bin/bash
-"$(dirname "$0")/scripts/kill_all.sh"  
+SCRIPT_DIR="$(dirname "$0")"
+"$SCRIPT_DIR/scripts/kill_all.sh"
 terminator &
+TERM_PID=$!
 sleep 2
+
+# terminator 退出时自动清理所有子进程
+(
+    while kill -0 $TERM_PID 2>/dev/null; do sleep 1; done
+    "$SCRIPT_DIR/scripts/kill_all.sh"
+) &
+disown
 
 ################################
 # Terminal 1 (左上)
