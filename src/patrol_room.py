@@ -57,7 +57,7 @@ class RoomPatrolMixin:
 
     def _fall_monitor_loop(self):
         """Background loop: poll meta.detection.get_fall_status() continuously."""
-        poll_interval = 2.0
+        poll_interval = 0.5
         logger.info("[fall] Monitor loop started, polling every %ss", poll_interval)
 
         stop_event = getattr(self, '_fall_stop_event', None)
