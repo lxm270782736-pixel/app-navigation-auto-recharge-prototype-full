@@ -5,9 +5,14 @@ terminator &
 TERM_PID=$!
 sleep 2
 
-# terminator 退出时自动清理所有子进程
+# terminator 退出时自动清理所有子进程（延迟3秒，避免与重启时的 kill_all 竞争）
 (
     while kill -0 $TERM_PID 2>/dev/null; do sleep 1; done
+    sleep 3
+    # 如果已有新 terminator 启动，说明是重启，不需要清理
+    if pgrep -f "terminator" > /dev/null 2>&1; then
+        exit 0
+    fi
     "$SCRIPT_DIR/scripts/kill_all.sh"
 ) &
 disown

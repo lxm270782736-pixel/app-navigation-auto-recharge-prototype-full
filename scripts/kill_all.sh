@@ -63,7 +63,32 @@ for pattern in "${PATTERNS[@]}"; do
     kill_by_pattern "$pattern"
 done
 
-# 关闭 terminator 窗口
-pkill -f "terminator" 2>/dev/null
+# 关闭 terminator 窗口（排除当前脚本所在的终端进程树）
+# 找到当前脚本的终端祖先 PID
+CURRENT_TERM_PID=""
+pid=$$
+while [ -n "$pid" ] && [ "$pid" != "1" ]; do
+    cmd=$(ps -o comm= -p "$pid" 2>/dev/null)
+    if [[ "$cmd" == *"terminator"* ]] || [[ "$cmd" == *"x-terminal"* ]] || [[ "$cmd" == *"gnome-terminal"* ]]; then
+        CURRENT_TERM_PID="$pid"
+        break
+    fi
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+done
+
+kill_terms() {
+    local signal="$1"
+    for pattern in "terminator" "x-terminal-emulator" "gnome-terminal-server"; do
+        for tpid in $(pgrep -f "$pattern"); do
+            if [ "$tpid" != "$CURRENT_TERM_PID" ]; then
+                kill "$signal" "$tpid" 2>/dev/null
+            fi
+        done
+    done
+}
+
+kill_terms -TERM
+sleep 1
+kill_terms -KILL
 
 echo "[kill_all] 清理完成"
