@@ -567,8 +567,14 @@ class RoomPatrolMixin:
         # Reset per-patrol state
         self._last_photo = None
         self._stuck_event = None
+        self._fall_event = None
+        self._alert_interrupted = False
         self._replay_paused_by = None
         self._paused_replay_id = ""
+        with self._patrol_state_lock:
+            self._pause_reason = None
+            self._paused_step_type = ''
+        self._pause_event.set()  # 确保不处于手动暂停状态
 
         # Fall detection — 由任务配置控制，默认开启
         fall_detection_enabled = config.get("fall_detection_enabled", True)
@@ -1016,6 +1022,10 @@ class RoomPatrolMixin:
         self._fall_event = None
         self._stuck_event = None
         self._replay_paused_by = None
+        self._alert_interrupted = False
+        with self._patrol_state_lock:
+            self._pause_reason = None
+            self._paused_step_type = ''
 
         # Save record to disk
         storage = self._get_storage()
