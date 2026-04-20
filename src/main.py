@@ -8,6 +8,7 @@ Serves the built frontend SPA from ui/dist/ when available.
 import json
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -26,11 +27,15 @@ from sse_starlette.sse import EventSourceResponse
 
 from .logic import BusinessLogic
 
-app = FastAPI(title="Navigation App")
+# Support reverse-proxy path prefix for Stardust Desktop embedding.
+# Set APP_ROOT_PATH="/apps/navigation" when running behind a gateway.
+root_path = os.environ.get("APP_ROOT_PATH", "")
+app = FastAPI(title="Navigation App", root_path=root_path)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

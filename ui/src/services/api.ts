@@ -34,10 +34,10 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — injected from .env via vite.config.ts define
-const API_BASE = window.location.port === String(__BACKEND_PORT__)
-  ? ''  // same origin, no prefix needed
-  : `http://${window.location.hostname}:${__BACKEND_PORT__}`;
+import { getBaseUrl } from '@/config';
+
+// Backend base URL — supports both standalone and Stardust Desktop embedded modes.
+const API_BASE = getBaseUrl();
 
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();

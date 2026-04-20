@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:lib": "vite build --config vite.config.lib.ts",
     "dev": "vite build --watch",
     "preview": "vite preview"
   },

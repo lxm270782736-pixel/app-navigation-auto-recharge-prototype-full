@@ -1,6 +1,6 @@
 id: "com.astribot.app.navigation"
 name: "Navigation"
-version: "1.0.0"
+version: "1.1.0"
 description: "机器人SLAM建图和自主导航应用"
 
 dependencies:
@@ -18,3 +18,17 @@ requiredMetas:
 
 # Meta 服务通过 UDS 自动发现（/dev/shm/astribot_bus/）
 # 无需配置 remote_routes
+
+# --- Stardust Desktop Integration ---
+port: 17659
+uiType: "iframe"
+
+modes:
+  standalone:
+    description: "独立访问模式，直接通过 http://host:port 访问"
+    entry: "main.py"
+  embedded:
+    description: "星尘桌面嵌入模式，通过反向代理 + iframe 加载"
+    entry: "main.py"
+    rootPath: "/apps/navigation"
+    buildCommand: "cd ui && npm run build:lib"
