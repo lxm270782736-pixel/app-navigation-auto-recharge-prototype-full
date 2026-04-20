@@ -53,7 +53,8 @@ class BusinessLogic(
         then restores any in-progress patrol from disk.
         """
         self._lock = threading.Lock()
-        self._patrol_state_lock = threading.Lock()  # protects _fall_event, _stuck_event, _alert_interrupted
+        self._patrol_state_lock = threading.Lock()  # protects _fall_event, _stuck_event, _alert_interrupted, _pause_reason
+        self._pause_reason: str | None = None  # None | "manual" | "fall" | "stuck"
         self._pause_event = threading.Event()  # replaces _paused_manually bool
         self._pause_event.set()  # initially not paused (set = unblocked)
 
@@ -196,6 +197,8 @@ class BusinessLogic(
     def acknowledge_fall(self):
         """护工弹窗确认跌倒事件 — 恢复任务，告警标记为处理中（护工需在历史记录里手动处置）"""
         event = self._fall_event
+        # 先恢复导航 + replay，再清事件 —— 否则 patrol 线程会抢跑
+        self._exit_pause()
         self._fall_event = None
         # 通知 meta.detection 服务（使用持久连接）
         try:
@@ -216,6 +219,8 @@ class BusinessLogic(
     def acknowledge_stuck(self):
         """护工弹窗确认机器人卡住事件 — 恢复任务，告警标记为处理中"""
         event = self._stuck_event
+        # 先恢复导航 + replay，再清事件 —— 否则 patrol 线程会抢跑
+        self._exit_pause()
         self._stuck_event = None
         if event:
             alert_id = event.get("alert_id")

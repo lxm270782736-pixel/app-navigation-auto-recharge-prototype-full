@@ -74,6 +74,10 @@ class RoomPatrolMixin:
             if getattr(self, '_paused_manually', False):
                 continue
 
+            # 已有未处理的跌倒事件，等待护工 ack，不重复轮询
+            if self._fall_event:
+                continue
+
             try:
                 # Call meta.fall_detection.get_fall_status()
                 status = self._detection_call("get_fall_status")
@@ -126,7 +130,7 @@ class RoomPatrolMixin:
             # 标记当前步骤被告警中断（即使 _fall_event 被快速 ack 清除，步骤也能感知到）
             self._alert_interrupted = True
         # 立即取消导航 + 暂停 replay（if playing）
-        self._suspend_motion("fall")
+        self._enter_pause("fall")
 
     def _pause_replay_if_playing(self, reason: str) -> bool:
         """暂停 replay（如果正在播放），返回是否实际暂停了。"""
@@ -154,6 +158,75 @@ class RoomPatrolMixin:
             pass
         self._replay_paused_by = None
         self._paused_replay_id = ""
+
+    def _step_meta_service(self, step_type: str) -> str | None:
+        """判断某步骤在运行时对应的 meta 服务（用于 pause/resume 调度）。
+
+        navigate → meta.astribot_navigation
+        custom:xxx → 看自定义定义的 meta_service
+        其他（detect_bed、photo、wait 等同步步骤）→ None
+        """
+        if step_type == "navigate":
+            return "meta.astribot_navigation"
+        if step_type.startswith("custom:"):
+            custom_id = step_type.split(":", 1)[1]
+            defn = self.get_custom_step_definition(custom_id)
+            if defn:
+                action = defn.get("action", {})
+                if action.get("type") == "meta":
+                    return action.get("meta_service") or None
+        return None
+
+    def _enter_pause(self, reason: str):
+        """统一暂停入口：按当前 step 类型调度对应 meta 服务的 pause。"""
+        with self._patrol_state_lock:
+            if self._pause_reason is not None:
+                logger.info("[pause] Already paused (reason=%s), ignoring new reason=%s",
+                            self._pause_reason, reason)
+                return
+            self._pause_reason = reason
+            step_type = getattr(self, '_room_patrol_current_step', '') or ''
+            self._paused_step_type = step_type
+
+        service = self._step_meta_service(step_type)
+        logger.info("[pause] Entered pause (reason=%s, step=%s, service=%s)", reason, step_type, service)
+
+        if service == "meta.astribot_navigation":
+            try:
+                result = self._call_service("meta.astribot_navigation", "pause_navigation")
+                if not (isinstance(result, dict) and result.get("success")):
+                    self.cancel_navigation()
+            except Exception:
+                try:
+                    self.cancel_navigation()
+                except Exception:
+                    pass
+            if hasattr(self, '_nav_done_event'):
+                self._nav_done_event.set()
+        elif service == "meta.sales_replay":
+            if self._pause_replay_if_playing(reason):
+                self._replay_paused_by = reason
+
+    def _exit_pause(self):
+        """统一恢复入口：按暂停时记录的 step 类型恢复对应服务。"""
+        with self._patrol_state_lock:
+            reason = self._pause_reason
+            step_type = getattr(self, '_paused_step_type', '') or ''
+            self._pause_reason = None
+            self._paused_step_type = ''
+        if not reason:
+            return
+
+        service = self._step_meta_service(step_type)
+        logger.info("[pause] Exiting pause (reason=%s, step=%s, service=%s)", reason, step_type, service)
+
+        if service == "meta.astribot_navigation":
+            try:
+                self._call_service("meta.astribot_navigation", "resume_navigation")
+            except Exception:
+                pass
+        elif service == "meta.sales_replay":
+            self._resume_replay_if_paused_by(reason)
 
     def _suspend_motion(self, reason: str):
         """暂停导航（记住目标点）+ 暂停 replay（if playing）。"""
@@ -200,7 +273,7 @@ class RoomPatrolMixin:
             time.sleep(1)
 
         logger.info("[fall] Task resumed")
-        self._resume_replay_if_paused_by("fall")
+        # 恢复由 acknowledge_fall 调用 _exit_pause 完成
         with self._lock:
             if self._room_patrol_active:
                 self._room_patrol_status = "running"
@@ -232,6 +305,8 @@ class RoomPatrolMixin:
         if self._stuck_event is stuck:
             self._stuck_event["alert_id"] = alert["id"]
             self._stuck_event["alert_date"] = alert["created_at"][:10]
+        # 暂停运动，等待护工确认
+        self._enter_pause("stuck")
 
     def _handle_stuck_blocking(self) -> bool:
         """Block patrol until nurse acknowledges stuck robot.
@@ -242,11 +317,10 @@ class RoomPatrolMixin:
         logger.info("[stuck] Task paused, waiting for nurse confirmation...")
         with self._lock:
             self._room_patrol_status = "paused_stuck"
-        self._suspend_motion("stuck")
         while self._stuck_event and self._room_patrol_active:
             time.sleep(1)
         logger.info("[stuck] Task resumed")
-        self._restore_motion("stuck")
+        # 暂停/恢复由 _on_stuck_event / acknowledge_stuck 完成
         with self._lock:
             if self._room_patrol_active:
                 self._room_patrol_status = "running"
@@ -551,7 +625,7 @@ class RoomPatrolMixin:
         # 取消导航 + 暂停 replay，标记步骤中断（恢复后重试）
         with self._patrol_state_lock:
             self._alert_interrupted = True
-        self._suspend_motion("manual")
+        self._enter_pause("manual")
         logger.info("[room_patrol] Paused by user")
         return {"success": True, "message": "Room patrol paused"}
 
@@ -563,11 +637,12 @@ class RoomPatrolMixin:
             if not getattr(self, '_paused_manually', False):
                 return {"success": False, "message": "Patrol is not manually paused"}
             self._room_patrol_status = "running"
+
+        # 先恢复 nav + replay，再解除 pause_event —— 否则 patrol 线程会抢跑
+        self._exit_pause()
+        with self._lock:
             self._paused_manually = False
         self._pause_event.set()  # unblock waiting threads
-
-        # 恢复 replay（只有手动暂停的才恢复）
-        self._restore_motion("manual")
         logger.info("[room_patrol] Resumed by user")
         return {"success": True, "message": "Room patrol resumed"}
 
@@ -1041,15 +1116,13 @@ class RoomPatrolMixin:
                         # 检查巡逻是否被停止
                         if not getattr(self, '_room_patrol_active', False):
                             return False, {"error": "patrol stopped"}
-                        # 有告警事件时暂停轮询，等待护工确认后继续
-                        if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
-                            # 等待告警被确认（_fall_event/_stuck_event 被清除）
-                            while (getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None)) and getattr(self, '_room_patrol_active', False):
+                        # 暂停期间（手动/跌倒/卡住）暂停轮询，等待恢复
+                        if getattr(self, '_pause_reason', None) is not None:
+                            while getattr(self, '_pause_reason', None) is not None and getattr(self, '_room_patrol_active', False):
                                 time.sleep(0.5)
                             if not getattr(self, '_room_patrol_active', False):
                                 return False, {"error": "patrol stopped"}
-                            # 告警已确认，继续轮询（不重试步骤）
-                            logger.info("[meta_poll] Alert acknowledged, resuming poll for %s.%s", meta_service, poll_method)
+                            logger.info("[meta_poll] Pause cleared, resuming poll for %s.%s", meta_service, poll_method)
                             deadline = time.time() + timeout  # 重置超时
                         time.sleep(interval)
                         # fall_detection 使用持久连接
@@ -1058,6 +1131,9 @@ class RoomPatrolMixin:
                         else:
                             status = self._call_service(meta_service, poll_method, **poll_kwargs)
                         if not isinstance(status, dict):
+                            continue
+                        # 暂停态下 is_playing=False 不代表完成，跳过判断
+                        if status.get("is_paused"):
                             continue
                         if status.get(done_key) == done_value:
                             final = status.get(result_key)
