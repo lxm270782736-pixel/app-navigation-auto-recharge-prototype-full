@@ -143,6 +143,16 @@ class MetaBridgeMixin:
             actual = self._probe_service_state(entry.proxy, name)
             entry.state = actual
 
+            # Probe 超时等失败 → 丢弃 proxy，让下次重连（避免持续 probe 僵尸连接）
+            if actual == META_DISCONNECTED:
+                try:
+                    if hasattr(entry.proxy, 'close'):
+                        entry.proxy.close()
+                except Exception:
+                    pass
+                entry.proxy = None
+                return None
+
             # Configure if unconfigured
             if entry.state == META_UNCONFIGURED:
                 try:

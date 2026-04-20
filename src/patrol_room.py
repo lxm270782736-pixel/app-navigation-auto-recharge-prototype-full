@@ -58,13 +58,15 @@ class RoomPatrolMixin:
     def _fall_monitor_loop(self):
         """Background loop: poll meta.detection.get_fall_status() continuously."""
         poll_interval = 0.5
+        max_backoff = 10.0  # detection 持续失败时最大退避到 10s
+        current_interval = poll_interval
         logger.info("[fall] Monitor loop started, polling every %ss", poll_interval)
 
         stop_event = getattr(self, '_fall_stop_event', None)
 
         while getattr(self, '_room_patrol_active', False):
             # 用 Event.wait 替代 sleep，stop 时可立即唤醒
-            if stop_event and stop_event.wait(timeout=poll_interval):
+            if stop_event and stop_event.wait(timeout=current_interval):
                 break
 
             if not getattr(self, '_fall_monitor_enabled', False):
@@ -82,9 +84,13 @@ class RoomPatrolMixin:
                 # Call meta.fall_detection.get_fall_status()
                 status = self._detection_call("get_fall_status")
 
-                # 如果服务未激活或调用失败，跳过本次轮询
+                # 如果服务未激活或调用失败，退避等待再试，避免占满底层连接
                 if not isinstance(status, dict) or status.get("success") is False:
+                    current_interval = min(current_interval * 2, max_backoff)
                     continue
+
+                # 成功后恢复正常轮询间隔
+                current_interval = poll_interval
 
                 logger.info("[fall] poll: is_fall=%s has_photo=%s", status.get("is_fall"), bool(status.get("photo")))
 
@@ -608,11 +614,20 @@ class RoomPatrolMixin:
         self._fall_event = None
         self._stuck_event = None
 
-        # Cancel any pending navigation
+        # Cancel any pending navigation + stop replay
         if was_active:
             self.cancel_navigation()
             if hasattr(self, '_nav_done_event'):
                 self._nav_done_event.set()
+            try:
+                self._call_service("meta.sales_replay", "stop_replay")
+            except Exception:
+                pass
+            # 解除 pause 状态，让等待中的线程退出
+            with self._patrol_state_lock:
+                self._pause_reason = None
+                self._paused_step_type = ''
+            self._pause_event.set()
             print("[room_patrol] Stopped by user")
 
         return {"success": True, "message": "Room patrol stopped"}
@@ -955,7 +970,13 @@ class RoomPatrolMixin:
             self._nav_done_event.clear()
             self._nav_done_success = False
             self._nav_done_seq = nav_seq  # 期望的序列号
-            self.navigate_to(x, y, theta)
+            dispatch = self.navigate_to(x, y, theta)
+
+            # dispatch 失败（如 nav service 未 active）立即失败，避免等满 120s 超时
+            if isinstance(dispatch, dict) and not dispatch.get("success"):
+                logger.warning("[nav] navigate_to dispatch failed: %s", dispatch.get("message"))
+                time.sleep(1)
+                continue
 
             # Wait up to 120s for navigation to complete
             self._nav_done_event.wait(timeout=120)
