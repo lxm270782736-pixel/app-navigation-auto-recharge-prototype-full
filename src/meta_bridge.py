@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ._utils import log_throttled
+
 logger = logging.getLogger(__name__)
 
 # Meta lifecycle states (align with meta_base standard)
@@ -198,7 +200,8 @@ class MetaBridgeMixin:
             return {"success": False, "message": f"{name} unavailable"}
 
         try:
-            logger.info("[meta_call] Calling %s.%s()", name, method_name)
+            log_throttled(logger, f"meta_call.{name}.{method_name}", 5.0, "info",
+                          "[meta_call] Calling %s.%s()", name, method_name)
             result = getattr(entry.proxy, method_name)(*args, **kwargs)
             if result is None:
                 return {"success": False, "message": f"{method_name} returned None"}

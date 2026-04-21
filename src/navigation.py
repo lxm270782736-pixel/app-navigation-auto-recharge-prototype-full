@@ -4,6 +4,8 @@ import threading
 import time
 from datetime import datetime
 
+from ._utils import log_throttled
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,8 +67,9 @@ class NavigationMixin:
 
                     state = status.get("state", "idle")
                     returned_goal_id = status.get("goal_id", "")
-                    logger.info("[nav] poller gen=%d poll: state=%s returned_goal_id=%r expected=%r",
-                                generation, state, returned_goal_id, goal_id)
+                    log_throttled(logger, f"nav.poll.gen{generation}", 5.0, "info",
+                                  "[nav] poller gen=%d poll: state=%s returned_goal_id=%r expected=%r",
+                                  generation, state, returned_goal_id, goal_id)
 
                     with self._lock:
                         if getattr(self, '_nav_generation', 0) != generation:
@@ -76,8 +79,9 @@ class NavigationMixin:
 
                     # goal_id 不匹配 → 旧任务残留，跳过
                     if goal_id and returned_goal_id and returned_goal_id != goal_id:
-                        logger.info("[nav] poller gen=%d DISCARD stale goal_id (got=%r expected=%r) state=%s",
-                                    generation, returned_goal_id, goal_id, state)
+                        log_throttled(logger, f"nav.discard.gen{generation}", 5.0, "info",
+                                      "[nav] poller gen=%d DISCARD stale goal_id (got=%r expected=%r) state=%s",
+                                      generation, returned_goal_id, goal_id, state)
                         continue
 
                     if state in ("reached", "failed"):

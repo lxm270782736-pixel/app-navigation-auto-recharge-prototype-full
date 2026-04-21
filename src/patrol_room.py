@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from .storage import JsonDayStorage
+from ._utils import log_throttled
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,9 @@ class RoomPatrolMixin:
                 # 成功后恢复正常轮询间隔
                 current_interval = poll_interval
 
-                logger.info("[fall] poll: is_fall=%s has_photo=%s", status.get("is_fall"), bool(status.get("photo")))
+                log_throttled(logger, "fall.poll", 5.0, "info",
+                              "[fall] poll: is_fall=%s has_photo=%s",
+                              status.get("is_fall"), bool(status.get("photo")))
 
                 # New fall detected
                 if status.get("is_fall") and not self._fall_event:
