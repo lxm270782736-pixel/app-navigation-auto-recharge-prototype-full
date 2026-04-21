@@ -547,6 +547,10 @@ class RoomPatrolMixin:
         patrol_id = f"patrol_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
         retry_limit = config.get("retry_limit", 3)
         task_name = config.get("name", "")
+        advance_mode = config.get("advance_mode", "auto")
+
+        self._step_advance_mode = advance_mode
+        self._step_advance_event.set()
 
         with self._lock:
             self._room_patrol_active = True
@@ -631,6 +635,7 @@ class RoomPatrolMixin:
                 self._pause_reason = None
                 self._paused_step_type = ''
             self._pause_event.set()
+            self._step_advance_event.set()
             print("[room_patrol] Stopped by user")
 
         return {"success": True, "message": "Room patrol stopped"}
@@ -695,6 +700,11 @@ class RoomPatrolMixin:
             }
             # Add fall detection status
             status["fall_event"] = getattr(self, '_fall_event', None)
+            status["advance_mode"] = getattr(self, '_step_advance_mode', 'auto')
+            status["awaiting_advance"] = (
+                getattr(self, '_step_advance_mode', 'auto') == "manual"
+                and self._room_patrol_status == "paused_manual_advance"
+            )
             return status
 
     # ------ Patrol execution (background thread) ------
@@ -826,6 +836,19 @@ class RoomPatrolMixin:
                 room_result["steps"].append(step_result)
                 print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
                 step_idx += 1
+
+                # 手动推进模式：步骤成功后等待用户点击「下一步」
+                if (success and self._step_advance_mode == "manual"
+                        and self._room_patrol_active and step_idx < len(steps)):
+                    with self._lock:
+                        self._room_patrol_status = "paused_manual_advance"
+                    self._step_advance_event.clear()
+                    while self._room_patrol_active:
+                        if self._step_advance_event.wait(timeout=0.5):
+                            break
+                    with self._lock:
+                        if self._room_patrol_active:
+                            self._room_patrol_status = "running"
 
                 # Navigate/door failure → skip room (exit nav → stuck alert + wait)
                 if not success and step_type in ("navigate", "open_door"):
@@ -1053,6 +1076,8 @@ class RoomPatrolMixin:
         with self._patrol_state_lock:
             self._pause_reason = None
             self._paused_step_type = ''
+        self._step_advance_mode = "auto"
+        self._step_advance_event.set()
 
         # Save record to disk
         storage = self._get_storage()

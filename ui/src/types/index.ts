@@ -361,4 +361,6 @@ export interface RoomPatrolState {
     room_id: string;
   } | null;
   new_alerts?: Alert[];
+  advance_mode?: 'auto' | 'manual';
+  awaiting_advance?: boolean;
 }

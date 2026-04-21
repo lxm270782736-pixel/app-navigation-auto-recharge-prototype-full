@@ -369,6 +369,10 @@ class ApiService {
     return this._post('/api/room-patrol/resume', {});
   }
 
+  async advanceRoomPatrolStep(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/advance', {});
+  }
+
   async getRoomPatrolStatus(): Promise<any> {
     return this._get('/api/room-patrol/status');
   }

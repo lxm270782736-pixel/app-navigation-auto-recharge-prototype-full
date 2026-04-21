@@ -57,6 +57,10 @@ class BusinessLogic(
         self._pause_reason: str | None = None  # None | "manual" | "fall" | "stuck"
         self._pause_event = threading.Event()  # replaces _paused_manually bool
         self._pause_event.set()  # initially not paused (set = unblocked)
+        # Step advance mode: "auto" or "manual"
+        self._step_advance_mode: str = "auto"
+        self._step_advance_event = threading.Event()
+        self._step_advance_event.set()
 
         # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
         self._storage = JsonDayStorage()
@@ -189,6 +193,11 @@ class BusinessLogic(
                     "fall_event": getattr(self, '_fall_event', None),
                     "stuck_event": getattr(self, '_stuck_event', None),
                     "new_alerts": new_alerts,
+                    "advance_mode": self._step_advance_mode,
+                    "awaiting_advance": (
+                        self._step_advance_mode == "manual"
+                        and self._room_patrol_status == "paused_manual_advance"
+                    ),
                 },
             }
 
@@ -231,3 +240,12 @@ class BusinessLogic(
                 except Exception:
                     pass
         return {"success": True, "message": "机器人卡住事件已确认"}
+
+    def advance_room_patrol_step(self) -> dict:
+        """手动模式下推进到下一步。"""
+        if not self._room_patrol_active:
+            return {"success": False, "message": "No active patrol"}
+        if self._step_advance_mode != "manual":
+            return {"success": False, "message": "Not in manual mode"}
+        self._step_advance_event.set()
+        return {"success": True, "message": "Step advanced"}

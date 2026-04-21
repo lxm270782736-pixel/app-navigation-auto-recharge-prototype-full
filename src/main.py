@@ -328,6 +328,11 @@ def resume_room_patrol():
     return logic.resume_room_patrol()
 
 
+@app.post("/api/room-patrol/advance")
+def advance_room_patrol_step():
+    return logic.advance_room_patrol_step()
+
+
 @app.get("/api/room-patrol/status")
 def get_room_patrol_status():
     return logic.get_room_patrol_status()

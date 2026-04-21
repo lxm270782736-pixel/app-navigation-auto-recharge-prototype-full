@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal, notification } from 'antd';
+import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal, notification, Segmented } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -10,6 +10,7 @@ import {
   WarningFilled,
   PauseCircleOutlined,
   PictureOutlined,
+  StepForwardOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
@@ -50,6 +51,8 @@ export const TaskDispatchTab: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [fallAcking, setFallAcking] = useState(false);
   const [stuckAcking, setStuckAcking] = useState(false);
+  const [advanceMode, setAdvanceMode] = useState<'auto' | 'manual'>('auto');
+  const [advancing, setAdvancing] = useState(false);
 
   const fallEvent = patrolState?.fall_event ?? null;
   const stuckEvent = patrolState?.stuck_event ?? null;
@@ -239,8 +242,10 @@ export const TaskDispatchTab: React.FC = () => {
 
   const handleStart = async () => {
     const preset = presets.find(p => p.id === selectedPresetId);
-    const taskConfig = preset ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit, fall_detection_enabled: preset.fall_detection_enabled } : undefined;
-    const result = await apiService.startRoomPatrol(taskConfig);
+    const taskConfig = preset
+      ? { name: preset.name, rooms: preset.rooms, retry_limit: preset.retry_limit, fall_detection_enabled: preset.fall_detection_enabled, advance_mode: advanceMode }
+      : { advance_mode: advanceMode };
+    const result = await apiService.startRoomPatrol(taskConfig as any);
     if (result.success) {
       message.success(result.message);
     } else {
@@ -272,6 +277,16 @@ export const TaskDispatchTab: React.FC = () => {
       message.success('巡房已恢复');
     } else {
       message.error(result.message);
+    }
+  };
+
+  const handleAdvance = async () => {
+    setAdvancing(true);
+    try {
+      const result = await apiService.advanceRoomPatrolStep();
+      if (!result.success) message.error(result.message);
+    } finally {
+      setAdvancing(false);
     }
   };
 
@@ -448,21 +463,49 @@ export const TaskDispatchTab: React.FC = () => {
               />
             </div>
           )}
+          {!isActive && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>步骤推进</div>
+              <Segmented
+                size="small"
+                block
+                value={advanceMode}
+                onChange={(v) => setAdvanceMode(v as 'auto' | 'manual')}
+                options={[
+                  { label: '自动', value: 'auto' },
+                  { label: '手动', value: 'manual' },
+                ]}
+              />
+            </div>
+          )}
           {isActive ? (
-            <Space.Compact block>
-              {patrolState?.status === 'paused_manual' ? (
-                <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleResume} style={{ flex: 1 }}>
-                  继续巡房
-                </Button>
-              ) : (
-                <Button icon={<PauseCircleOutlined />} onClick={handlePause} style={{ flex: 1 }}>
-                  暂停巡房
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              {patrolState?.awaiting_advance && (
+                <Button
+                  type="primary"
+                  block
+                  icon={<StepForwardOutlined />}
+                  onClick={handleAdvance}
+                  loading={advancing}
+                >
+                  下一步
                 </Button>
               )}
-              <Button type="primary" danger icon={<StopOutlined />} onClick={handleStop} style={{ flex: 1 }}>
-                停止巡房
-              </Button>
-            </Space.Compact>
+              <Space.Compact block>
+                {patrolState?.status === 'paused_manual' ? (
+                  <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleResume} style={{ flex: 1 }}>
+                    继续巡房
+                  </Button>
+                ) : (
+                  <Button icon={<PauseCircleOutlined />} onClick={handlePause} style={{ flex: 1 }}>
+                    暂停巡房
+                  </Button>
+                )}
+                <Button type="primary" danger icon={<StopOutlined />} onClick={handleStop} style={{ flex: 1 }}>
+                  停止巡房
+                </Button>
+              </Space.Compact>
+            </Space>
           ) : (
             <Button type="primary" block icon={<PlayCircleOutlined />} onClick={handleStart}
               disabled={connectionStatus !== ConnectionStatus.CONNECTED}>
