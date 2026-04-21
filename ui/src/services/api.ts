@@ -373,6 +373,10 @@ class ApiService {
     return this._post('/api/room-patrol/advance', {});
   }
 
+  async skipRoomPatrolStep(stepIndex: number): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/skip-step', { step_index: stepIndex });
+  }
+
   async getRoomPatrolStatus(): Promise<any> {
     return this._get('/api/room-patrol/status');
   }

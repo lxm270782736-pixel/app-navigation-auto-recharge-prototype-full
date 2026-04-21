@@ -588,6 +588,7 @@ class RoomPatrolMixin:
             self._pause_reason = None
             self._paused_step_type = ''
         self._pause_event.set()  # 确保不处于手动暂停状态
+        self._skip_step_requested = False
 
         # Fall detection — 由任务配置控制，默认开启
         fall_detection_enabled = config.get("fall_detection_enabled", True)
@@ -790,6 +791,7 @@ class RoomPatrolMixin:
                 success = False
                 detail = None
                 self._alert_interrupted = False  # 每步开始前重置
+                self._skip_step_requested = False  # 每步开始前重置
 
                 try:
                     handler = self._STEP_HANDLERS.get(step_type)
@@ -809,6 +811,15 @@ class RoomPatrolMixin:
                 step_result["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
                 if detail:
                     step_result["detail"] = detail
+
+                # 跳过当前步骤请求
+                if getattr(self, '_skip_step_requested', False):
+                    self._skip_step_requested = False
+                    step_result["status"] = "skipped"
+                    room_result["steps"].append(step_result)
+                    print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → SKIPPED (user)")
+                    step_idx += 1
+                    continue
 
                 logger.info("[room_patrol] step=%s success=%s alert_interrupted=%s fall_event=%s",
                             step_type, success, getattr(self, '_alert_interrupted', False), bool(getattr(self, '_fall_event', None)))
@@ -966,6 +977,8 @@ class RoomPatrolMixin:
         while time.time() < deadline:
             if not self._room_patrol_active:
                 break
+            if getattr(self, '_skip_step_requested', False):
+                break
             if getattr(self, '_fall_event', None) or getattr(self, '_stuck_event', None):
                 break
             time.sleep(0.2)
@@ -981,6 +994,8 @@ class RoomPatrolMixin:
             with self._lock:
                 if not self._room_patrol_active:
                     return False
+            if getattr(self, '_skip_step_requested', False):
+                return False
 
             # 手动暂停时等待恢复后再下发导航
             while not getattr(self, '_pause_event', threading.Event()).wait(timeout=0.5):
@@ -1178,6 +1193,9 @@ class RoomPatrolMixin:
                         # 检查巡逻是否被停止
                         if not getattr(self, '_room_patrol_active', False):
                             return False, {"error": "patrol stopped"}
+                        # 检查跳过请求
+                        if getattr(self, '_skip_step_requested', False):
+                            return False, {"error": "step skipped"}
                         # 暂停期间（手动/跌倒/卡住）暂停轮询，等待恢复
                         if getattr(self, '_pause_reason', None) is not None:
                             while getattr(self, '_pause_reason', None) is not None and getattr(self, '_room_patrol_active', False):

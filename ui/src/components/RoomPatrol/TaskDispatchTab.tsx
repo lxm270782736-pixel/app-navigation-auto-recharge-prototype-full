@@ -53,6 +53,7 @@ export const TaskDispatchTab: React.FC = () => {
   const [stuckAcking, setStuckAcking] = useState(false);
   const [advanceMode, setAdvanceMode] = useState<'auto' | 'manual'>('auto');
   const [advancing, setAdvancing] = useState(false);
+  const [skipping, setSkipping] = useState(false);
 
   const fallEvent = patrolState?.fall_event ?? null;
   const stuckEvent = patrolState?.stuck_event ?? null;
@@ -287,6 +288,17 @@ export const TaskDispatchTab: React.FC = () => {
       if (!result.success) message.error(result.message);
     } finally {
       setAdvancing(false);
+    }
+  };
+
+  const handleSkipStep = async () => {
+    const idx = patrolState?.current_step_index ?? -1;
+    setSkipping(true);
+    try {
+      const result = await apiService.skipRoomPatrolStep(idx);
+      if (!result.success) message.error(result.message);
+    } finally {
+      setSkipping(false);
     }
   };
 
@@ -634,9 +646,25 @@ export const TaskDispatchTab: React.FC = () => {
 
                           const label = stepLabels[step.type] || step.type;
                           const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';
+                          const isCurrentStep = isCurrent && si === currentStepIdx && status === 'process';
 
                           return {
-                            title: <span style={{ fontSize: 12 }}>{label}{suffix}</span>,
+                            title: (
+                              <span style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                {label}{suffix}
+                                {isCurrentStep && (
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
+                                    loading={skipping}
+                                    onClick={(e) => { e.stopPropagation(); handleSkipStep(); }}
+                                  >
+                                    跳过
+                                  </Button>
+                                )}
+                              </span>
+                            ),
                             status,
                           };
                         })}

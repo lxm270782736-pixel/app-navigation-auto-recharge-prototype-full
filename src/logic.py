@@ -61,6 +61,8 @@ class BusinessLogic(
         self._step_advance_mode: str = "auto"
         self._step_advance_event = threading.Event()
         self._step_advance_event.set()
+        # Skip current step signal
+        self._skip_step_requested = False
 
         # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
         self._storage = JsonDayStorage()
@@ -249,3 +251,33 @@ class BusinessLogic(
             return {"success": False, "message": "Not in manual mode"}
         self._step_advance_event.set()
         return {"success": True, "message": "Step advanced"}
+
+    def skip_room_patrol_step(self, step_index: int = -1) -> dict:
+        """跳过当前正在执行的步骤（自动/手动模式均可）。校验 step_index 防止跳错。"""
+        if not self._room_patrol_active:
+            return {"success": False, "message": "No active patrol"}
+        # 校验序号：如果前端传了序号，必须与当前执行的步骤一致
+        current_idx = getattr(self, '_room_patrol_current_step_index', -1)
+        if step_index >= 0 and step_index != current_idx:
+            return {"success": False, "message": f"Step index mismatch (requested={step_index}, current={current_idx})"}
+        self._skip_step_requested = True
+        current_step = getattr(self, '_room_patrol_current_step', '')
+        # 取消导航让 navigate 步骤立即返回
+        if current_step == "navigate":
+            try:
+                self.cancel_navigation()
+                if hasattr(self, '_nav_done_event'):
+                    self._nav_done_event.set()
+            except Exception:
+                pass
+        # 停止 replay 让 meta_poll 退出（仅当前步骤是 replay 类型时）
+        if current_step.startswith("custom:"):
+            defn = self.get_custom_step_definition(current_step.split(":", 1)[1])
+            if defn and defn.get("action", {}).get("meta_service") == "meta.sales_replay":
+                try:
+                    self._call_service("meta.sales_replay", "stop_replay")
+                except Exception:
+                    pass
+        # 如果在手动等待推进，也解除阻塞
+        self._step_advance_event.set()
+        return {"success": True, "message": "Skip requested"}

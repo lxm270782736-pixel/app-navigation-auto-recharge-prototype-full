@@ -333,6 +333,15 @@ def advance_room_patrol_step():
     return logic.advance_room_patrol_step()
 
 
+class SkipStepRequest(BaseModel):
+    step_index: int = -1
+
+
+@app.post("/api/room-patrol/skip-step")
+def skip_room_patrol_step(req: SkipStepRequest):
+    return logic.skip_room_patrol_step(req.step_index)
+
+
 @app.get("/api/room-patrol/status")
 def get_room_patrol_status():
     return logic.get_room_patrol_status()
