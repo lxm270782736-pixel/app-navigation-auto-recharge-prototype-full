@@ -1,5 +1,9 @@
 #!/bin/bash
 SCRIPT_DIR="$(dirname "$0")"
+TIMESTAMP=$(date +%Y_%m_%d_%H_%M_%S)
+LOG_BASE=/opt/astribot_ros/log
+mkdir -p $LOG_BASE/{astribot_navigation,astribot_chassis,astribot_detection,astribot_localization,astribot_sales_replay,app_navigation}
+
 "$SCRIPT_DIR/scripts/kill_all.sh"
 terminator &
 TERM_PID=$!
@@ -27,7 +31,7 @@ xdotool key Return
 xdotool type "source install/setup.bash"
 xdotool key Return
 
-xdotool type "python3 -m meta_base src.api:AstribotNavigation"
+xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:AstribotNavigation 2>&1 | tee $LOG_BASE/astribot_navigation/log_${TIMESTAMP}.log"
 xdotool key Return
 
 
@@ -61,7 +65,7 @@ xdotool key Return
 xdotool type "source /home/astribot/workspace/astribot_sdk_aarch64/env.sh"
 xdotool key Return
 
-xdotool type "python3 src/core/astribot_navigation/src/astribot_navigation/scripts/move_astribot_chassis_four_wheel_use_twist.py"
+xdotool type "PYTHONUNBUFFERED=1 python3 src/core/astribot_navigation/src/astribot_navigation/scripts/move_astribot_chassis_four_wheel_use_twist.py 2>&1 | tee $LOG_BASE/astribot_chassis/log_${TIMESTAMP}.log"
 xdotool key Return
 
 
@@ -84,7 +88,7 @@ xdotool key Return
 xdotool type "source /home/astribot/workspace/liyifan/miniconda3/bin/activate kangyang"
 xdotool key Return
 
-xdotool type "python3 -m meta_base src.api:Detection"
+xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:Detection 2>&1 | tee $LOG_BASE/astribot_detection/log_${TIMESTAMP}.log"
 xdotool key Return
 
 
@@ -107,7 +111,7 @@ xdotool key Return
 xdotool type "source install/setup.bash"
 xdotool key Return
 
-xdotool type "python3 -m meta_base src.api:Localization"
+xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:Localization 2>&1 | tee $LOG_BASE/astribot_localization/log_${TIMESTAMP}.log"
 xdotool key Return
 
 
@@ -127,7 +131,7 @@ sleep 1
 xdotool type "cd /home/astribot/workspace/app_navigation/"
 xdotool key Return
 
-xdotool type "python3 main.py"
+xdotool type "PYTHONUNBUFFERED=1 python3 main.py 2>&1 | tee $LOG_BASE/app_navigation/log_${TIMESTAMP}.log"
 xdotool key Return
 
 
@@ -151,5 +155,5 @@ xdotool type "cd /home/astribot/workspace/meta_sales_replay/"
 xdotool key Return
 xdotool type "source /home/astribot/workspace/astribot_sdk_aarch64/env.sh"
 xdotool key Return
-xdotool type "python3 -m meta_base src.api:SalesReplay"
+xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:SalesReplay 2>&1 | tee $LOG_BASE/astribot_sales_replay/log_${TIMESTAMP}.log"
 xdotool key Return
