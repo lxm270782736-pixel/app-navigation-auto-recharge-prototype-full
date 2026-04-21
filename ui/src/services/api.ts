@@ -114,6 +114,7 @@ class ApiService {
               success: state.nav_status === 'succeeded',
               resultData: result,
               errorMessage: result.result_text || result.message || '',
+              failReason: state.nav_fail_reason || null,
             });
           }
         }
@@ -129,6 +130,7 @@ class ApiService {
 
         // Dispatch room patrol state
         if (state.room_patrol) {
+          state.room_patrol.nav_fail_reason = state.nav_fail_reason || null;
           this._latestRoomPatrolState = state.room_patrol;
           this.emit('room-patrol-state', state.room_patrol);
         }

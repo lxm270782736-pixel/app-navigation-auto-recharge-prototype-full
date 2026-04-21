@@ -76,6 +76,7 @@ class BusinessLogic(
         # Processed state
         self._nav_status = "idle"
         self._nav_feedback: dict = {}
+        self._nav_fail_reason: str | None = None
         self._nav_result_timestamp: float = 0
         self._current_map_name = ""
 
@@ -165,6 +166,7 @@ class BusinessLogic(
                 "nav_state": self._nav_state,
                 "fall_state": self._detection_state,
                 "nav_status": self._nav_status,
+                "nav_fail_reason": getattr(self, '_nav_fail_reason', None),
                 "nav_feedback": self._nav_feedback.copy(),
                 "current_map_name": self._current_map_name,
                 "pose": pose,
@@ -208,6 +210,8 @@ class BusinessLogic(
     def acknowledge_fall(self):
         """护工弹窗确认跌倒事件 — 恢复任务，告警标记为处理中（护工需在历史记录里手动处置）"""
         event = self._fall_event
+        # 设置 ack 冷却时间，期间 fall_monitor 忽略残留的 is_fall=True
+        self._fall_ack_cooldown_until = time.time() + 5.0
         # 先恢复导航 + replay，再清事件 —— 否则 patrol 线程会抢跑
         self._exit_pause()
         self._fall_event = None

@@ -100,6 +100,7 @@ class NavigationMixin:
     def _on_nav_completed(self, success: bool, status: dict):
         """Handle navigation result — drive patrol/room-patrol logic."""
         with self._lock:
+            self._nav_fail_reason = status.get("fail_reason") if not success else None
             patrol_active = self._patrol_active
 
         if patrol_active:

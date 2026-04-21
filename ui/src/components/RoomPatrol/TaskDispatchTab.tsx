@@ -560,6 +560,12 @@ export const TaskDispatchTab: React.FC = () => {
                     <span>当前步骤</span>
                     <Tag color="blue"><LoadingOutlined /> {stepLabels[patrolState.current_step] || patrolState.current_step}</Tag>
                   </div>
+                  {patrolState.nav_fail_reason && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>导航失败</span>
+                      <Tag color="red">{patrolState.nav_fail_reason}</Tag>
+                    </div>
+                  )}
                 </>
               )}
 

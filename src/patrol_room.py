@@ -41,6 +41,7 @@ class RoomPatrolMixin:
         self._fall_event = None
         self._alert_interrupted = False
         self._fall_monitor_enabled = True
+        self._fall_ack_cooldown_until = 0.0  # ack 后冷却时间戳，期间忽略 fall=True
         self._fall_stop_event = threading.Event()
         self._fall_thread = threading.Thread(
             target=self._fall_monitor_loop,
@@ -99,6 +100,9 @@ class RoomPatrolMixin:
 
                 # New fall detected
                 if status.get("is_fall") and not self._fall_event:
+                    # ack 后冷却期内忽略 fall=True，避免 detection 残留状态触发风暴
+                    if time.time() < getattr(self, '_fall_ack_cooldown_until', 0):
+                        continue
                     # 巡逻已结束则不再触发告警
                     if not getattr(self, '_room_patrol_active', False):
                         break
@@ -1002,7 +1006,15 @@ class RoomPatrolMixin:
                 if not self._room_patrol_active:
                     break
 
+            # 跌倒/卡住等暂停期间不下发新 goal，等待 ack 后继续
+            while getattr(self, '_pause_reason', None) is not None and self._room_patrol_active:
+                if getattr(self, '_skip_step_requested', False):
+                    return False
+                time.sleep(0.5)
+
             if not self._room_patrol_active:
+                return False
+            if getattr(self, '_skip_step_requested', False):
                 return False
 
             # 用序列号区分不同导航请求，防止旧回调污染新导航
