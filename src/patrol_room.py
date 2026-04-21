@@ -870,7 +870,10 @@ class RoomPatrolMixin:
         else:
             pose = waypoints.get(target)
         if pose:
-            ok = self._patrol_navigate_and_wait(pose, retry_limit)
+            # 步骤级 retry_limit 优先；未设置时使用任务级 retry_limit
+            step_retry = step.get("retry_limit")
+            effective_retry = step_retry if isinstance(step_retry, int) and step_retry > 0 else retry_limit
+            ok = self._patrol_navigate_and_wait(pose, effective_retry)
             return ok, None
         print(f"[room_patrol] Unknown nav target: '{target}' (available: {list(waypoints.keys()) + ['start_position']})")
         return False, None

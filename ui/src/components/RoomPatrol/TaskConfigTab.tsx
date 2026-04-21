@@ -56,16 +56,16 @@ const NAV_TARGETS = [
 
 // Default inspection steps for a room
 const DEFAULT_STEPS: RoomTaskStep[] = [
-  { type: 'navigate', target: 'door_outside' },
+  { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'open_door' },
-  { type: 'navigate', target: 'door_inside' },
+  { type: 'navigate', target: 'door_inside', retry_limit: 30 },
   { type: 'detect_floor' },
   { type: 'photo', label: '通道' },
-  { type: 'navigate', target: 'bed_check' },
+  { type: 'navigate', target: 'bed_check', retry_limit: 30 },
   { type: 'detect_bed' },
   { type: 'photo', label: '床位' },
-  { type: 'navigate', target: 'door_inside' },
-  { type: 'navigate', target: 'door_outside' },
+  { type: 'navigate', target: 'door_inside', retry_limit: 30 },
+  { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'close_door' },
 ];
 
@@ -289,6 +289,12 @@ export const TaskConfigTab: React.FC = () => {
           merged.push({ room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS] });
         }
       }
+      // 为旧数据的 navigate 步骤补默认 retry_limit
+      for (const room of merged) {
+        room.steps = room.steps.map(s =>
+          s.type === 'navigate' && s.retry_limit === undefined ? { ...s, retry_limit: 30 } : s
+        );
+      }
       setEditingPreset({ ...preset, rooms: merged });
       setIsDirty(false);
       if (merged.length > 0) {
@@ -332,12 +338,14 @@ export const TaskConfigTab: React.FC = () => {
     // 类型切换时清理旧类型的专属字段
     if (patch.type && patch.type !== oldStep.type) {
       if (patch.type === 'navigate') {
-        // 切换到 navigate：设置默认 target，清理其他字段
+        // 切换到 navigate：设置默认 target + retry_limit，清理其他字段
         if (!patch.target) patch.target = 'door_outside';
+        if (oldStep.retry_limit === undefined) patch.retry_limit = 30;
         patch.params = undefined as any;
       } else {
-        // 切换离开 navigate：清理 target
+        // 切换离开 navigate：清理 target + retry_limit
         (patch as any).target = undefined;
+        (patch as any).retry_limit = undefined;
       }
       if (patch.type.startsWith('custom:')) {
         const customId = patch.type.split(':', 2)[1];
@@ -648,7 +656,20 @@ export const TaskConfigTab: React.FC = () => {
                         options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
                       />
                       {step.type === 'navigate' && (
-                        <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }} options={NAV_TARGETS} />
+                        <>
+                          <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }} options={NAV_TARGETS} />
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>重试:</span>
+                            <InputNumber
+                              size="small"
+                              min={1}
+                              max={100}
+                              value={step.retry_limit ?? 30}
+                              onChange={(v) => updateStep(idx, { retry_limit: v ?? 30 })}
+                              style={{ width: 70 }}
+                            />
+                          </span>
+                        </>
                       )}
                       {step.type === 'wait' && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
