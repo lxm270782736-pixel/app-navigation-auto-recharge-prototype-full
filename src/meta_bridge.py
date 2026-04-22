@@ -72,6 +72,7 @@ class MetaServiceEntry:
     state: str = META_DISCONNECTED       # current lifecycle state
     config: dict = field(default_factory=dict)  # passed to .configure()
     startup: bool = False                # included in one-click start_meta()
+    deactivate_after_step: bool = False  # 服务级默认：步骤完成后是否 deactivate
     _lock: Any = field(default_factory=threading.Lock, repr=False)
 
 
@@ -105,6 +106,7 @@ class MetaBridgeMixin:
                 name=name,
                 config=svc.get("config", {}),
                 startup=svc.get("startup", False),
+                deactivate_after_step=svc.get("deactivate_after_step", False),
             )
 
     # =================== Core: ensure active ===================
@@ -366,7 +368,12 @@ class MetaBridgeMixin:
         """返回当前服务配置（派生自内存 _services）。"""
         return {
             "services": [
-                {"name": entry.name, "startup": entry.startup, "config": dict(entry.config)}
+                {
+                    "name": entry.name,
+                    "startup": entry.startup,
+                    "deactivate_after_step": entry.deactivate_after_step,
+                    "config": dict(entry.config),
+                }
                 for entry in self._services.values()
             ]
         }
@@ -408,13 +415,20 @@ class MetaBridgeMixin:
                 entry = self._services[name]
                 entry.config = svc.get("config", {})
                 entry.startup = svc.get("startup", False)
+                entry.deactivate_after_step = svc.get("deactivate_after_step", False)
             else:
                 self._services[name] = MetaServiceEntry(
                     name=name,
                     config=svc.get("config", {}),
                     startup=svc.get("startup", False),
+                    deactivate_after_step=svc.get("deactivate_after_step", False),
                 )
         return {"success": True, "message": "Saved. Restart service or deactivate→activate to apply config changes."}
+
+    def get_service_deactivate_default(self, service_name: str) -> bool:
+        """查询服务级默认 deactivate_after_step 策略。"""
+        entry = self._services.get(service_name)
+        return entry.deactivate_after_step if entry else False
 
     def get_meta_status(self) -> dict:
         """Return state of all registered services."""

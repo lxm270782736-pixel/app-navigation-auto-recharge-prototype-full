@@ -856,6 +856,26 @@ class RoomPatrolMixin:
                 print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
                 step_idx += 1
 
+                # 内置步骤的 deactivate_after（custom 步骤在 _execute_custom_step 内部处理）
+                if success and not step_type.startswith("custom:"):
+                    service = self._step_meta_service(step_type)
+                    if service:
+                        # 两层：step 实例 > 服务配置
+                        should_deactivate = step.get("deactivate_after")
+                        if should_deactivate is None:
+                            should_deactivate = self.get_service_deactivate_default(service)
+                        if should_deactivate:
+                            from .meta_bridge import META_ACTIVE, META_INACTIVE
+                            entry = self._services.get(service)
+                            if entry and entry.state == META_ACTIVE and entry.proxy:
+                                try:
+                                    entry.proxy.deactivate()
+                                    with entry._lock:
+                                        entry.state = META_INACTIVE
+                                    logger.info("[step] %s deactivated after builtin step %s", service, step_type)
+                                except Exception as e:
+                                    logger.warning("[step] deactivate %s failed: %s", service, e)
+
                 # 手动推进模式：步骤成功后等待用户点击「下一步」
                 if (success and self._step_advance_mode == "manual"
                         and self._room_patrol_active and step_idx < len(steps)):
@@ -1243,10 +1263,12 @@ class RoomPatrolMixin:
                 if wait and wait > 0:
                     time.sleep(float(wait))
 
-                # 步骤后 deactivate：实例级 > 类型定义 > False
+                # 三层优先级：step 实例 > 步骤定义 > 服务配置 > False
                 should_deactivate = params.get("_deactivate_after")
                 if should_deactivate is None:
-                    should_deactivate = action.get("deactivate_after", False)
+                    should_deactivate = action.get("deactivate_after")
+                if should_deactivate is None:
+                    should_deactivate = self.get_service_deactivate_default(meta_service)
                 if should_deactivate and ok:
                     from .meta_bridge import META_ACTIVE, META_INACTIVE
                     entry = self._services.get(meta_service)

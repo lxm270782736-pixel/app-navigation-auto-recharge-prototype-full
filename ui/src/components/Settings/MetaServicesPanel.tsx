@@ -6,6 +6,7 @@ import { apiService } from '@/services/api';
 interface ServiceEntry {
   name: string;
   startup: boolean;
+  deactivate_after_step?: boolean;
   config: Record<string, any>;
 }
 
@@ -65,6 +66,13 @@ export const MetaServicesPanel: React.FC = () => {
   const handleToggleStartup = (idx: number, value: boolean) => {
     const next = [...services];
     next[idx] = { ...next[idx], startup: value };
+    setServices(next);
+    setDirty(true);
+  };
+
+  const handleToggleDeactivate = (idx: number, value: boolean) => {
+    const next = [...services];
+    next[idx] = { ...next[idx], deactivate_after_step: value };
     setServices(next);
     setDirty(true);
   };
@@ -158,6 +166,17 @@ export const MetaServicesPanel: React.FC = () => {
       width: 80,
       render: (val: boolean, _: ServiceEntry, idx: number) => (
         <Switch checked={val} onChange={(v) => handleToggleStartup(idx, v)} />
+      ),
+    },
+    {
+      title: '步骤后停用',
+      key: 'deactivate_after_step',
+      width: 100,
+      render: (_: any, record: ServiceEntry, idx: number) => (
+        <Switch
+          checked={record.deactivate_after_step === true}
+          onChange={(v) => handleToggleDeactivate(idx, v)}
+        />
       ),
     },
     {

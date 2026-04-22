@@ -79,6 +79,13 @@ const STEP_COLORS: Record<string, string> = {
   wait: '#999',
 };
 
+// 内置步骤对应的 meta 服务名（用于停用开关）
+const BUILTIN_META_SERVICE: Record<string, string> = {
+  navigate: 'meta.astribot_navigation',
+  detect_bed: 'meta.detection',
+  detect_floor: 'meta.detection',
+};
+
 // Draggable resize handle between columns
 const ResizeHandle: React.FC<{
   onResize: (delta: number) => void;
@@ -698,12 +705,24 @@ export const TaskConfigTab: React.FC = () => {
                         </span>
                       ))}
                       {isCustom && customDef?.action?.type === 'meta' && (
-                        <Tooltip title={`完成后停用此服务（默认: ${customDef.action.deactivate_after ? '是' : '否'}）`}>
+                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: '#999' }}>停用:</span>
+                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
                             <Switch
                               size="small"
                               checked={step.deactivate_after ?? customDef.action.deactivate_after ?? false}
+                              onChange={v => updateStep(idx, { deactivate_after: v })}
+                            />
+                          </span>
+                        </Tooltip>
+                      )}
+                      {!isCustom && BUILTIN_META_SERVICE[step.type] && (
+                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
+                            <Switch
+                              size="small"
+                              checked={step.deactivate_after ?? false}
                               onChange={v => updateStep(idx, { deactivate_after: v })}
                             />
                           </span>
