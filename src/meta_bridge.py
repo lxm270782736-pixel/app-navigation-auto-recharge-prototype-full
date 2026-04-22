@@ -336,27 +336,94 @@ class MetaBridgeMixin:
         return self.start_meta()
 
     def deactivate_meta(self) -> dict:
-        """Deactivate all active startup services."""
-        results = {}
-        for name, entry in self._services.items():
-            if not entry.startup:
-                continue
+        """Deactivate all active services concurrently (regardless of startup flag)."""
+        targets = [
+            (name, entry) for name, entry in self._services.items()
+            if entry.state == META_ACTIVE and entry.proxy
+        ]
+        if not targets:
+            return {"success": True, "results": {}}
+
+        def _deactivate_one(item):
+            name, entry = item
             short = name.split(".")[-1]
-            if entry.state == META_ACTIVE and entry.proxy:
-                try:
-                    entry.proxy.deactivate()
-                    entry.state = META_INACTIVE
-                    results[short] = "deactivated"
-                    logger.info("[meta] %s deactivated", name)
-                except Exception as e:
-                    results[short] = f"failed: {e}"
-                    logger.warning("[meta] %s deactivate failed: %s", name, e)
+            try:
+                entry.proxy.deactivate()
+                entry.state = META_INACTIVE
+                logger.info("[meta] %s deactivated", name)
+                return short, "deactivated"
+            except Exception as e:
+                logger.warning("[meta] %s deactivate failed: %s", name, e)
+                return short, f"failed: {e}"
+
+        results = {}
+        with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+            for short, state in pool.map(_deactivate_one, targets):
+                results[short] = state
         return {"success": True, "results": results}
+
+    def get_services_config(self) -> dict:
+        """返回当前服务配置（派生自内存 _services）。"""
+        return {
+            "services": [
+                {"name": entry.name, "startup": entry.startup, "config": dict(entry.config)}
+                for entry in self._services.values()
+            ]
+        }
+
+    def update_services_config(self, services: list) -> dict:
+        """写入新的 services 配置到 meta_services.json 并刷新内存。
+        注意：已 active 的服务运行状态不受影响，config 字段需下次 deactivate→reactivate 才生效。
+        """
+        # 校验
+        seen = set()
+        for svc in services:
+            if not isinstance(svc, dict):
+                return {"success": False, "message": "Each service must be an object"}
+            name = svc.get("name", "")
+            if not name.startswith("meta."):
+                return {"success": False, "message": f"Service name must start with 'meta.': {name}"}
+            if name in seen:
+                return {"success": False, "message": f"Duplicate service name: {name}"}
+            seen.add(name)
+            if not isinstance(svc.get("startup", False), bool):
+                return {"success": False, "message": f"{name}: startup must be bool"}
+            if not isinstance(svc.get("config", {}), dict):
+                return {"success": False, "message": f"{name}: config must be dict"}
+
+        data = {"services": services}
+        try:
+            _SERVICES_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _SERVICES_CONFIG_FILE.with_suffix(".tmp")
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp.rename(_SERVICES_CONFIG_FILE)
+        except Exception as e:
+            return {"success": False, "message": f"Write failed: {e}"}
+
+        # 刷新内存：保留已有 entry 的 proxy/state，只更新 config/startup
+        for svc in services:
+            name = svc["name"]
+            if name in self._services:
+                entry = self._services[name]
+                entry.config = svc.get("config", {})
+                entry.startup = svc.get("startup", False)
+            else:
+                self._services[name] = MetaServiceEntry(
+                    name=name,
+                    config=svc.get("config", {}),
+                    startup=svc.get("startup", False),
+                )
+        return {"success": True, "message": "Saved. Restart service or deactivate→activate to apply config changes."}
 
     def get_meta_status(self) -> dict:
         """Return state of all registered services."""
         status = {
             "meta_connected": self.meta_connected,
+            "services": [
+                {"name": entry.name, "state": entry.state, "startup": entry.startup}
+                for entry in self._services.values()
+            ],
         }
         for name, entry in self._services.items():
             short = name.split(".")[-1]

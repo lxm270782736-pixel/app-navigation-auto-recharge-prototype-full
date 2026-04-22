@@ -592,6 +592,20 @@ def meta_status():
     return logic.get_meta_status()
 
 
+@app.get("/api/meta/services-config")
+def get_meta_services_config():
+    return logic.get_services_config()
+
+
+class ServicesConfigRequest(BaseModel):
+    services: list
+
+
+@app.post("/api/meta/services-config")
+def update_meta_services_config(req: ServicesConfigRequest):
+    return logic.update_services_config(req.services)
+
+
 # ==================== 前端静态文件 ====================
 
 _UI_DIR = Path(__file__).parent.parent / "ui" / "dist"

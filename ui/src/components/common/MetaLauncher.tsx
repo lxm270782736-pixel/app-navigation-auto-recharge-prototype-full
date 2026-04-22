@@ -12,50 +12,53 @@ const STATE_LABELS: Record<string, { text: string; color: string }> = {
   finalized:    { text: '已终止', color: '#8c8c8c' },
 };
 
-type ServiceKey = 'loc' | 'nav' | 'detection';
-
-const SERVICES: { key: ServiceKey; label: string }[] = [
-  { key: 'loc',       label: '定位 (Localization)' },
-  { key: 'nav',       label: '导航 (Navigation)' },
-  { key: 'detection', label: '检测 (Detection)' },
-];
-
-const STATE_FIELD: Record<ServiceKey, string> = {
-  loc:       'loc_state',
-  nav:       'nav_state',
-  detection: 'fall_state',
+const SHORT_LABELS: Record<string, string> = {
+  localization: '定位',
+  astribot_navigation: '导航',
+  detection: '检测',
+  sales_replay: '轨迹回放',
+  camera: '相机',
 };
 
+interface ServiceInfo {
+  name: string;
+  state: string;
+  startup: boolean;
+}
+
 export const MetaLauncher: React.FC = () => {
-  const [states, setStates] = useState<Record<ServiceKey, string>>({
-    loc: 'disconnected', nav: 'disconnected', detection: 'disconnected',
-  });
-  const [loading, setLoading] = useState<Record<ServiceKey | 'all', boolean>>({
-    loc: false, nav: false, detection: false, all: false,
-  });
+  const [services, setServices] = useState<ServiceInfo[]>([]);
+  const [loading, setLoading] = useState<Record<string, boolean>>({ all: false });
 
-  const isAllActive = Object.values(states).every(s => s === 'active');
+  const startupServices = services.filter(s => s.startup);
+  const isAllActive = startupServices.length > 0 && startupServices.every(s => s.state === 'active');
 
+  const getState = (name: string) => services.find(s => s.name === name)?.state || 'disconnected';
+  const getShort = (name: string) => name.replace('meta.', '');
+  const getLabel = (name: string) => SHORT_LABELS[getShort(name)] || getShort(name);
+
+  // 从 SSE state 事件更新（实时）
   useEffect(() => {
     const handler = (state: any) => {
-      setStates(prev => ({
-        loc:       state.loc_state  ?? prev.loc,
-        nav:       state.nav_state  ?? prev.nav,
-        detection: state.fall_state ?? prev.detection,
-      }));
+      setServices(prev => {
+        if (!prev.length) return prev;
+        return prev.map(s => {
+          const short = getShort(s.name);
+          const key = short === 'detection' ? 'fall_state' : `${short}_state`;
+          const newState = state[key];
+          return newState ? { ...s, state: newState } : s;
+        });
+      });
     };
     apiService.on('state', handler);
     return () => { apiService.off('state', handler); };
   }, []);
 
+  // 初始加载 + 手动刷新
   const loadStatus = useCallback(async () => {
     try {
-      const s = await apiService.getMetaStatus();
-      setStates({
-        loc:       s.loc_state   || 'disconnected',
-        nav:       s.nav_state   || 'disconnected',
-        detection: s.fall_state  || 'disconnected',
-      });
+      const s = await apiService.getMetaStatus() as any;
+      if (s.services) setServices(s.services);
     } catch { /* ignore */ }
   }, []);
 
@@ -72,18 +75,27 @@ export const MetaLauncher: React.FC = () => {
     finally { setLoading(prev => ({ ...prev, all: false })); }
   };
 
-  const handleControl = async (key: ServiceKey, action: 'start' | 'stop') => {
-    setLoading(prev => ({ ...prev, [key]: true }));
+  const handleControl = async (name: string, action: 'start' | 'stop') => {
+    const short = getShort(name);
+    // 映射到后端 metaControl 的 service key
+    const keyMap: Record<string, string> = {
+      localization: 'loc',
+      astribot_navigation: 'nav',
+      detection: 'detection',
+    };
+    const controlKey = keyMap[short];
+    setLoading(prev => ({ ...prev, [name]: true }));
     try {
-      const result = await apiService.metaControl(key, action);
-      if (result.success) {
-        message.success(action === 'start' ? '已启动' : '已停止');
+      if (controlKey) {
+        const result = await apiService.metaControl(controlKey as any, action);
+        if (result.success) message.success(action === 'start' ? '已启动' : '已停止');
+        else message.error(result.message || '操作失败');
       } else {
-        message.error(result.message || '操作失败');
+        message.warning(`${short} 暂不支持单独控制`);
       }
       await loadStatus();
     } catch { message.error('操作失败'); }
-    finally { setLoading(prev => ({ ...prev, [key]: false })); }
+    finally { setLoading(prev => ({ ...prev, [name]: false })); }
   };
 
   const StatusDot: React.FC<{ state: string }> = ({ state }) => (
@@ -137,17 +149,17 @@ export const MetaLauncher: React.FC = () => {
           </Button>
         )}
 
-        {/* 每个服务独立控制 */}
+        {/* 每个 startup 服务独立控制 */}
         <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 12px' }}>
           <Space direction="vertical" style={{ width: '100%' }} size={6}>
-            {SERVICES.map(({ key, label }) => {
-              const state = states[key];
+            {startupServices.map(({ name }) => {
+              const state = getState(name);
               const isActive = state === 'active';
               return (
-                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.9)', fontSize: 12, flex: 1 }}>
                     <StatusDot state={state} />
-                    <span>{label}: </span>
+                    <span>{getLabel(name)}: </span>
                     <span style={{ marginLeft: 4, color: STATE_LABELS[state]?.color || '#fff' }}>
                       {STATE_LABELS[state]?.text || state}
                     </span>
@@ -155,19 +167,19 @@ export const MetaLauncher: React.FC = () => {
                   <Space size={4}>
                     {!isActive && (
                       <Button
-                        size="small" loading={loading[key]}
+                        size="small" loading={loading[name]}
                         style={{ background: 'rgba(255,255,255,0.2)', color: 'white', borderColor: 'rgba(255,255,255,0.3)', fontSize: 11 }}
-                        onClick={() => handleControl(key, 'start')}
+                        onClick={() => handleControl(name, 'start')}
                       >
                         启动
                       </Button>
                     )}
                     {isActive && (
                       <Button
-                        size="small" danger loading={loading[key]}
+                        size="small" danger loading={loading[name]}
                         icon={<PoweroffOutlined />}
                         style={{ fontSize: 11 }}
-                        onClick={() => handleControl(key, 'stop')}
+                        onClick={() => handleControl(name, 'stop')}
                       >
                         停止
                       </Button>

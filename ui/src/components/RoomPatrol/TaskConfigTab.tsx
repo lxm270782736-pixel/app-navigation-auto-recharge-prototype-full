@@ -697,6 +697,18 @@ export const TaskConfigTab: React.FC = () => {
                           {p.type === 'select' && <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 80 }} options={p.options || []} />}
                         </span>
                       ))}
+                      {isCustom && customDef?.action?.type === 'meta' && (
+                        <Tooltip title={`完成后停用此服务（默认: ${customDef.action.deactivate_after ? '是' : '否'}）`}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>停用:</span>
+                            <Switch
+                              size="small"
+                              checked={step.deactivate_after ?? customDef.action.deactivate_after ?? false}
+                              onChange={v => updateStep(idx, { deactivate_after: v })}
+                            />
+                          </span>
+                        </Tooltip>
+                      )}
                       <div style={{ flex: 1 }} />
                       <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
                     </SortableStepItem>

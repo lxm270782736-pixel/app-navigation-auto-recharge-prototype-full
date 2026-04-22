@@ -306,6 +306,14 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
                     <div style={{ fontSize: 12, marginBottom: 4 }}>Kwargs JSON（支持 {'{{param}}'} 占位符）</div>
                     <TextArea rows={3} value={requestJson} onChange={e => setRequestJson(e.target.value)} style={{ fontFamily: 'monospace', fontSize: 12 }} />
                   </div>
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Switch
+                      size="small"
+                      checked={editing.action.deactivate_after === true}
+                      onChange={v => updateAction({ deactivate_after: v })}
+                    />
+                    <span style={{ fontSize: 12 }}>完成后停用此服务（默认值，可在任务编排中覆盖）</span>
+                  </div>
                 </>
               )}
             </Card>

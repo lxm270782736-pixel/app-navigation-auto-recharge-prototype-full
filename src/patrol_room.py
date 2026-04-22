@@ -803,7 +803,11 @@ class RoomPatrolMixin:
                         success, detail = getattr(self, handler)(room_id, step, waypoints, retry_limit, room_result)
                     elif step_type.startswith("custom:"):
                         custom_id = step_type.split(":", 1)[1]
-                        success, detail = self._execute_custom_step(custom_id, step.get("params", {}))
+                        step_params = dict(step.get("params", {}))
+                        # 传递 step 实例级的 deactivate_after 覆盖
+                        if "deactivate_after" in step:
+                            step_params["_deactivate_after"] = step["deactivate_after"]
+                        success, detail = self._execute_custom_step(custom_id, step_params)
                     else:
                         print(f"[room_patrol] Unknown step type: {step_type}")
                         success, detail = True, None
@@ -1238,6 +1242,24 @@ class RoomPatrolMixin:
                 wait = params.get("duration", action.get("duration", 0))
                 if wait and wait > 0:
                     time.sleep(float(wait))
+
+                # 步骤后 deactivate：实例级 > 类型定义 > False
+                should_deactivate = params.get("_deactivate_after")
+                if should_deactivate is None:
+                    should_deactivate = action.get("deactivate_after", False)
+                if should_deactivate and ok:
+                    from .meta_bridge import META_ACTIVE, META_INACTIVE
+                    entry = self._services.get(meta_service)
+                    if entry and entry.state == META_ACTIVE and entry.proxy:
+                        try:
+                            entry.proxy.deactivate()
+                            with entry._lock:
+                                entry.state = META_INACTIVE
+                            logger.info("[step] %s deactivated after step", meta_service)
+                        except Exception as e:
+                            logger.warning("[step] deactivate %s failed: %s", meta_service, e)
+                    else:
+                        logger.info("[step] skip deactivate %s: not active", meta_service)
                 return ok, result
 
             else:
