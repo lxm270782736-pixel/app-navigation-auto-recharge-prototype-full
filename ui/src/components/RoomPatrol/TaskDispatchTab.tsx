@@ -257,7 +257,7 @@ export const TaskDispatchTab: React.FC = () => {
   const handleStop = async () => {
     const result = await apiService.stopRoomPatrol();
     if (result.success) {
-      message.info('巡房已停止');
+      message.info('导览已停止');
     } else {
       message.error(result.message);
     }
@@ -266,7 +266,7 @@ export const TaskDispatchTab: React.FC = () => {
   const handlePause = async () => {
     const result = await apiService.pauseRoomPatrol();
     if (result.success) {
-      message.info('巡房已暂停');
+      message.info('导览已暂停');
     } else {
       message.error(result.message);
     }
@@ -275,7 +275,7 @@ export const TaskDispatchTab: React.FC = () => {
   const handleResume = async () => {
     const result = await apiService.resumeRoomPatrol();
     if (result.success) {
-      message.success('巡房已恢复');
+      message.success('导览已恢复');
     } else {
       message.error(result.message);
     }
@@ -304,10 +304,9 @@ export const TaskDispatchTab: React.FC = () => {
 
   const progressPercent = patrolState ? Math.round(Math.max(0, Math.min(1, patrolState.progress)) * 100) : 0;
 
-  // Build ALL waypoints for map display: 3 points per room (door_outside, door_inside, bed_check) + start_position
-  // Structure: [room1_outside, room1_inside, room1_bed, room2_outside, ..., start_position]
+  // Build ALL waypoints for map display: dynamic per-room waypoints + start_position
   const roomLookup = new Map(roomConfigs.map(r => [r.room_id, r]));
-  const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => r.door_outside).map(r => r.room_id);
+  const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => (r.waypoints || []).some(wp => wp.pose)).map(r => r.room_id);
   const waypoints: Pose[] = [];
   const waypointMeta: { roomId: string; type: string; waypointIdx: number }[] = [];
   const waypointLabels: string[] = [];
@@ -318,17 +317,12 @@ export const TaskDispatchTab: React.FC = () => {
     const rc = roomLookup.get(rid);
     if (!rc) continue;
     const roomLabel = String(i + 1);
-    const points = [
-      { pose: rc.door_outside, type: 'door_outside' },
-      { pose: rc.door_inside, type: 'door_inside' },
-      { pose: rc.bed_check, type: 'bed_check' },
-    ];
-    for (const p of points) {
-      if (p.pose) {
-        waypointMeta.push({ roomId: rid, type: p.type, waypointIdx: waypoints.length });
-        waypoints.push(p.pose);
+    for (const wp of (rc.waypoints || [])) {
+      if (wp.pose) {
+        waypointMeta.push({ roomId: rid, type: wp.id, waypointIdx: waypoints.length });
+        waypoints.push(wp.pose);
         waypointLabels.push(roomLabel);
-        waypointColors.push(WAYPOINT_TYPE_COLORS[p.type] || '#999');
+        waypointColors.push(WAYPOINT_TYPE_COLORS[wp.type] || '#999');
       }
     }
   }
@@ -341,15 +335,14 @@ export const TaskDispatchTab: React.FC = () => {
     waypointColors.push('#722ed1');
   }
 
-  // Determine current waypoint index: highlight the door_outside of the current room being visited
+  // Determine current waypoint index: highlight the first waypoint of the current room
   let currentWaypointIndex = -1;
   if (patrolState?.active && patrolState.current_room) {
-    // Find the first point of the current room (door_outside)
-    const meta = waypointMeta.find(m => m.roomId === patrolState.current_room && m.type === 'door_outside');
+    const meta = waypointMeta.find(m => m.roomId === patrolState.current_room);
     if (meta) currentWaypointIndex = meta.waypointIdx;
   }
 
-  // Completed: mark all 3 points of completed rooms
+  // Completed: mark all points of completed rooms
   const completedSet = new Set(patrolState?.rooms_completed || []);
   const completedWaypoints = waypointMeta
     .filter(m => completedSet.has(m.roomId))
@@ -420,7 +413,7 @@ export const TaskDispatchTab: React.FC = () => {
           </div>
           {stuckEvent && (
             <div style={{ color: '#666', marginBottom: 8 }}>
-              房间：<strong>{stuckEvent.room_id}</strong>
+              区域：<strong>{stuckEvent.room_id}</strong>
             </div>
           )}
           <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
@@ -462,7 +455,7 @@ export const TaskDispatchTab: React.FC = () => {
       {/* Right: Control panel */}
       <div style={{ width: 320, minWidth: 280, flexShrink: 0, borderLeft: '1px solid #f0f0f0', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Start/Stop */}
-        <Card size="small" title="巡房控制">
+        <Card size="small" title="导览控制">
           {!isActive && presets.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>选择任务</div>
@@ -506,29 +499,29 @@ export const TaskDispatchTab: React.FC = () => {
               <Space.Compact block>
                 {patrolState?.status === 'paused_manual' ? (
                   <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleResume} style={{ flex: 1 }}>
-                    继续巡房
+                    继续导览
                   </Button>
                 ) : (
                   <Button icon={<PauseCircleOutlined />} onClick={handlePause} style={{ flex: 1 }}>
-                    暂停巡房
+                    暂停导览
                   </Button>
                 )}
                 <Button type="primary" danger icon={<StopOutlined />} onClick={handleStop} style={{ flex: 1 }}>
-                  停止巡房
+                  停止导览
                 </Button>
               </Space.Compact>
             </Space>
           ) : (
             <Button type="primary" block icon={<PlayCircleOutlined />} onClick={handleStart}
               disabled={connectionStatus !== ConnectionStatus.CONNECTED}>
-              开始巡房
+              开始导览
             </Button>
           )}
         </Card>
 
         {/* Status */}
         {patrolState && patrolState.status !== 'idle' && (
-          <Card size="small" title={`巡房状态${patrolState.task_name ? ` — ${patrolState.task_name}` : ''}`}>
+          <Card size="small" title={`导览状态${patrolState.task_name ? ` — ${patrolState.task_name}` : ''}`}>
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>状态</span>
@@ -538,7 +531,7 @@ export const TaskDispatchTab: React.FC = () => {
                   patrolState.status === 'completed' ? 'success' :
                   patrolState.status === 'failed' ? 'error' : 'default'
                 }>
-                  {patrolState.status === 'running' ? '巡房中' :
+                  {patrolState.status === 'running' ? '导览中' :
                    patrolState.status === 'paused_manual' ? '已暂停' :
                    patrolState.status === 'paused_fall' ? '跌倒暂停' :
                    patrolState.status === 'paused_stuck' ? '卡住暂停' :
@@ -553,7 +546,7 @@ export const TaskDispatchTab: React.FC = () => {
               {isActive && patrolState.current_room && (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>当前房间</span>
+                    <span>当前区域</span>
                     <span style={{ fontWeight: 600 }}><EnvironmentOutlined /> {patrolState.current_room}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -598,7 +591,7 @@ export const TaskDispatchTab: React.FC = () => {
         {displayRoomIds.length > 0 && (
           (() => {
             const isRunning = patrolState?.status === 'running';
-            const title = isRunning ? "房间进度" : "任务预览";
+            const title = isRunning ? "区域进度" : "任务预览";
             const roomList = isRunning
               ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
               : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }));

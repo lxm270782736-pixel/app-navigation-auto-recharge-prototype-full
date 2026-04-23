@@ -275,11 +275,12 @@ def save_room_config(req: SaveRoomConfigRequest):
 class AddRoomRequest(BaseModel):
     room_id: str
     room_name: str
+    waypoint_template: Optional[list] = None
 
 
 @app.post("/api/room-config/rooms")
 def add_room(req: AddRoomRequest):
-    return logic.add_room(req.room_id, req.room_name)
+    return logic.add_room(req.room_id, req.room_name, req.waypoint_template)
 
 
 @app.delete("/api/room-config/rooms/{room_id}")
@@ -299,6 +300,31 @@ def record_waypoint(room_id: str, req: RecordWaypointRequest):
 @app.post("/api/room-config/record-start")
 def record_start_position():
     return logic.record_room_waypoint("", "start_position")
+
+
+class AddWaypointRequest(BaseModel):
+    waypoint_id: str
+    name: str
+    type: str = "custom"
+
+
+@app.post("/api/room-config/rooms/{room_id}/waypoints")
+def add_room_waypoint(room_id: str, req: AddWaypointRequest):
+    return logic.add_room_waypoint(room_id, req.waypoint_id, req.name, req.type)
+
+
+@app.delete("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}")
+def delete_room_waypoint(room_id: str, waypoint_id: str):
+    return logic.delete_room_waypoint(room_id, waypoint_id)
+
+
+class RenameWaypointRequest(BaseModel):
+    name: str
+
+
+@app.post("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}/rename")
+def rename_room_waypoint(room_id: str, waypoint_id: str, req: RenameWaypointRequest):
+    return logic.rename_room_waypoint(room_id, waypoint_id, req.name)
 
 
 # ==================== 巡房任务 ====================

@@ -39,22 +39,14 @@ import { CustomStepManager } from './CustomStepManager';
 // Available step types
 const STEP_OPTIONS = [
   { value: 'navigate', label: '导航', desc: '导航到指定点位' },
-  { value: 'open_door', label: '开门', desc: '打开房间门' },
-  { value: 'close_door', label: '关门', desc: '关闭房间门' },
+  { value: 'open_door', label: '开门', desc: '打开区域门' },
+  { value: 'close_door', label: '关门', desc: '关闭区域门' },
   { value: 'detect_bed', label: '在床检测', desc: '检测老人是否在床' },
   { value: 'detect_floor', label: '地面检测', desc: '检测杂物和水渍' },
   { value: 'photo', label: '拍照', desc: '拍摄照片' },
   { value: 'wait', label: '等待', desc: '停留等待' },
 ];
 
-const NAV_TARGETS = [
-  { value: 'door_outside', label: '门外' },
-  { value: 'door_inside', label: '门内' },
-  { value: 'bed_check', label: '床位' },
-  { value: 'start_position', label: '起点' },
-];
-
-// Default inspection steps for a room
 const DEFAULT_STEPS: RoomTaskStep[] = [
   { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'open_door' },
@@ -68,6 +60,15 @@ const DEFAULT_STEPS: RoomTaskStep[] = [
   { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'close_door' },
 ];
+
+const buildNavTargetOptions = (roomConfig?: RoomConfig | null) => {
+  const options = (roomConfig?.waypoints || []).map((wp) => ({
+    value: wp.id,
+    label: wp.name,
+  }));
+  options.push({ value: 'start_position', label: '起点' });
+  return options;
+};
 
 const STEP_COLORS: Record<string, string> = {
   navigate: '#1890ff',
@@ -581,7 +582,7 @@ export const TaskConfigTab: React.FC = () => {
       {/* Col 2: Room list */}
       <div style={{ width: col2Width, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>巡房顺序</span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>导览顺序</span>
           {editingPreset && (
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}>
               跌倒检测
@@ -596,17 +597,18 @@ export const TaskConfigTab: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Checkbox checked={allEnabled} onChange={toggleAll} style={{ fontSize: 12 }}>全选</Checkbox>
         </div>
-        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与巡房的房间</div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与导览的区域</div>
 
         {!editingPreset ? (
           <Empty description="选择左侧任务" style={{ marginTop: 40 }} />
         ) : editingPreset.rooms.length === 0 ? (
-          <Empty description="请先在「点位录制」录制房间" style={{ marginTop: 40 }} />
+          <Empty description="请先在「点位录制」录制区域" style={{ marginTop: 40 }} />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRoomDragEnd}>
             <SortableContext items={editingPreset.rooms.map(r => r.room_id)} strategy={verticalListSortingStrategy}>
               {editingPreset.rooms.map((room, idx) => {
-                const isReady = !!roomConfigs.find(r => r.room_id === room.room_id && r.door_outside && r.door_inside && r.bed_check);
+                const rc = roomConfigs.find(r => r.room_id === room.room_id);
+                const isReady = rc ? (rc.waypoints || []).some(wp => wp.pose !== null) : false;
                 return (
                   <SortableRoomItem
                     key={room.room_id}
@@ -629,7 +631,7 @@ export const TaskConfigTab: React.FC = () => {
       {/* Col 3: Step editor */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择房间'}</span>
+          <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择区域'}</span>
           <div style={{ flex: 1 }} />
           <Button size="small" icon={<SettingOutlined />} onClick={() => setShowManager(true)}>自定义步骤</Button>
           <Button size="small" onClick={applyDefault} disabled={!selectedRoom}>默认模板</Button>
@@ -641,7 +643,7 @@ export const TaskConfigTab: React.FC = () => {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
           {!selectedRoom ? (
-            <Empty description={editingPreset ? '选择房间编辑步骤' : '选择左侧任务'} />
+            <Empty description={editingPreset ? '选择区域编辑步骤' : '选择左侧任务'} />
           ) : selectedRoom.steps.length === 0 ? (
             <Empty description="暂无步骤，点击「默认模板」或「添加步骤」" />
           ) : (
@@ -664,7 +666,8 @@ export const TaskConfigTab: React.FC = () => {
                       />
                       {step.type === 'navigate' && (
                         <>
-                          <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }} options={NAV_TARGETS} />
+                          <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
+                            options={buildNavTargetOptions(roomConfigs.find(r => r.room_id === selectedRoomId))} />
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ fontSize: 11, color: '#999' }}>重试:</span>
                             <InputNumber

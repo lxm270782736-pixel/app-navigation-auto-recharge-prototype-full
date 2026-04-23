@@ -1,6 +1,7 @@
-"""Room waypoint configuration — recording and management."""
+"""Room waypoint configuration — dynamic per-room waypoints with legacy migration."""
 import json
 import math
+import re
 import time
 from pathlib import Path
 
@@ -16,23 +17,53 @@ _DEFAULT_CONFIG = {
     "updated_at": None,
 }
 
+_LEGACY_FIELDS = ("door_outside", "door_inside", "bed_check")
+_LEGACY_LABELS = {"door_outside": "门外", "door_inside": "门内", "bed_check": "床位"}
+_WAYPOINT_ID_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+
+
+def _migrate_room(room: dict) -> dict:
+    """把旧的固定字段 door_outside/door_inside/bed_check 迁移到 waypoints[]。"""
+    if "waypoints" in room and isinstance(room["waypoints"], list):
+        return room
+
+    waypoints: list[dict] = []
+    for legacy_id in _LEGACY_FIELDS:
+        pose = room.get(legacy_id)
+        name = _LEGACY_LABELS.get(legacy_id, legacy_id)
+        waypoints.append({"id": legacy_id, "name": name, "type": legacy_id, "pose": pose, "builtin": False})
+
+    room["waypoints"] = waypoints
+    for legacy_id in _LEGACY_FIELDS:
+        room.pop(legacy_id, None)
+    return room
+
+
+def _migrate_config(config: dict) -> dict:
+    """迁移整份配置：rooms 里每个房间转成动态 waypoints。"""
+    for room in config.get("rooms", []):
+        _migrate_room(room)
+    return config
+
 
 class RoomConfigMixin:
-    """Room waypoint configuration — record, add, delete, save/load."""
+    """Room waypoint configuration — dynamic per-room waypoints."""
 
     def get_room_config(self) -> dict:
-        """Read room config from disk."""
+        """Read room config from disk, migrating legacy format on the fly."""
         try:
             if _CONFIG_FILE.exists():
                 with open(_CONFIG_FILE) as f:
-                    return json.load(f)
+                    config = json.load(f)
+                return _migrate_config(config)
         except Exception as e:
             print(f"[room_config] Failed to load: {e}")
         return dict(_DEFAULT_CONFIG)
 
     def save_room_config(self, config: dict) -> dict:
-        """Save full room config to disk (atomic write)."""
+        """Save full room config to disk (atomic write). Always migrate first."""
         try:
+            _migrate_config(config)
             config["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
             _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             tmp = _CONFIG_FILE.with_suffix(".tmp")
@@ -43,19 +74,25 @@ class RoomConfigMixin:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    def add_room(self, room_id: str, room_name: str) -> dict:
-        """Add a new room with empty waypoints."""
+    def add_room(self, room_id: str, room_name: str, waypoint_template: list | None = None) -> dict:
+        """Add a new room/zone. waypoint_template: optional list of {id, name, type} to auto-create."""
         config = self.get_room_config()
-        # Check duplicate
         for r in config.get("rooms", []):
             if r.get("room_id") == room_id:
-                return {"success": False, "message": f"Room {room_id} already exists"}
+                return {"success": False, "message": f"区域 {room_id} 已存在"}
+        wps = []
+        for tpl in (waypoint_template or []):
+            wps.append({
+                "id": tpl.get("id", ""),
+                "name": tpl.get("name", tpl.get("id", "")),
+                "type": tpl.get("type", "custom"),
+                "pose": None,
+                "builtin": False,
+            })
         config.setdefault("rooms", []).append({
             "room_id": room_id,
             "room_name": room_name,
-            "door_outside": None,
-            "door_inside": None,
-            "bed_check": None,
+            "waypoints": wps,
             "door_type": "L_handle",
             "enabled": True,
         })
@@ -71,16 +108,61 @@ class RoomConfigMixin:
             return {"success": False, "message": f"Room {room_id} not found"}
         return self.save_room_config(config)
 
+    # ---------- Waypoint CRUD ----------
+
+    def add_room_waypoint(self, room_id: str, waypoint_id: str, name: str, wp_type: str = "custom") -> dict:
+        """为房间新增一个自定义点位（pose 初始为 None）。"""
+        if not _WAYPOINT_ID_PATTERN.match(waypoint_id):
+            return {"success": False, "message": "waypoint_id 只能包含字母、数字、下划线，且以字母开头"}
+        config = self.get_room_config()
+        room = self._find_room(config, room_id)
+        if room is None:
+            return {"success": False, "message": f"Room {room_id} not found"}
+        existing_ids = {wp.get("id") for wp in room.get("waypoints", [])}
+        if waypoint_id in existing_ids:
+            return {"success": False, "message": f"Waypoint {waypoint_id} already exists"}
+        room.setdefault("waypoints", []).append({
+            "id": waypoint_id,
+            "name": name or waypoint_id,
+            "type": wp_type or "custom",
+            "pose": None,
+            "builtin": False,
+        })
+        return self.save_room_config(config)
+
+    def delete_room_waypoint(self, room_id: str, waypoint_id: str) -> dict:
+        """删除区域的点位。"""
+        config = self.get_room_config()
+        room = self._find_room(config, room_id)
+        if room is None:
+            return {"success": False, "message": f"区域 {room_id} 不存在"}
+        wps = room.get("waypoints", [])
+        target = next((wp for wp in wps if wp.get("id") == waypoint_id), None)
+        if target is None:
+            return {"success": False, "message": f"点位 {waypoint_id} 不存在"}
+        room["waypoints"] = [wp for wp in wps if wp.get("id") != waypoint_id]
+        return self.save_room_config(config)
+
+    def rename_room_waypoint(self, room_id: str, waypoint_id: str, name: str) -> dict:
+        """重命名点位 name（builtin 允许重命名 name，不改 id）。"""
+        if not name:
+            return {"success": False, "message": "name 不能为空"}
+        config = self.get_room_config()
+        room = self._find_room(config, room_id)
+        if room is None:
+            return {"success": False, "message": f"Room {room_id} not found"}
+        target = next((wp for wp in room.get("waypoints", []) if wp.get("id") == waypoint_id), None)
+        if target is None:
+            return {"success": False, "message": f"Waypoint {waypoint_id} not found"}
+        target["name"] = name
+        return self.save_room_config(config)
+
+    # ---------- Pose 录制 ----------
+
     def record_room_waypoint(self, room_id: str, waypoint_type: str) -> dict:
-        """Record a waypoint by capturing the current robot pose.
-
-        waypoint_type: 'door_outside' | 'door_inside' | 'bed_check' | 'start_position'
+        """把当前机器人 pose 写入指定点位。
+        waypoint_type: waypoint id (e.g. 'door_outside', 'window_left') 或 'start_position'
         """
-        valid_types = ("door_outside", "door_inside", "bed_check", "start_position")
-        if waypoint_type not in valid_types:
-            return {"success": False, "message": f"Invalid type: {waypoint_type}. Must be one of {valid_types}"}
-
-        # Grab current robot pose via Meta localization
         pose_result = self.get_pose()
         if not pose_result.get("success"):
             return {"success": False, "message": "No robot pose available"}
@@ -108,16 +190,26 @@ class RoomConfigMixin:
             result["pose"] = pose
             return result
 
-        # Find room
-        room = None
-        for r in config.get("rooms", []):
-            if r.get("room_id") == room_id:
-                room = r
-                break
+        room = self._find_room(config, room_id)
         if room is None:
             return {"success": False, "message": f"Room {room_id} not found"}
 
-        room[waypoint_type] = pose
+        wps = room.setdefault("waypoints", [])
+        target = next((wp for wp in wps if wp.get("id") == waypoint_type), None)
+        if target is None:
+            # 用户在前端传入了不存在的 id（比如忘记先 add_room_waypoint）
+            return {"success": False, "message": f"Waypoint '{waypoint_type}' not found in room {room_id}"}
+        target["pose"] = pose
+
         result = self.save_room_config(config)
         result["pose"] = pose
         return result
+
+    # ---------- 内部辅助 ----------
+
+    @staticmethod
+    def _find_room(config: dict, room_id: str) -> dict | None:
+        for r in config.get("rooms", []):
+            if r.get("room_id") == room_id:
+                return r
+        return None

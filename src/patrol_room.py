@@ -533,16 +533,22 @@ class RoomPatrolMixin:
             rc = room_lookup.get(rid)
             if not rc:
                 continue
-            if not rc.get("door_outside") or not rc.get("door_inside") or not rc.get("bed_check"):
-                continue
             if not room.get("enabled", True):
                 continue
-            # Merge waypoint coords into task config
-            room_with_coords = {**room, "waypoints": {
-                "door_outside": rc["door_outside"],
-                "door_inside": rc["door_inside"],
-                "bed_check": rc["bed_check"],
-            }}
+            # 动态 waypoints：从 room config 的 waypoints[] 构建 {id: pose} dict
+            wp_dict = {}
+            for wp in rc.get("waypoints", []):
+                if wp.get("pose"):
+                    wp_dict[wp["id"]] = wp["pose"]
+            # 检查任务步骤引用的 navigate target 是否都有对应点位
+            steps = room.get("steps", DEFAULT_ROOM_STEPS)
+            nav_targets = {s.get("target") for s in steps if s.get("type") == "navigate" and s.get("target")}
+            nav_targets.discard("start_position")
+            missing = nav_targets - set(wp_dict.keys())
+            if missing:
+                print(f"[room_patrol] Room {rid} missing waypoints: {missing}, skipping")
+                continue
+            room_with_coords = {**room, "waypoints": wp_dict}
             valid_rooms.append(room_with_coords)
 
         if not valid_rooms:

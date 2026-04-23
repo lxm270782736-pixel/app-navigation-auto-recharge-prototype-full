@@ -353,6 +353,18 @@ class ApiService {
     return this._post('/api/room-config/record-start', {});
   }
 
+  async addRoomWaypoint(roomId: string, waypointId: string, name: string, type: string = 'custom'): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints`, { waypoint_id: waypointId, name, type });
+  }
+
+  async deleteRoomWaypoint(roomId: string, waypointId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}`, {});
+  }
+
+  async renameRoomWaypoint(roomId: string, waypointId: string, name: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}/rename`, { name });
+  }
+
   // ------ Room Patrol (巡房任务) ------
 
   async startRoomPatrol(taskConfig?: any): Promise<{ success: boolean; message: string }> {

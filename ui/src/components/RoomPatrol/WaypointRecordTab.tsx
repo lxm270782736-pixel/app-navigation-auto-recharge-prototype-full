@@ -30,26 +30,28 @@ import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, RoomConfig as RoomConfigType, RoomPatrolConfig } from '@/types';
 
-// 点位类型定义
-const WAYPOINT_TYPES = [
-  { key: 'door_outside', label: '门外', color: '#1890ff' },
-  { key: 'door_inside', label: '门内', color: '#52c41a' },
-  { key: 'bed_check', label: '床位', color: '#ff4d4f' },
-] as const;
+// 点位颜色映射
+const WAYPOINT_COLORS: Record<string, string> = {
+  door_outside: '#1890ff',
+  door_inside: '#52c41a',
+  bed_check: '#ff4d4f',
+  custom: '#722ed1',
+};
 
 interface SortableRoomCardProps {
   room: any;
   roomIdx: number;
   isRoomReady: (room: any) => any;
   onDelete: (roomId: string) => void;
-  waypointTypes: typeof WAYPOINT_TYPES;
-  onRecord: (roomId: string, wpType: string) => void;
-  onEdit: (roomId: string, wpType: string, label: string, pose: any) => void;
+  onRecord: (roomId: string, wpId: string) => void;
+  onEdit: (roomId: string, wpId: string, label: string, pose: any) => void;
+  onAddWaypoint: (roomId: string) => void;
+  onDeleteWaypoint: (roomId: string, wpId: string) => void;
   robotPose: any;
 }
 
 const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
-  room, roomIdx, isRoomReady, onDelete, waypointTypes, onRecord, onEdit, robotPose,
+  room, roomIdx, isRoomReady, onDelete, onRecord, onEdit, onAddWaypoint, onDeleteWaypoint, robotPose,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.room_id });
   const style = {
@@ -65,7 +67,7 @@ const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {/* 房间拖拽 handle — 始终显示 */}
+              {/* 区域拖拽 handle — 始终显示 */}
               <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', display: 'flex', alignItems: 'center' }}>
                 <DragOutlined />
               </span>
@@ -77,37 +79,47 @@ const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
                 <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
               )}
             </span>
-            <Tooltip title="删除房间">
+            <Tooltip title="删除区域">
               <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => onDelete(room.room_id)} />
             </Tooltip>
           </div>
         }
       >
-        {waypointTypes.map(({ key, label, color }) => {
-          const pose = room[key];
+        {(room.waypoints || []).map((wp: any) => {
+          const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
           return (
-            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
+            <div key={wp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
               <span style={{ fontSize: '13px' }}>
                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
-                {label}
+                {wp.name}
               </span>
-              {pose ? (
+              {wp.pose ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                    ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}, {(pose.theta * 180 / Math.PI).toFixed(1)}°)
+                    ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
                   </span>
                   <Button size="small" type="link" icon={<EditOutlined />} style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onEdit(room.room_id, key, `${room.room_name} ${label}`, pose)} />
+                    onClick={() => onEdit(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)} />
                   <Button size="small" type="link" style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onRecord(room.room_id, key)}>重录</Button>
+                    onClick={() => onRecord(room.room_id, wp.id)}>重录</Button>
+                  <Button size="small" type="link" danger style={{ fontSize: '11px', padding: 0 }}
+                    onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>删除</Button>
                 </div>
               ) : (
-                <Button size="small" type="primary" ghost icon={<AimOutlined />}
-                  onClick={() => onRecord(room.room_id, key)} disabled={!robotPose}>录制</Button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Button size="small" type="primary" ghost icon={<AimOutlined />}
+                    onClick={() => onRecord(room.room_id, wp.id)} disabled={!robotPose}>录制</Button>
+                  <Button size="small" type="link" danger style={{ fontSize: '11px', padding: 0 }}
+                    onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>删除</Button>
+                </div>
               )}
             </div>
           );
         })}
+        <Button size="small" type="dashed" icon={<PlusOutlined />} block style={{ marginTop: 4 }}
+          onClick={() => onAddWaypoint(room.room_id)}>
+          添加自定义点位
+        </Button>
       </Card>
     </div>
   );
@@ -121,10 +133,16 @@ export const WaypointRecordTab: React.FC = () => {
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 新建房间 Modal
+  // 新建区域 Modal
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newRoomId, setNewRoomId] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
+
+  // 新建点位 Modal
+  const [addWpModalVisible, setAddWpModalVisible] = useState(false);
+  const [addWpRoomId, setAddWpRoomId] = useState('');
+  const [newWpId, setNewWpId] = useState('');
+  const [newWpName, setNewWpName] = useState('');
 
   // 编辑点位 Modal
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -255,17 +273,17 @@ export const WaypointRecordTab: React.FC = () => {
           const mapData = await apiService.loadMap(name);
           if (mapData) setCurrentMap(mapData);
         } catch (e) {
-          console.warn('[巡房] 加载地图失败:', e);
+          console.warn('[巡检] 加载地图失败:', e);
         }
       }
     });
     return () => unsubscribe();
   }, [connectionStatus]);
 
-  // 新建房间
+  // 新建区域
   const handleAddRoom = async () => {
     if (!newRoomId.trim()) {
-      message.error('请输入房间号');
+      message.error('请输入区域号');
       return;
     }
     const result = await apiService.addRoom(
@@ -273,7 +291,7 @@ export const WaypointRecordTab: React.FC = () => {
       newRoomName.trim() || `${newRoomId.trim()}室`,
     );
     if (result.success) {
-      message.success(`已添加房间 ${newRoomId}`);
+      message.success(`已添加区域 ${newRoomId}`);
       setAddModalVisible(false);
       setNewRoomId('');
       setNewRoomName('');
@@ -283,15 +301,15 @@ export const WaypointRecordTab: React.FC = () => {
     }
   };
 
-  // 删除房间
+  // 删除区域
   const handleDeleteRoom = (roomId: string) => {
     Modal.confirm({
-      title: `删除房间 ${roomId}？`,
-      content: '删除后该房间的所有点位数据将丢失',
+      title: `删除区域 ${roomId}？`,
+      content: '删除后该区域的所有点位数据将丢失',
       onOk: async () => {
         const result = await apiService.deleteRoom(roomId);
         if (result.success) {
-          message.success(`已删除房间 ${roomId}`);
+          message.success(`已删除区域 ${roomId}`);
           loadConfig();
         } else {
           message.error(result.message);
@@ -333,6 +351,47 @@ export const WaypointRecordTab: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddWaypoint = async (roomId: string) => {
+    setAddWpRoomId(roomId);
+    setNewWpId('');
+    setNewWpName('');
+    setAddWpModalVisible(true);
+  };
+
+  const handleAddWaypointConfirm = async () => {
+    if (!newWpId.trim()) {
+      message.error('请输入点位 ID');
+      return;
+    }
+    const result = await apiService.addRoomWaypoint(addWpRoomId, newWpId.trim(), newWpName.trim() || newWpId.trim());
+    if (result.success) {
+      message.success('点位已添加');
+      setAddWpModalVisible(false);
+      loadConfig();
+    } else {
+      message.error(result.message);
+    }
+  };
+
+  const handleDeleteWaypoint = async (roomId: string, waypointId: string) => {
+    Modal.confirm({
+      title: '删除点位',
+      content: `确定删除点位「${waypointId}」？已引用该点位的任务步骤将无法执行。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        const result = await apiService.deleteRoomWaypoint(roomId, waypointId);
+        if (result.success) {
+          message.success('点位已删除');
+          loadConfig();
+        } else {
+          message.error(result.message);
+        }
+      },
+    });
   };
 
   // 录制起始点位（专用端点）
@@ -377,7 +436,12 @@ export const WaypointRecordTab: React.FC = () => {
     } else {
       updated.rooms = updated.rooms.map(r =>
         r.room_id === editTarget.roomId
-          ? { ...r, [editTarget.waypointType]: newPose }
+          ? {
+              ...r,
+              waypoints: (r.waypoints || []).map((wp: any) =>
+                wp.id === editTarget.waypointType ? { ...wp, pose: newPose } : wp
+              ),
+            }
           : r,
       );
     }
@@ -392,7 +456,7 @@ export const WaypointRecordTab: React.FC = () => {
     }
   };
 
-  // 收集所有已录制的点位用于地图显示 (起点=0, 房间从1开始编号)
+  // 收集所有已录制的点位用于地图显示 (起点=0, 区域从1开始编号)
   const { allWaypoints, waypointLabels, waypointColors, waypointMeta } = useMemo(() => {
     const wps: Pose[] = [];
     const labels: string[] = [];
@@ -408,13 +472,13 @@ export const WaypointRecordTab: React.FC = () => {
       }
       config.rooms.forEach((room, roomIdx) => {
         const label = String(roomIdx + 1);
-        for (const wp of WAYPOINT_TYPES) {
-          const pose = room[wp.key as keyof RoomConfigType] as Pose | null;
-          if (pose) {
-            wps.push(pose);
+        for (const wp of (room.waypoints || [])) {
+          if (wp.pose) {
+            const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
+            wps.push(wp.pose);
             labels.push(label);
-            colors.push(wp.color);
-            meta.push({ roomId: room.room_id, type: wp.key });
+            colors.push(color);
+            meta.push({ roomId: room.room_id, type: wp.id });
           }
         }
       });
@@ -458,9 +522,11 @@ export const WaypointRecordTab: React.FC = () => {
     }
   }, [loadConfig]);
 
-  // 判断房间是否就绪
-  const isRoomReady = (room: RoomConfigType) =>
-    room.door_outside && room.door_inside && room.bed_check;
+  // 判断区域是否就绪
+  const isRoomReady = (room: RoomConfigType) => {
+    const wps = room.waypoints || [];
+    return wps.length > 0 && wps.some(wp => wp.pose !== null);
+  };
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
@@ -616,13 +682,13 @@ export const WaypointRecordTab: React.FC = () => {
             )}
           </Card>
 
-          {/* 房间列表 */}
+          {/* 区域列表 */}
           <div style={{ fontSize: '14px', fontWeight: 600, color: '#333' }}>
-            房间列表 ({config?.rooms.length ?? 0})
+            区域列表 ({config?.rooms.length ?? 0})
           </div>
 
           {config?.rooms.length === 0 && (
-            <Empty description="暂无房间，点击下方按钮添加" style={{ padding: '20px 0' }} />
+            <Empty description="暂无区域，点击下方按钮添加" style={{ padding: '20px 0' }} />
           )}
 
           <DndContext sensors={sensors} onDragEnd={handleRoomDragEnd}>
@@ -634,22 +700,23 @@ export const WaypointRecordTab: React.FC = () => {
                   roomIdx={roomIdx}
                   isRoomReady={isRoomReady}
                   onDelete={handleDeleteRoom}
-                  waypointTypes={WAYPOINT_TYPES}
                   onRecord={handleRecord}
-                  onEdit={(roomId, wpType, label, pose) => {
-                    setEditTarget({ roomId, waypointType: wpType, label });
+                  onEdit={(roomId, wpId, label, pose) => {
+                    setEditTarget({ roomId, waypointType: wpId, label });
                     setEditX(pose?.x ?? 0);
                     setEditY(pose?.y ?? 0);
                     setEditTheta(pose?.theta ?? 0);
                     setEditModalVisible(true);
                   }}
+                  onAddWaypoint={handleAddWaypoint}
+                  onDeleteWaypoint={handleDeleteWaypoint}
                   robotPose={robotPose}
                 />
               ))}
             </SortableContext>
           </DndContext>
 
-          {/* 新建房间按钮 */}
+          {/* 新建区域按钮 */}
           <Button
             type="dashed"
             block
@@ -657,13 +724,13 @@ export const WaypointRecordTab: React.FC = () => {
             onClick={() => setAddModalVisible(true)}
             style={{ marginTop: '4px' }}
           >
-            新建房间
+            新建区域
           </Button>
         </div>
 
-      {/* 新建房间 Modal */}
+      {/* 新建区域 Modal */}
       <Modal
-        title="新建房间"
+        title="新建区域"
         open={addModalVisible}
         onOk={handleAddRoom}
         onCancel={() => { setAddModalVisible(false); setNewRoomId(''); setNewRoomName(''); }}
@@ -672,7 +739,7 @@ export const WaypointRecordTab: React.FC = () => {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>房间号 *</div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域号 *</div>
             <Input
               placeholder="如: 101"
               value={newRoomId}
@@ -681,12 +748,43 @@ export const WaypointRecordTab: React.FC = () => {
             />
           </div>
           <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>房间名称（可选）</div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域名称（可选）</div>
             <Input
               placeholder="如: 101室（留空则自动生成）"
               value={newRoomName}
               onChange={(e) => setNewRoomName(e.target.value)}
               onPressEnter={handleAddRoom}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* 新建点位 Modal */}
+      <Modal
+        title="新建自定义点位"
+        open={addWpModalVisible}
+        onOk={handleAddWaypointConfirm}
+        onCancel={() => { setAddWpModalVisible(false); setNewWpId(''); setNewWpName(''); }}
+        okText="添加"
+        cancelText="取消"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>点位 ID *</div>
+            <Input
+              placeholder="英文字母开头，字母数字下划线（如: window_left）"
+              value={newWpId}
+              onChange={(e) => setNewWpId(e.target.value)}
+              onPressEnter={handleAddWaypointConfirm}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>显示名称（可选）</div>
+            <Input
+              placeholder="如: 窗边左（留空则使用 ID）"
+              value={newWpName}
+              onChange={(e) => setNewWpName(e.target.value)}
+              onPressEnter={handleAddWaypointConfirm}
             />
           </div>
         </div>

@@ -29,6 +29,7 @@ const TARGET_LABELS: Record<string, string> = {
   door_outside: '门外',
   door_inside: '门内',
   bed_check: '床位',
+  start_position: '起点',
 };
 
 const ALERT_TYPES: Record<string, string> = {
@@ -170,9 +171,9 @@ export const HistoryTab: React.FC = () => {
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Card size="small" title="巡房记录" extra={tableExtra}>
+      <Card size="small" title="导览记录" extra={tableExtra}>
         {records.length === 0 ? (
-          <Empty description="暂无巡房记录" />
+          <Empty description="暂无导览记录" />
         ) : (
           <Table
             dataSource={records}
@@ -203,7 +204,7 @@ export const HistoryTab: React.FC = () => {
                   return <Tag color={t.color}>{t.text}</Tag>;
                 },
               },
-              { title: '房间数', dataIndex: 'rooms_total', width: 70 },
+              { title: '区域数', dataIndex: 'rooms_total', width: 70 },
               {
                 title: '完成', dataIndex: 'rooms_completed', width: 60,
                 render: (v: number) => <span style={{ color: '#52c41a' }}>{v}</span>,
@@ -253,7 +254,7 @@ export const HistoryTab: React.FC = () => {
               );
             })()}
             {selectedRecord.room_results.map((room: any, idx: number) => {
-              // 该房间关联的告警（排除跌倒，跌倒是全任务级别的）
+              // 该区域关联的告警（排除跌倒，跌倒是全任务级别的）
               const roomAlerts = recordAlerts.filter(a => a.room_id === room.room_id && a.alert_type !== 'fall_detected');
               return (
               <Card key={idx} size="small" style={{ borderLeft: `3px solid ${room.status === 'success' ? '#52c41a' : '#ff4d4f'}` }}>
@@ -294,7 +295,7 @@ export const HistoryTab: React.FC = () => {
                     })}
                   </div>
                 )}
-                {/* 该房间的告警 */}
+                {/* 该区域的告警 */}
                 {roomAlerts.length > 0 && (
                   <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6, marginTop: 6 }}>
                     <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>告警</div>
@@ -376,7 +377,7 @@ export const HistoryTab: React.FC = () => {
               <Descriptions.Item label="状态">
                 <Tag color={ALERT_STATUS[selectedAlert.status]?.color}>{ALERT_STATUS[selectedAlert.status]?.text || selectedAlert.status}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="房间">{selectedAlert.room_id}</Descriptions.Item>
+              <Descriptions.Item label="区域">{selectedAlert.room_id}</Descriptions.Item>
               <Descriptions.Item label="类型">{ALERT_TYPES[selectedAlert.alert_type] || selectedAlert.alert_type}</Descriptions.Item>
               <Descriptions.Item label="置信度">{selectedAlert.confidence ? `${(selectedAlert.confidence * 100).toFixed(0)}%` : '—'}</Descriptions.Item>
               <Descriptions.Item label="告警内容">{selectedAlert.message}</Descriptions.Item>

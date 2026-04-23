@@ -202,13 +202,20 @@ export interface LaserScan {
   intensities?: number[]; // 强度数组（可选）
 }
 
+// 房间点位
+export interface RoomWaypoint {
+  id: string;
+  name: string;
+  type: string;
+  pose: Pose | null;
+  builtin?: boolean;
+}
+
 // 房间点位配置
 export interface RoomConfig {
   room_id: string;
   room_name: string;
-  door_outside: Pose | null;
-  door_inside: Pose | null;
-  bed_check: Pose | null;
+  waypoints: RoomWaypoint[];
   door_type: string;
   enabled: boolean;
 }
@@ -306,6 +313,7 @@ export interface TaskPreset {
   rooms: RoomTaskConfig[];
   retry_limit: number;
   fall_detection_enabled?: boolean;
+  waypoint_template?: RoomWaypoint[];
   created_at?: string;
   updated_at?: string;
 }
