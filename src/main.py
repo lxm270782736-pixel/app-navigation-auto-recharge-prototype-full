@@ -616,6 +616,9 @@ if _UI_DIR.exists():
     if _ASSETS_DIR.exists():
         app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
 
+    # Expose lib build (component.js / style.css) for Stardust Desktop embed (uiType: tsx)
+    app.mount("/ui/dist", StaticFiles(directory=str(_UI_DIR)), name="ui-dist")
+
     # SPA catch-all: non-API routes serve index.html
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
@@ -641,4 +644,9 @@ if _UI_DIR.exists():
 if __name__ == "__main__":
     import uvicorn
     from src.config import BACKEND_PORT
-    uvicorn.run("src.main:app", host="0.0.0.0", port=BACKEND_PORT)
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["formatters"]["access"]["fmt"] = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    uvicorn.run("src.main:app", host="0.0.0.0", port=BACKEND_PORT, log_config=log_config)

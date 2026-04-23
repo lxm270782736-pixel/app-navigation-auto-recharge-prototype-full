@@ -75,7 +75,7 @@ sleep 1
 ################################
 xdotool type "cd /home/instellar/Documents/Codes/Planning/app_navigation/"
 xdotool key Return
-xdotool type "python3 main.py"
+xdotool type "python3 -m src.main"
 xdotool key Return
 ################################
 # 回到右上 → 再垂直分一个

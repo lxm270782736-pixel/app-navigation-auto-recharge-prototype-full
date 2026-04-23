@@ -23,19 +23,28 @@ export default defineConfig(({ mode }) => {
 
     define: {
       __BACKEND_PORT__: backendPort,
+      'process.env.NODE_ENV': JSON.stringify('production'),
+      'process.env': '{}',
     },
 
     build: {
-      outDir: 'dist-lib',
+      outDir: 'dist',
       emptyOutDir: true,
       lib: {
         entry: path.resolve(__dirname, 'src/App.tsx'),
         name: 'NavigationApp',
         formats: ['es'],
-        fileName: () => 'navigation-app.js',
+        fileName: () => 'component.js',
       },
       rollupOptions: {
-        external: ['react', 'react-dom', 'react/jsx-runtime'],
+        // Shared deps provided by the host app via import map — do NOT bundle these
+        external: [
+          'react',
+          'react/jsx-runtime',
+          'react-dom',
+          '@astribot/stores',
+          '@astribot/ui',
+        ],
         output: {
           globals: {
             react: 'React',

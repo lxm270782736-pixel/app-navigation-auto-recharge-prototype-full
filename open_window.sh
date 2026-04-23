@@ -131,7 +131,7 @@ sleep 1
 xdotool type "cd /home/astribot/workspace/app_navigation/"
 xdotool key Return
 
-xdotool type "PYTHONUNBUFFERED=1 python3 main.py 2>&1 | tee $LOG_BASE/app_navigation/log_${TIMESTAMP}.log"
+xdotool type "PYTHONUNBUFFERED=1 python3 -m src.main 2>&1 | tee $LOG_BASE/app_navigation/log_${TIMESTAMP}.log"
 xdotool key Return
 
 

@@ -21,14 +21,15 @@ requiredMetas:
 
 # --- Stardust Desktop Integration ---
 port: 17659
-uiType: "iframe"
+entrypoint: python3 -m src.main
+uiType: tsx
 
 modes:
   standalone:
     description: "独立访问模式，直接通过 http://host:port 访问"
-    entry: "main.py"
+    entry: "python3 -m src.main"
   embedded:
     description: "星尘桌面嵌入模式，通过反向代理 + iframe 加载"
-    entry: "main.py"
+    entry: "python3 -m src.main"
     rootPath: "/apps/navigation"
     buildCommand: "cd ui && npm run build:lib"

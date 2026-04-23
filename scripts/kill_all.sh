@@ -10,7 +10,7 @@ PATTERNS=(
     "meta_base src.api:Localization"
     "meta_base src.api:SalesReplay"
     "webots_mecanum.launch.py"
-    "main.py"
+    "src.main"
     "astribot_simulation.py"
 )
 
