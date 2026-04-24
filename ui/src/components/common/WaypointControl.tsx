@@ -1,22 +1,6 @@
 import React from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from '@astribot/ui';
-import { Flag, GripVertical, ListOrdered, MapPinned, Route, Settings2, Trash2 } from 'lucide-react';
-import {
-  DndContext,
-  DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { ChevronDown, ChevronUp, Flag, ListOrdered, MapPinned, Route, Settings2, Trash2 } from 'lucide-react';
 import type { Waypoint } from '@/types';
 
 interface WaypointControlProps {
@@ -34,42 +18,36 @@ interface WaypointControlProps {
   isNavigating: boolean;
 }
 
-interface SortableWaypointItemProps {
+interface WaypointItemProps {
   waypoint: Waypoint;
   index: number;
+  count: number;
   isCurrent: boolean;
   isCompleted: boolean;
   isSelected: boolean;
   isNavigating: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onMove: (fromIndex: number, toIndex: number) => void;
 }
 
-const SortableWaypointItem: React.FC<SortableWaypointItemProps> = ({
+const WaypointItem: React.FC<WaypointItemProps> = ({
   waypoint,
   index,
+  count,
   isCurrent,
   isCompleted,
   isSelected,
   isNavigating,
   onEdit,
   onDelete,
+  onMove,
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: index.toString(),
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
   const hasTask = waypoint.tasks && waypoint.tasks.length > 0;
   const navMode = waypoint.navigationMode || 'obstacle_avoidance';
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div>
       <div
         className={cn(
           'flex items-start gap-3 border-b border-border/60 px-3 py-3 last:border-b-0',
@@ -79,15 +57,14 @@ const SortableWaypointItem: React.FC<SortableWaypointItemProps> = ({
         )}
       >
         {!isNavigating && (
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            className="mt-1 cursor-grab text-muted-foreground transition-colors hover:text-foreground"
-            aria-label={`拖动第 ${index + 1} 个路径点`}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 flex-col">
+            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}>
+              <ChevronUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="下移" disabled={index === count - 1} onClick={() => onMove(index, index + 1)}>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         )}
 
         <div
@@ -148,22 +125,6 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
   onMoveWaypoint,
   isNavigating,
 }) => {
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = parseInt(active.id as string, 10);
-      const newIndex = parseInt(over.id as string, 10);
-      onMoveWaypoint(oldIndex, newIndex);
-    }
-  };
-
   const progress = waypoints.length > 0
     ? Math.round((completedWaypoints.length / waypoints.length) * 100)
     : 0;
@@ -174,7 +135,6 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base">路径点管理</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">维护多点巡航路径，支持拖拽排序。</p>
           </div>
           <Badge variant="secondary">{waypoints.length} 个路径点</Badge>
         </div>
@@ -214,29 +174,23 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
                   </div>
                 )}
 
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext
-                    items={waypoints.map((_, index) => index.toString())}
-                    strategy={verticalListSortingStrategy}
-                    disabled={isNavigating}
-                  >
-                    <div className="max-h-64 overflow-y-auto rounded-lg border border-border/70 bg-muted/10">
-                      {waypoints.map((waypoint, index) => (
-                        <SortableWaypointItem
-                          key={index}
-                          waypoint={waypoint}
-                          index={index}
-                          isCurrent={index === currentWaypointIndex}
-                          isCompleted={completedWaypoints.includes(index)}
-                          isSelected={index === selectedWaypointIndex}
-                          isNavigating={isNavigating}
-                          onEdit={() => onEditWaypoint(index)}
-                          onDelete={() => onDeleteWaypoint(index)}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border/70 bg-muted/10">
+                  {waypoints.map((waypoint, index) => (
+                    <WaypointItem
+                      key={index}
+                      waypoint={waypoint}
+                      index={index}
+                      count={waypoints.length}
+                      isCurrent={index === currentWaypointIndex}
+                      isCompleted={completedWaypoints.includes(index)}
+                      isSelected={index === selectedWaypointIndex}
+                      isNavigating={isNavigating}
+                      onEdit={() => onEditWaypoint(index)}
+                      onDelete={() => onDeleteWaypoint(index)}
+                      onMove={onMoveWaypoint}
+                    />
+                  ))}
+                </div>
               </>
             )}
 

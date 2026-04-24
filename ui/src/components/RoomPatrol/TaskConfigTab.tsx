@@ -1,22 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
   Badge,
   Button as UIButton,
   Card as UICard,
@@ -35,7 +18,7 @@ import {
   TooltipTrigger,
   cn,
 } from '@astribot/ui';
-import { CircleAlert, Copy, GripVertical, Pencil, Plus, Settings2, Star, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleAlert, Copy, Pencil, Plus, Settings2, Star, Trash2 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
@@ -94,6 +77,16 @@ const BUILTIN_META_SERVICE: Record<string, string> = {
   detect_floor: 'meta.detection',
 };
 
+const moveItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+};
+
 // Draggable resize handle between columns
 const ResizeHandle: React.FC<{
   onResize: (delta: number) => void;
@@ -141,28 +134,18 @@ const ResizeHandle: React.FC<{
   );
 };
 
-// Sortable room item for drag-and-drop reorder
-const SortableRoomItem: React.FC<{
+const RoomOrderItem: React.FC<{
   room: any;
   idx: number;
+  count: number;
   isSelected: boolean;
   isReady: boolean;
   onSelect: () => void;
   onToggle: () => void;
-}> = ({ room, idx, isSelected, isReady, onSelect, onToggle }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: room.room_id,
-  });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : room.enabled ? 1 : 0.5,
-  };
-
+  onMove: (fromIndex: number, toIndex: number) => void;
+}> = ({ room, idx, count, isSelected, isReady, onSelect, onToggle, onMove }) => {
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       className={cn(
         'mb-2 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition',
         isSelected ? 'border-primary/50 bg-primary/10' : 'border-border/70 bg-card/90',
@@ -170,9 +153,14 @@ const SortableRoomItem: React.FC<{
       )}
       onClick={onSelect}
     >
-      <span {...attributes} {...listeners} className="flex cursor-grab text-muted-foreground" onClick={e => e.stopPropagation()}>
-        <GripVertical className="h-4 w-4" />
-      </span>
+      <div className="flex shrink-0 flex-col" onClick={e => e.stopPropagation()}>
+        <UIButton type="button" variant="ghost" size="icon" className="h-5 w-5" title="上移" disabled={idx === 0} onClick={() => onMove(idx, idx - 1)}>
+          <ChevronUp className="h-3.5 w-3.5" />
+        </UIButton>
+        <UIButton type="button" variant="ghost" size="icon" className="h-5 w-5" title="下移" disabled={idx === count - 1} onClick={() => onMove(idx, idx + 1)}>
+          <ChevronDown className="h-3.5 w-3.5" />
+        </UIButton>
+      </div>
       <input
         type="checkbox"
         checked={room.enabled}
@@ -189,25 +177,14 @@ const SortableRoomItem: React.FC<{
   );
 };
 
-// Sortable step item for drag-and-drop reorder
-const SortableStepItem: React.FC<{
-  id: string;
+const StepOrderItem: React.FC<{
   borderColor: string;
   children: React.ReactNode;
-}> = ({ id, borderColor, children }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+}> = ({ borderColor, children }) => {
   return (
-    <div ref={setNodeRef} style={style} className="mb-2">
+    <div className="mb-2">
       <UICard className="border-l-[3px] border-border/70 bg-card/90 shadow-sm" style={{ borderLeftColor: borderColor }}>
         <CardContent className="flex items-center gap-2 p-3">
-          <span {...attributes} {...listeners} className="flex cursor-grab text-muted-foreground">
-            <GripVertical className="h-4 w-4" />
-          </span>
           {children}
         </CardContent>
       </UICard>
@@ -468,39 +445,15 @@ export const TaskConfigTab: React.FC = () => {
     updateRooms(editingPreset.rooms.map(r => ({ ...r, enabled: v })));
   };
 
-  // DnD
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const handleRoomDragEnd = (event: DragEndEvent) => {
+  const moveRoom = (fromIndex: number, toIndex: number) => {
     if (!editingPreset) return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const rooms = [...editingPreset.rooms];
-    const oldIdx = rooms.findIndex(r => r.room_id === active.id);
-    const newIdx = rooms.findIndex(r => r.room_id === over.id);
-    if (oldIdx < 0 || newIdx < 0) return;
-    const [moved] = rooms.splice(oldIdx, 1);
-    rooms.splice(newIdx, 0, moved);
-    updateRooms(rooms);
+    updateRooms(moveItem(editingPreset.rooms, fromIndex, toIndex));
   };
 
-  const handleStepDragEnd = (event: DragEndEvent) => {
+  const moveStep = (fromIndex: number, toIndex: number) => {
     if (!selectedRoom) return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = Number(String(active.id).replace('step-', ''));
-    const newIdx = Number(String(over.id).replace('step-', ''));
-    if (isNaN(oldIdx) || isNaN(newIdx)) return;
-    updateSteps(arrayMove(selectedRoom.steps, oldIdx, newIdx));
+    updateSteps(moveItem(selectedRoom.steps, fromIndex, toIndex));
   };
-
-  const stepIds = useMemo(
-    () => (selectedRoom?.steps || []).map((_, i) => `step-${i}`),
-    [selectedRoom?.steps],
-  );
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
@@ -637,32 +590,30 @@ export const TaskConfigTab: React.FC = () => {
             全选
           </label>
         </div>
-        <div className="mb-3 text-xs text-muted-foreground">拖拽调整顺序，勾选参与导览的区域</div>
+        <div className="mb-3 text-xs text-muted-foreground">导览区域</div>
 
         {!editingPreset ? (
           <div className="mt-10 text-center text-sm text-muted-foreground">选择左侧任务</div>
         ) : editingPreset.rooms.length === 0 ? (
           <div className="mt-10 text-center text-sm text-muted-foreground">请先在「点位录制」录制区域</div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRoomDragEnd}>
-            <SortableContext items={editingPreset.rooms.map(r => r.room_id)} strategy={verticalListSortingStrategy}>
-              {editingPreset.rooms.map((room, idx) => {
-                const rc = roomConfigs.find(r => r.room_id === room.room_id);
-                const isReady = rc ? (rc.waypoints || []).some(wp => wp.pose !== null) : false;
-                return (
-                  <SortableRoomItem
-                    key={room.room_id}
-                    room={room}
-                    idx={idx}
-                    isSelected={selectedRoomId === room.room_id}
-                    isReady={isReady}
-                    onSelect={() => setSelectedRoomId(room.room_id)}
-                    onToggle={() => toggleRoom(room.room_id)}
-                  />
-                );
-              })}
-            </SortableContext>
-          </DndContext>
+          editingPreset.rooms.map((room, idx) => {
+            const rc = roomConfigs.find(r => r.room_id === room.room_id);
+            const isReady = rc ? (rc.waypoints || []).some(wp => wp.pose !== null) : false;
+            return (
+              <RoomOrderItem
+                key={room.room_id}
+                room={room}
+                idx={idx}
+                count={editingPreset.rooms.length}
+                isSelected={selectedRoomId === room.room_id}
+                isReady={isReady}
+                onSelect={() => setSelectedRoomId(room.room_id)}
+                onToggle={() => toggleRoom(room.room_id)}
+                onMove={moveRoom}
+              />
+            );
+          })
         )}
       </div>
 
@@ -697,13 +648,20 @@ export const TaskConfigTab: React.FC = () => {
               暂无步骤，点击「默认模板」或「添加步骤」
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
-              <SortableContext items={stepIds} strategy={verticalListSortingStrategy}>
-                {selectedRoom.steps.map((step, idx) => {
-                  const isCustom = step.type.startsWith('custom:');
-                  const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
-                  return (
-                    <SortableStepItem key={stepIds[idx]} id={stepIds[idx]} borderColor={stepColors[step.type] || '#999'}>
+            <>
+              {selectedRoom.steps.map((step, idx) => {
+                const isCustom = step.type.startsWith('custom:');
+                const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
+                return (
+                  <StepOrderItem key={`${idx}-${step.type}`} borderColor={stepColors[step.type] || '#999'}>
+                      <div className="flex shrink-0 flex-col">
+                        <UIButton type="button" variant="ghost" size="icon" className="h-5 w-5" title="上移" disabled={idx === 0} onClick={() => moveStep(idx, idx - 1)}>
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </UIButton>
+                        <UIButton type="button" variant="ghost" size="icon" className="h-5 w-5" title="下移" disabled={idx === selectedRoom.steps.length - 1} onClick={() => moveStep(idx, idx + 1)}>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </UIButton>
+                      </div>
                       <span className="w-5 text-center text-xs font-semibold text-muted-foreground">{idx + 1}</span>
                       <UISwitch checked={step.enabled !== false} onCheckedChange={(v) => updateStep(idx, { enabled: v })} />
                       <select
@@ -825,11 +783,10 @@ export const TaskConfigTab: React.FC = () => {
                           <TooltipContent>删除</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                    </SortableStepItem>
-                  );
-                })}
-              </SortableContext>
-            </DndContext>
+                  </StepOrderItem>
+                );
+              })}
+            </>
           )}
         </div>
       </div>

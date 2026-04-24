@@ -1,23 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from '@astribot/ui';
-import { GripVertical, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
-import {
-  DndContext,
-  DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { ChevronDown, ChevronUp, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import {
   TaskConfig,
   TaskType,
@@ -130,6 +113,16 @@ const createTask = (type: TaskType): TaskConfig => {
   }
 };
 
+const moveItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+};
+
 export const TaskConfigPanel: React.FC<TaskConfigPanelProps> = ({ value = [], onChange }) => {
   const [tasks, setTasks] = useState<TaskConfig[]>(value);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -139,37 +132,23 @@ export const TaskConfigPanel: React.FC<TaskConfigPanelProps> = ({ value = [], on
     setTasks(value);
   }, [value]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   const updateTasks = (next: TaskConfig[]) => {
     setTasks(next);
     onChange?.(next);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = tasks.findIndex((_, index) => `task-${index}` === active.id);
-      const newIndex = tasks.findIndex((_, index) => `task-${index}` === over.id);
-      const reordered = arrayMove(tasks, oldIndex, newIndex);
-      updateTasks(reordered);
-      setNotice('任务顺序已调整');
+  const moveTask = (oldIndex: number, newIndex: number) => {
+    const reordered = moveItem(tasks, oldIndex, newIndex);
+    updateTasks(reordered);
+    setNotice('任务顺序已调整');
 
-      if (editingIndex !== null) {
-        if (editingIndex === oldIndex) {
-          setEditingIndex(newIndex);
-        } else if (oldIndex < editingIndex && newIndex >= editingIndex) {
-          setEditingIndex(editingIndex - 1);
-        } else if (oldIndex > editingIndex && newIndex <= editingIndex) {
-          setEditingIndex(editingIndex + 1);
-        }
+    if (editingIndex !== null) {
+      if (editingIndex === oldIndex) {
+        setEditingIndex(newIndex);
+      } else if (oldIndex < editingIndex && newIndex >= editingIndex) {
+        setEditingIndex(editingIndex - 1);
+      } else if (oldIndex > editingIndex && newIndex <= editingIndex) {
+        setEditingIndex(editingIndex + 1);
       }
     }
   };
@@ -221,29 +200,26 @@ export const TaskConfigPanel: React.FC<TaskConfigPanelProps> = ({ value = [], on
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-base">任务列表 ({tasks.length})</CardTitle>
-              <span className="text-xs text-muted-foreground">拖拽可调整顺序</span>
+              <span className="text-xs text-muted-foreground">执行顺序</span>
             </div>
           </CardHeader>
           <CardContent>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={tasks.map((_, index) => `task-${index}`)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-3">
-                  {tasks.map((task, index) => (
-                    <SortableTaskItem
-                      key={`task-${index}`}
-                      id={`task-${index}`}
-                      task={task}
-                      index={index}
-                      isEditing={editingIndex === index}
-                      onEdit={() => setEditingIndex(index)}
-                      onDelete={() => removeTask(index)}
-                      onUpdate={(updatedTask) => updateTask(index, updatedTask)}
-                      onCloseEdit={() => setEditingIndex(null)}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+            <div className="space-y-3">
+              {tasks.map((task, index) => (
+                <TaskItem
+                  key={`task-${index}`}
+                  task={task}
+                  index={index}
+                  count={tasks.length}
+                  isEditing={editingIndex === index}
+                  onEdit={() => setEditingIndex(index)}
+                  onDelete={() => removeTask(index)}
+                  onMove={moveTask}
+                  onUpdate={(updatedTask) => updateTask(index, updatedTask)}
+                  onCloseEdit={() => setEditingIndex(null)}
+                />
+              ))}
+            </div>
             {notice && <p className="mt-4 text-xs text-muted-foreground">{notice}</p>}
           </CardContent>
         </Card>
@@ -257,50 +233,44 @@ export const TaskConfigPanel: React.FC<TaskConfigPanelProps> = ({ value = [], on
   );
 };
 
-interface SortableTaskItemProps {
-  id: string;
+interface TaskItemProps {
   task: TaskConfig;
   index: number;
+  count: number;
   isEditing: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onMove: (fromIndex: number, toIndex: number) => void;
   onUpdate: (task: TaskConfig) => void;
   onCloseEdit: () => void;
 }
 
-const SortableTaskItem: React.FC<SortableTaskItemProps> = ({
-  id,
+const TaskItem: React.FC<TaskItemProps> = ({
   task,
   index,
+  count,
   isEditing,
   onEdit,
   onDelete,
+  onMove,
   onUpdate,
   onCloseEdit,
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
   return (
-    <div ref={setNodeRef} style={style}>
+    <div>
       <Card className={isEditing ? 'border-primary/50 bg-primary/5' : 'border-border/70 bg-background/40'}>
         <CardContent className="pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="cursor-grab text-muted-foreground transition-colors hover:text-foreground"
-                  {...attributes}
-                  {...listeners}
-                >
-                  <GripVertical className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 flex-col">
+                  <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="下移" disabled={index === count - 1} onClick={() => onMove(index, index + 1)}>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
                 <Badge variant="secondary">{index + 1}</Badge>
                 <span className="truncate font-medium text-foreground">{task.name || taskTypeNames[task.type] || task.type}</span>
                 <Badge variant="outline">{task.type}</Badge>

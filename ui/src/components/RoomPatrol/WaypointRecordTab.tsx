@@ -1,19 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
   Badge,
   Button,
   Card,
@@ -32,9 +18,10 @@ import {
   cn,
 } from '@astribot/ui';
 import {
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   Crosshair,
-  GripVertical,
   MapPin,
   Pencil,
   Plus,
@@ -55,6 +42,16 @@ const WAYPOINT_COLORS: Record<string, string> = {
   custom: '#722ed1',
 };
 
+const moveItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+};
+
 interface SortableRoomCardProps {
   room: any;
   roomIdx: number;
@@ -64,6 +61,8 @@ interface SortableRoomCardProps {
   onEdit: (roomId: string, wpId: string, label: string, pose: any) => void;
   onAddWaypoint: (roomId: string) => void;
   onDeleteWaypoint: (roomId: string, wpId: string) => void;
+  onMove: (fromIndex: number, toIndex: number) => void;
+  roomCount: number;
   robotPose: any;
 }
 
@@ -73,29 +72,22 @@ type NoticeState = {
 } | null;
 
 const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
-  room, roomIdx, isRoomReady, onDelete, onRecord, onEdit, onAddWaypoint, onDeleteWaypoint, robotPose,
+  room, roomIdx, roomCount, isRoomReady, onDelete, onRecord, onEdit, onAddWaypoint, onDeleteWaypoint, onMove, robotPose,
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.room_id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
   return (
-    <div ref={setNodeRef} style={style}>
+    <div>
       <Card className="border-border/70 bg-card/90 shadow-sm">
         <CardHeader className="gap-3 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                {...attributes}
-                {...listeners}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-muted/30 text-muted-foreground transition hover:bg-muted"
-              >
-                <GripVertical className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 flex-col">
+                <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="上移" disabled={roomIdx === 0} onClick={() => onMove(roomIdx, roomIdx - 1)}>
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="下移" disabled={roomIdx === roomCount - 1} onClick={() => onMove(roomIdx, roomIdx + 1)}>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </div>
               <div className="flex min-w-0 items-center gap-2">
                 <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
                   {roomIdx + 1}
@@ -382,15 +374,9 @@ export const WaypointRecordTab: React.FC = () => {
     setDeleteRoomTarget(roomId);
   };
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  const handleRoomDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id || !config) return;
-    const oldIdx = config.rooms.findIndex(r => r.room_id === active.id);
-    const newIdx = config.rooms.findIndex(r => r.room_id === over.id);
-    if (oldIdx === -1 || newIdx === -1) return;
-    const newRooms = arrayMove(config.rooms, oldIdx, newIdx);
+  const handleMoveRoom = (fromIndex: number, toIndex: number) => {
+    if (!config) return;
+    const newRooms = moveItem(config.rooms, fromIndex, toIndex);
     const updated = { ...config, rooms: newRooms };
     setConfig(updated);
     apiService.saveRoomConfig(updated).catch(() => setNotice({ tone: 'error', text: '保存顺序失败' }));
@@ -794,7 +780,7 @@ export const WaypointRecordTab: React.FC = () => {
             <div className="text-sm font-semibold text-foreground">
               区域列表 ({config?.rooms.length ?? 0})
             </div>
-            <Badge variant="secondary">拖拽排序</Badge>
+            <Badge variant="secondary">顺序</Badge>
           </div>
 
           {config?.rooms.length === 0 && (
@@ -811,24 +797,22 @@ export const WaypointRecordTab: React.FC = () => {
             </Card>
           )}
 
-          <DndContext sensors={sensors} onDragEnd={handleRoomDragEnd}>
-            <SortableContext items={config?.rooms.map(r => r.room_id) ?? []} strategy={verticalListSortingStrategy}>
-              {config?.rooms.map((room, roomIdx) => (
-                <SortableRoomCard
-                  key={room.room_id}
-                  room={room}
-                  roomIdx={roomIdx}
-                  isRoomReady={isRoomReady}
-                  onDelete={handleDeleteRoom}
-                  onRecord={handleRecord}
-                  onEdit={openEditModal}
-                  onAddWaypoint={handleAddWaypoint}
-                  onDeleteWaypoint={handleDeleteWaypoint}
-                  robotPose={robotPose}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+          {config?.rooms.map((room, roomIdx) => (
+            <SortableRoomCard
+              key={room.room_id}
+              room={room}
+              roomIdx={roomIdx}
+              roomCount={config.rooms.length}
+              isRoomReady={isRoomReady}
+              onDelete={handleDeleteRoom}
+              onRecord={handleRecord}
+              onEdit={openEditModal}
+              onAddWaypoint={handleAddWaypoint}
+              onDeleteWaypoint={handleDeleteWaypoint}
+              onMove={handleMoveRoom}
+              robotPose={robotPose}
+            />
+          ))}
 
           <Button
             type="button"
