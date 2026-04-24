@@ -198,6 +198,11 @@ def navigate_to(req: NavigateRequest):
     return logic.navigate_to(req.x, req.y, req.theta, req.config, req.tasks)
 
 
+@app.get("/api/navigation/path")
+def get_navigation_path():
+    return logic.get_navigation_path()
+
+
 @app.post("/api/navigation/cancel")
 def cancel_navigation():
     return logic.cancel_navigation()

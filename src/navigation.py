@@ -135,6 +135,23 @@ class NavigationMixin:
             self._nav_feedback = {"result": status, "goal_status": 4 if success else 3}
             self._nav_result_timestamp = time.time()
 
+    def get_navigation_path(self) -> list[dict]:
+        """Return current MINCO path from meta.astribot_navigation without auto-activating the service."""
+        if self._nav_state != "active" or not self._nav:
+            return []
+        if getattr(self, '_nav_path_unsupported', False):
+            return []
+        try:
+            path = self._nav.get_navigation_path()
+            return path if isinstance(path, list) else []
+        except Exception as e:
+            if "not found" in str(e).lower() or "has no attribute" in str(e).lower():
+                self._nav_path_unsupported = True
+                logger.info("[nav] get_navigation_path not supported by this nav service, disabling")
+            else:
+                logger.warning("[nav] get_navigation_path failed: %s", e)
+            return []
+
     def cancel_navigation(self) -> dict:
         if self._nav_state == "active" and self._nav:
             try:

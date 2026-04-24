@@ -3,6 +3,7 @@
     {
       "name": "meta.localization",
       "startup": true,
+      "deactivate_after_step": false,
       "config": {
         "map_folder": "map_default",
         "map_name": "map_default.pcd",
@@ -16,6 +17,7 @@
     {
       "name": "meta.astribot_navigation",
       "startup": true,
+      "deactivate_after_step": false,
       "config": {
         "map_path": "",
         "max_linear_velocity": 0.3,
@@ -27,7 +29,8 @@
     },
     {
       "name": "meta.detection",
-      "startup": true,
+      "startup": false,
+      "deactivate_after_step": false,
       "config": {
         "simulated": true
       }
@@ -35,11 +38,13 @@
     {
       "name": "meta.sales_replay",
       "startup": false,
+      "deactivate_after_step": false,
       "config": {}
     },
     {
       "name": "meta.camera",
       "startup": false,
+      "deactivate_after_step": false,
       "config": {}
     }
   ]

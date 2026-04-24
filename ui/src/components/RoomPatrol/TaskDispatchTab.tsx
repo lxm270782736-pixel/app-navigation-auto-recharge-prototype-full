@@ -17,7 +17,7 @@ import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
-import type { MapData, Pose, RoomPatrolState, RoomConfig } from '@/types';
+import type { MapData, Pose, RoomPatrolState, RoomConfig, PathPoint } from '@/types';
 
 const STEP_LABELS: Record<string, string> = {
   navigate: '导航中',
@@ -40,6 +40,7 @@ const WAYPOINT_TYPE_COLORS: Record<string, string> = {
 export const TaskDispatchTab: React.FC = () => {
   const { connectionStatus } = useRobot();
   const [patrolState, setPatrolState] = useState<RoomPatrolState | null>(null);
+  const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
@@ -237,6 +238,39 @@ export const TaskDispatchTab: React.FC = () => {
       }
     });
     return () => unsubscribe();
+  }, [connectionStatus]);
+
+  // Poll navigation MINCO path via backend meta API
+  useEffect(() => {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      setNavigationPath([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollPath = async () => {
+      try {
+        const path = await apiService.getNavigationPath();
+        if (cancelled) return;
+        const points: PathPoint[] = Array.isArray(path)
+          ? path
+              .filter((p: any) => typeof p?.x === 'number' && typeof p?.y === 'number')
+              .map((p: any) => ({ x: p.x, y: p.y }))
+          : [];
+        setNavigationPath(points);
+      } catch {
+        if (!cancelled) setNavigationPath([]);
+      }
+    };
+
+    pollPath();
+    const timer = window.setInterval(pollPath, 500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [connectionStatus]);
 
   const isActive = patrolState?.active ?? false;
@@ -437,6 +471,7 @@ export const TaskDispatchTab: React.FC = () => {
           <MapCanvas
             mapData={currentMap}
             robotPose={robotPose}
+            path={navigationPath}
             waypoints={waypoints}
             waypointLabels={waypointLabels}
             waypointColors={waypointColors}

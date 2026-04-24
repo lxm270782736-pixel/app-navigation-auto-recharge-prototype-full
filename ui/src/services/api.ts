@@ -280,6 +280,10 @@ class ApiService {
     this._post('/api/navigation/cancel', {}).catch(console.error);
   }
 
+  async getNavigationPath(): Promise<Array<{ x: number; y: number; yaw?: number }>> {
+    return this._get('/api/navigation/path');
+  }
+
   sendLocalNavigationGoal(pose: Pose): void {
     this._post('/api/navigation/local-go', {
       x: pose.x,
