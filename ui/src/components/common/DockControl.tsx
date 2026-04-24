@@ -1,18 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Button, Progress, message } from 'antd';
-import {
-  ThunderboltOutlined,
-  PoweroffOutlined,
-  LoadingOutlined,
-  CloseCircleOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@astribot/ui';
+import { BatteryCharging, Loader2, PlugZap, Power, RotateCcw, XCircle } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { ConnectionStatus } from '@/types';
 import { useRobot } from '@/contexts/RobotContext';
 
-// DockStatus 状态码
 enum DockStatusCode {
   IDLE = 0,
   DOCKING = 1,
@@ -29,12 +22,12 @@ const STATUS_LABELS: Record<number, string> = {
   [DockStatusCode.FAILED]: '失败',
 };
 
-const STATUS_COLORS: Record<number, string> = {
-  [DockStatusCode.IDLE]: '#999',
-  [DockStatusCode.DOCKING]: '#1890ff',
-  [DockStatusCode.CHARGING]: '#52c41a',
-  [DockStatusCode.UNDOCKING]: '#faad14',
-  [DockStatusCode.FAILED]: '#ff4d4f',
+const STATUS_BADGE: Record<number, string> = {
+  [DockStatusCode.IDLE]: 'bg-muted text-muted-foreground',
+  [DockStatusCode.DOCKING]: 'bg-sky-500/15 text-sky-200',
+  [DockStatusCode.CHARGING]: 'bg-emerald-500/15 text-emerald-200',
+  [DockStatusCode.UNDOCKING]: 'bg-amber-500/15 text-amber-200',
+  [DockStatusCode.FAILED]: 'bg-red-500/15 text-red-200',
 };
 
 interface DockControlProps {
@@ -43,20 +36,7 @@ interface DockControlProps {
 
 export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
   const { connectionStatus } = useRobot();
-
-  // 来自 /dock_status 话题的状态
-  const [dockStatus, setDockStatus] = useState<{
-    status: number;
-    state_code: number;
-    state_description: string;
-    progress: number;
-    error_code: number;
-    battery_percentage: number;
-    is_charging: boolean;
-    charging_current: number;
-    qr_detected: boolean;
-    dock_mode: number;
-  }>({
+  const [dockStatus, setDockStatus] = useState({
     status: DockStatusCode.IDLE,
     state_code: 0,
     state_description: '',
@@ -68,19 +48,11 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
     qr_detected: false,
     dock_mode: 0,
   });
-
-  // Action 执行中的 feedback 状态
-  const [actionFeedback, setActionFeedback] = useState<{
-    progress: number;
-    description: string;
-  } | null>(null);
-
-  // 是否有 action 正在执行
+  const [actionFeedback, setActionFeedback] = useState<{ progress: number; description: string } | null>(null);
   const [isDockActionActive, setIsDockActionActive] = useState(false);
-  // 上次失败的错误信息
-  const [lastError, setLastError] = useState<string>('');
+  const [lastError, setLastError] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // 订阅 /dock_status 话题
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       return;
@@ -105,10 +77,11 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       }
     );
 
-    return () => { unsubscribe(); };
+    return () => {
+      unsubscribe();
+    };
   }, [connectionStatus]);
 
-  // 监听 dock action 事件
   useEffect(() => {
     const handleDockFeedback = (data: any) => {
       setActionFeedback({
@@ -122,10 +95,10 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       setIsDockActionActive(false);
       setActionFeedback(null);
       if (data.success) {
-        message.success('上桩成功');
+        setNotice('上桩成功');
       } else {
         setLastError(data.message || `上桩失败 (错误码: ${data.error_code})`);
-        message.error(data.message || '上桩失败');
+        setNotice(data.message || '上桩失败');
       }
     };
 
@@ -141,10 +114,10 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       setIsDockActionActive(false);
       setActionFeedback(null);
       if (data.success) {
-        message.success('下桩成功');
+        setNotice('下桩成功');
       } else {
         setLastError(data.message || `下桩失败 (错误码: ${data.error_code})`);
-        message.error(data.message || '下桩失败');
+        setNotice(data.message || '下桩失败');
       }
     };
 
@@ -164,24 +137,26 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
   const handleDock = useCallback(async (forceRetry = false) => {
     try {
       setLastError('');
+      setNotice(null);
       setIsDockActionActive(true);
       await apiService.sendDockGoal(forceRetry);
     } catch (error) {
-      setIsDockActionActive(false);
-      message.error('发送上桩指令失败');
       console.error('Dock failed:', error);
+      setIsDockActionActive(false);
+      setNotice('发送上桩指令失败');
     }
   }, []);
 
   const handleUndock = useCallback(async () => {
     try {
       setLastError('');
+      setNotice(null);
       setIsDockActionActive(true);
       await apiService.sendUndockGoal(false);
     } catch (error) {
-      setIsDockActionActive(false);
-      message.error('发送下桩指令失败');
       console.error('Undock failed:', error);
+      setIsDockActionActive(false);
+      setNotice('发送下桩指令失败');
     }
   }, []);
 
@@ -189,7 +164,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
     apiService.cancelDock();
     setIsDockActionActive(false);
     setActionFeedback(null);
-    message.info('已取消');
+    setNotice('已取消回充操作');
   }, []);
 
   const isConnected = connectionStatus === ConnectionStatus.CONNECTED;
@@ -198,166 +173,127 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
   const isCharging = statusCode === DockStatusCode.CHARGING;
   const isUndocking = statusCode === DockStatusCode.UNDOCKING;
   const isFailed = statusCode === DockStatusCode.FAILED;
-
-  // 进度百分比：优先使用 action feedback，否则用 dock_status
   const progressPercent = actionFeedback?.progress ?? dockStatus.progress;
   const stageDescription = actionFeedback?.description || dockStatus.state_description;
 
   return (
-    <Card
-      title="回充控制"
-      size="small"
-      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-      extra={
-        <span style={{
-          fontSize: '12px',
-          color: STATUS_COLORS[statusCode] || '#999',
-          fontWeight: 600,
-        }}>
-          {STATUS_LABELS[statusCode] || '未知'}
-        </span>
-      }
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {/* 电量信息 */}
+    <Card className="border-border/70 bg-card/80 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">回充控制</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">查看电池状态并发起上桩、下桩操作。</p>
+          </div>
+          <Badge className={STATUS_BADGE[statusCode] || STATUS_BADGE[DockStatusCode.IDLE]}>
+            {STATUS_LABELS[statusCode] || '未知'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
         {isConnected && dockStatus.battery_percentage > 0 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}>
-            <ThunderboltOutlined style={{
-              color: dockStatus.is_charging ? '#52c41a' : '#999',
-              fontSize: '14px',
-            }} />
-            <Progress
-              percent={Math.round(dockStatus.battery_percentage)}
-              size="small"
-              style={{ flex: 1, marginBottom: 0 }}
-              strokeColor={
-                dockStatus.battery_percentage > 50 ? '#52c41a' :
-                dockStatus.battery_percentage > 20 ? '#faad14' : '#ff4d4f'
-              }
-              format={(p) => `${p}%`}
-            />
-            {dockStatus.is_charging && (
-              <span style={{ fontSize: '11px', color: '#52c41a' }}>
-                {dockStatus.charging_current.toFixed(1)}A
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="inline-flex items-center gap-2 text-muted-foreground">
+                <BatteryCharging className="h-4 w-4" />
+                电量
               </span>
-            )}
+              <span className="font-medium text-foreground">
+                {Math.round(dockStatus.battery_percentage)}%
+                {dockStatus.is_charging && ` · ${dockStatus.charging_current.toFixed(1)}A`}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.max(0, Math.min(Math.round(dockStatus.battery_percentage), 100))}%` }}
+              />
+            </div>
           </div>
         )}
 
-        {/* 上桩/下桩进度 */}
         {(isDocking || isUndocking) && (
-          <div>
-            <div style={{
-              fontSize: '12px',
-              color: '#666',
-              marginBottom: '4px',
-            }}>
-              {isDocking ? '上桩' : '下桩'}进度
+          <div className="space-y-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-sky-100">{isDocking ? '上桩进度' : '下桩进度'}</span>
+              <span className="font-medium text-sky-100">{Math.round(progressPercent)}%</span>
             </div>
-            <Progress
-              percent={Math.round(progressPercent)}
-              size="small"
-              status="active"
-              style={{ marginBottom: 0 }}
-            />
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.max(0, Math.min(Math.round(progressPercent), 100))}%` }}
+              />
+            </div>
             {stageDescription && (
-              <div style={{
-                fontSize: '11px',
-                color: '#888',
-                marginTop: '4px',
-              }}>
-                <LoadingOutlined style={{ marginRight: 4 }} />
+              <div className="flex items-center gap-2 text-xs text-sky-100">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {stageDescription}
               </div>
             )}
           </div>
         )}
 
-        {/* 失败信息 */}
         {isFailed && lastError && (
-          <div style={{
-            padding: '8px',
-            background: '#fff2f0',
-            border: '1px solid #ffccc7',
-            borderRadius: '4px',
-            fontSize: '12px',
-            color: '#ff4d4f',
-          }}>
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
             {lastError}
           </div>
         )}
 
-        {/* 操作按钮 */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="grid gap-2 sm:grid-cols-2">
           {isDockActionActive ? (
-            // 执行中：显示取消按钮
-            <Button
-              danger
-              block
-              icon={<CloseCircleOutlined />}
-              onClick={handleCancel}
-            >
+            <Button type="button" variant="destructive" className="sm:col-span-2" onClick={handleCancel}>
+              <XCircle className="mr-2 h-4 w-4" />
               取消
             </Button>
           ) : isFailed ? (
-            // 失败：显示重试按钮
             <Button
-              type="primary"
-              block
-              icon={<ReloadOutlined />}
-              onClick={() => handleDock(true)}
+              type="button"
+              className="sm:col-span-2"
+              onClick={() => void handleDock(true)}
               disabled={!isConnected || isNavigating}
             >
+              <RotateCcw className="mr-2 h-4 w-4" />
               重试上桩
             </Button>
           ) : isCharging ? (
-            // 充电中：显示下桩按钮
             <Button
-              block
-              icon={<PoweroffOutlined />}
-              onClick={handleUndock}
+              type="button"
+              variant="outline"
+              className="sm:col-span-2"
+              onClick={() => void handleUndock()}
               disabled={!isConnected || isNavigating}
             >
+              <Power className="mr-2 h-4 w-4" />
               下桩
             </Button>
           ) : (
-            // 空闲 / 其他：显示上桩和下桩按钮
             <>
               <Button
-                type="primary"
-                block
-                icon={<ThunderboltOutlined />}
-                onClick={() => handleDock(false)}
+                type="button"
+                onClick={() => void handleDock(false)}
                 disabled={!isConnected || isNavigating || isDocking || isUndocking}
               >
+                <PlugZap className="mr-2 h-4 w-4" />
                 上桩
               </Button>
               <Button
-                block
-                icon={<PoweroffOutlined />}
-                onClick={handleUndock}
+                type="button"
+                variant="outline"
+                onClick={() => void handleUndock()}
                 disabled={!isConnected || isNavigating || isDocking || isUndocking}
               >
+                <Power className="mr-2 h-4 w-4" />
                 下桩
               </Button>
             </>
           )}
         </div>
 
-        {/* 导航中禁用提示 */}
         {isNavigating && !isDockActionActive && (
-          <div style={{
-            fontSize: '11px',
-            color: '#faad14',
-          }}>
-            导航中，回充操作已禁用
-          </div>
+          <div className="text-xs text-amber-200">导航中，回充操作已禁用。</div>
         )}
-      </div>
+
+        {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
+      </CardContent>
     </Card>
   );
 };

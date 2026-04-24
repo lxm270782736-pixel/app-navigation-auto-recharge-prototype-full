@@ -1,30 +1,6 @@
 import React from 'react';
-import { Card, Button, List, Space, Tag, Progress, Empty } from 'antd';
-import {
-  DeleteOutlined,
-  ClearOutlined,
-  EnvironmentOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
-  UnorderedListOutlined,
-  HolderOutlined,
-} from '@ant-design/icons';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from '@astribot/ui';
+import { ChevronDown, ChevronUp, Flag, ListOrdered, MapPinned, Route, Settings2, Trash2 } from 'lucide-react';
 import type { Waypoint } from '@/types';
 
 interface WaypointControlProps {
@@ -42,169 +18,96 @@ interface WaypointControlProps {
   isNavigating: boolean;
 }
 
-// 可排序的列表项组件
-interface SortableWaypointItemProps {
+interface WaypointItemProps {
   waypoint: Waypoint;
   index: number;
+  count: number;
   isCurrent: boolean;
   isCompleted: boolean;
   isSelected: boolean;
   isNavigating: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  onUpdatePose?: (x: number, y: number, theta: number) => void;
+  onMove: (fromIndex: number, toIndex: number) => void;
 }
 
-const SortableWaypointItem: React.FC<SortableWaypointItemProps> = ({
+const WaypointItem: React.FC<WaypointItemProps> = ({
   waypoint,
   index,
+  count,
   isCurrent,
   isCompleted,
   isSelected,
   isNavigating,
   onEdit,
   onDelete,
+  onMove,
 }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: index.toString() });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
   const hasTask = waypoint.tasks && waypoint.tasks.length > 0;
   const navMode = waypoint.navigationMode || 'obstacle_avoidance';
 
   return (
-    <div ref={setNodeRef} style={style}>
-      <List.Item
-        style={{
-          padding: '8px 12px',
-          background: isCurrent ? '#f6ffed' : isCompleted ? '#fafafa' : 'white',
-          borderBottom: '1px solid #f0f0f0',
-          cursor: isNavigating ? 'default' : 'move',
-          // 选中的路径点添加橙色左边框高亮
-          borderLeft: isSelected ? '4px solid #faad14' : '4px solid transparent',
-          // 选中的路径点添加浅黄色背景
-          ...(isSelected && !isCurrent && !isCompleted ? { background: '#fffbe6' } : {}),
-        }}
-        actions={[
-          !isNavigating && (
-            <Button
-              key="edit"
-              type="text"
-              size="small"
-              icon={<SettingOutlined />}
-              onClick={onEdit}
-              title="编辑"
-            />
-          ),
-          !isNavigating && (
-            <Button
-              key="delete"
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={onDelete}
-              title="删除"
-            />
-          ),
-        ].filter(Boolean)}
+    <div>
+      <div
+        className={cn(
+          'flex items-start gap-3 border-b border-border/60 px-3 py-3 last:border-b-0',
+          isCurrent && 'bg-emerald-500/10',
+          isCompleted && 'bg-muted/20',
+          isSelected && !isCurrent && 'border-l-4 border-l-amber-400 bg-amber-500/10 pl-2'
+        )}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-          {/* 拖拽手柄 */}
-          {!isNavigating && (
-            <div
-              {...attributes}
-              {...listeners}
-              style={{
-                cursor: 'grab',
-                display: 'flex',
-                alignItems: 'center',
-                color: '#999',
-              }}
-            >
-              <HolderOutlined />
-            </div>
-          )}
+        {!isNavigating && (
+          <div className="flex shrink-0 flex-col">
+            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}>
+              <ChevronUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" title="下移" disabled={index === count - 1} onClick={() => onMove(index, index + 1)}>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
 
-          {/* 序号标记 */}
-          <div
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: isCompleted ? '#999' : isCurrent ? '#52c41a' : '#1890ff',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              flexShrink: 0,
-            }}
-          >
-            {index + 1}
+        <div
+          className={cn(
+            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white',
+            isCompleted ? 'bg-muted-foreground' : isCurrent ? 'bg-emerald-500' : 'bg-primary'
+          )}
+        >
+          {index + 1}
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="truncate font-mono text-xs text-foreground">
+            ({waypoint.pose.x.toFixed(2)}, {waypoint.pose.y.toFixed(2)}, {((waypoint.pose.theta * 180) / Math.PI).toFixed(0)}°)
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-            {/* 坐标和方向 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                flex: 1,
-                fontSize: '12px',
-                color: '#262626',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                ({waypoint.pose.x.toFixed(2)}, {waypoint.pose.y.toFixed(2)}, {((waypoint.pose.theta * 180) / Math.PI).toFixed(0)}°)
-              </div>
-            </div>
-
-            {/* 配置信息 + 状态标签 */}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-              {hasTask && (
-                <Tag
-                  icon={<UnorderedListOutlined />}
-                  color="blue"
-                  style={{ margin: 0, fontSize: '10px' }}
-                >
-                  {waypoint.tasks!.length}个任务
-                </Tag>
-              )}
-              <Tag
-                icon={<ThunderboltOutlined />}
-                color={navMode === 'obstacle_avoidance' ? 'green' : 'orange'}
-                style={{ margin: 0, fontSize: '10px' }}
-              >
-                {navMode === 'obstacle_avoidance' ? '避障' : '局部'}
-              </Tag>
-
-              {/* 状态标签 - 显示在避障标签右边 */}
-              {isCurrent && (
-                <Tag color="processing" style={{ margin: 0, fontSize: '10px' }}>
-                  进行中
-                </Tag>
-              )}
-              {isCompleted && (
-                <Tag color="default" style={{ margin: 0, fontSize: '10px' }}>
-                  已完成
-                </Tag>
-              )}
-            </div>
+          <div className="flex flex-wrap gap-1.5">
+            {hasTask && (
+              <Badge variant="secondary" className="gap-1">
+                <ListOrdered className="h-3 w-3" />
+                {waypoint.tasks!.length} 个任务
+              </Badge>
+            )}
+            <Badge variant="secondary" className="gap-1">
+              <Route className="h-3 w-3" />
+              {navMode === 'obstacle_avoidance' ? '避障' : '局部'}
+            </Badge>
+            {isCurrent && <Badge className="bg-emerald-500/15 text-emerald-200">进行中</Badge>}
+            {isCompleted && <Badge variant="secondary">已完成</Badge>}
           </div>
         </div>
-      </List.Item>
+
+        {!isNavigating && (
+          <div className="flex shrink-0 gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+              <Settings2 className="h-4 w-4" />
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+              <Trash2 className="h-4 w-4 text-red-300" />
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -222,175 +125,87 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
   onMoveWaypoint,
   isNavigating,
 }) => {
-  // 配置拖拽传感器
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  // 处理拖拽结束
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = parseInt(active.id as string);
-      const newIndex = parseInt(over.id as string);
-      onMoveWaypoint(oldIndex, newIndex);
-    }
-  };
-
-  // 计算巡航进度
   const progress = waypoints.length > 0
     ? Math.round((completedWaypoints.length / waypoints.length) * 100)
     : 0;
 
   return (
-    <Card
-      title="路径点管理"
-      size="small"
-      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-    >
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        {/* 多点模式信息 */}
+    <Card className="border-border/70 bg-card/80 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">路径点管理</CardTitle>
+          </div>
+          <Badge variant="secondary">{waypoints.length} 个路径点</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
         {waypointMode && (
           <>
-            {/* 路径点列表 */}
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 8,
-                }}
-              >
-                <span style={{ fontSize: '13px', fontWeight: 500 }}>
-                  路径点列表 ({waypoints.length})
-                </span>
-                {waypoints.length > 0 && !isNavigating && (
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<ClearOutlined />}
-                    onClick={onClearWaypoints}
-                  >
-                    清空
-                  </Button>
-                )}
-              </div>
-
-              {waypoints.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="点击地图添加路径点"
-                  style={{ margin: '16px 0' }}
-                />
-              ) : (
-                <>
-                  {/* 巡航进度（导航中显示） */}
-                  {isNavigating && currentWaypointIndex >= 0 && (
-                    <div
-                      style={{
-                        padding: '12px',
-                        background: '#f0f9ff',
-                        borderRadius: '4px',
-                        marginBottom: 12,
-                        border: '1px solid #91d5ff',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: 8,
-                        }}
-                      >
-                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#1890ff' }}>
-                          巡航进度
-                        </span>
-                        <span style={{ fontSize: '13px', color: '#666' }}>
-                          {currentWaypointIndex + 1} / {waypoints.length}
-                        </span>
-                      </div>
-                      <Progress
-                        percent={progress}
-                        status="active"
-                        strokeColor={{
-                          '0%': '#108ee9',
-                          '100%': '#87d068',
-                        }}
-                        size="small"
-                      />
-                    </div>
-                  )}
-
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={waypoints.map((_, index) => index.toString())}
-                      strategy={verticalListSortingStrategy}
-                      disabled={isNavigating}
-                    >
-                      <List
-                        size="small"
-                        dataSource={waypoints}
-                        style={{
-                          maxHeight: '240px',
-                          overflowY: 'auto',
-                          border: '1px solid #f0f0f0',
-                          borderRadius: '4px',
-                        }}
-                        renderItem={(waypoint, index) => (
-                          <SortableWaypointItem
-                            key={index}
-                            waypoint={waypoint}
-                            index={index}
-                            isCurrent={index === currentWaypointIndex}
-                            isCompleted={completedWaypoints.includes(index)}
-                            isSelected={index === selectedWaypointIndex}
-                            isNavigating={isNavigating}
-                            onEdit={() => onEditWaypoint(index)}
-                            onDelete={() => onDeleteWaypoint(index)}
-                          />
-                        )}
-                      />
-                    </SortableContext>
-                  </DndContext>
-                </>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-foreground">路径点列表</div>
+              {waypoints.length > 0 && !isNavigating && (
+                <Button type="button" variant="outline" size="sm" onClick={onClearWaypoints}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  清空
+                </Button>
               )}
             </div>
 
-            {/* 操作提示 */}
+            {waypoints.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                <MapPinned className="mx-auto mb-3 h-8 w-8 text-muted-foreground/70" />
+                点击地图添加路径点。
+              </div>
+            ) : (
+              <>
+                {isNavigating && currentWaypointIndex >= 0 && (
+                  <div className="space-y-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-sky-100">巡航进度</span>
+                      <span className="text-sky-100">{currentWaypointIndex + 1} / {waypoints.length}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-secondary/80">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border/70 bg-muted/10">
+                  {waypoints.map((waypoint, index) => (
+                    <WaypointItem
+                      key={index}
+                      waypoint={waypoint}
+                      index={index}
+                      count={waypoints.length}
+                      isCurrent={index === currentWaypointIndex}
+                      isCompleted={completedWaypoints.includes(index)}
+                      isSelected={index === selectedWaypointIndex}
+                      isNavigating={isNavigating}
+                      onEdit={() => onEditWaypoint(index)}
+                      onDelete={() => onDeleteWaypoint(index)}
+                      onMove={onMoveWaypoint}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
             {!isNavigating && (
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: '#8c8c8c',
-                  padding: '8px 12px',
-                  background: '#fafafa',
-                  borderRadius: '4px',
-                  lineHeight: '1.6',
-                }}
-              >
-                <div style={{ marginBottom: 4 }}>
-                  <EnvironmentOutlined style={{ marginRight: 4 }} />
-                  点击地图添加路径点
+              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <div className="mb-1 flex items-center gap-2">
+                  <Flag className="h-3.5 w-3.5" />
+                  点击地图添加路径点。
                 </div>
-                <div>
-                  巡航将按序号依次导航到每个路径点
-                </div>
+                <div>巡航将按序号依次导航到每个路径点。</div>
               </div>
             )}
           </>
         )}
-      </Space>
+      </CardContent>
     </Card>
   );
 };

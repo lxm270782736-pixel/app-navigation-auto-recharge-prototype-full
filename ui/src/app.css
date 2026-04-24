@@ -1,50 +1,42 @@
 @tailwind utilities;
 
-/* Preserve Ant Design global styles (transition period) */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: "HarmonyOS Sans SC", ui-sans-serif, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-.app-container {
-  min-height: 100vh;
-  background-color: #f0f2f5;
-  overflow-y: auto;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 #root {
-  height: 100vh;
   overflow: auto;
 }
 
-/* CSS variables for mock mode (prod provided by host)
-:root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --primary: 262 80% 50%;
-  --primary-foreground: 240 10% 3.9%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 262 80% 50%;
-  --radius: 0.5rem;
-} */
+.app-shell {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding-top: var(--astribot-app-top-safe-area, 3rem);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.app-shell--standalone {
+  min-height: 100vh;
+  padding-top: 0;
+}
+
+.app-shell--fullscreen {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--background));
+}

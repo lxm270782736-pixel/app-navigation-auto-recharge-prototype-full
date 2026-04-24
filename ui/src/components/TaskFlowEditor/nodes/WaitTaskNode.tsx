@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input, Button } from 'antd';
-import { ClockCircleOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { Input } from '@astribot/ui';
+import { Clock3 } from 'lucide-react';
+import { TaskNodeShell } from './TaskNodeShell';
 
 export const WaitTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [duration, setDuration] = useState(data.duration || 5);
@@ -12,61 +13,38 @@ export const WaitTaskNode: React.FC<NodeProps> = ({ data }) => {
     <div className="custom-task-node">
       <Handle type="target" position={Position.Top} />
 
-      <Card
-        size="small"
-        style={{
-          minWidth: 180,
-          backgroundColor: '#e3f2fd',
-          border: '2px solid #1976d2',
+      <TaskNodeShell
+        icon={<Clock3 className="h-5 w-5" />}
+        iconClassName="text-sky-600"
+        toneClassName="border-sky-600/50 bg-sky-500/10"
+        label={label}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        onLabelChange={(value) => {
+          setLabel(value);
+          data.label = value;
         }}
+        collapsedSummary={`${duration} 秒`}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ClockCircleOutlined style={{ fontSize: 20, color: '#1976d2' }} />
+        <div>
+          <div className="mb-1 text-[11px] text-muted-foreground">等待时长</div>
+          <div className="flex items-center gap-2">
             <Input
-              size="small"
-              value={label}
+              type="number"
+              min={1}
+              max={600}
+              value={String(duration)}
               onChange={(e) => {
-                setLabel(e.target.value);
-                data.label = e.target.value;
+                const value = Number(e.target.value) || 5;
+                setDuration(value);
+                data.duration = value;
               }}
-              style={{ fontWeight: 'bold', flex: 1 }}
-              bordered={false}
+              className="h-8"
             />
-            <Button
-              type="text"
-              size="small"
-              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ padding: '0 4px' }}
-            />
+            <span className="text-[11px] text-muted-foreground">秒</span>
           </div>
-
-          {!collapsed && (
-            <div>
-              <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>等待时长</div>
-              <InputNumber
-                size="small"
-                min={1}
-                max={600}
-                value={duration}
-                onChange={(value) => {
-                  setDuration(value || 5);
-                  data.duration = value || 5;
-                }}
-                addonAfter="秒"
-                style={{ width: '100%' }}
-              />
-            </div>
-          )}
-
-          {collapsed && (
-            <div style={{ fontSize: 11, color: '#666' }}>
-              {duration} 秒
-            </div>
-          )}
         </div>
-      </Card>
+      </TaskNodeShell>
 
       <Handle type="source" position={Position.Bottom} />
     </div>

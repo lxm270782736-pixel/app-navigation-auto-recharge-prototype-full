@@ -4,36 +4,38 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build --config vite.config.lib.ts",
     "build:lib": "vite build --config vite.config.lib.ts",
-    "dev": "vite build --watch",
+    "build:standalone": "vite build",
+    "dev": "vite build --config vite.config.lib.ts --watch",
+    "dev:standalone": "vite",
     "preview": "vite preview"
   },
   "peerDependencies": {
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0"
+    "@astribot/stores": "*",
+    "@astribot/ui": "*",
+    "react": "*",
+    "react-dom": "*"
   },
   "dependencies": {
+    "dayjs": "^1.11.10",
     "react-router-dom": "^6.20.0",
     "reactflow": "^11.11.4",
-    "roslib": "^1.3.0",
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "dayjs": "^1.11.10",
-    "antd": "^5.12.0",
-    "@ant-design/icons": "^5.2.6"
+    "roslib": "^1.3.0"
   },
   "devDependencies": {
-    "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17",
+    "@astribot/stores": "file:../../../platform_client/packages/stores",
+    "@astribot/ui": "file:../../../platform_client/packages/ui",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.2.1",
-    "typescript": "^5.2.2",
-    "vite": "^5.0.8",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "tailwindcss": "^3.4.0",
     "autoprefixer": "^10.4.0",
-    "postcss": "^8.4.0"
+    "lucide-react": "^0.511.0",
+    "postcss": "^8.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8"
   }
 }

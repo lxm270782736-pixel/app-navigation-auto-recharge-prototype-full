@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input, Radio, Button } from 'antd';
-import { SearchOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { Input } from '@astribot/ui';
+import { Search } from 'lucide-react';
+import { TaskNodeShell } from './TaskNodeShell';
 
 export const ScanTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [scanType, setScanType] = useState(data.scanType || '3d');
@@ -13,79 +14,58 @@ export const ScanTaskNode: React.FC<NodeProps> = ({ data }) => {
     <div className="custom-task-node">
       <Handle type="target" position={Position.Top} />
 
-      <Card
-        size="small"
-        style={{
-          minWidth: 180,
-          backgroundColor: '#e0f7fa',
-          border: '2px solid #00838f',
+      <TaskNodeShell
+        icon={<Search className="h-5 w-5" />}
+        iconClassName="text-cyan-600"
+        toneClassName="border-cyan-600/50 bg-cyan-500/10"
+        label={label}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        onLabelChange={(value) => {
+          setLabel(value);
+          data.label = value;
         }}
+        collapsedSummary={`${scanType === '3d' ? '3D' : '2D'} · ${duration}秒`}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <SearchOutlined style={{ fontSize: 20, color: '#00838f' }} />
-            <Input
-              size="small"
-              value={label}
-              onChange={(e) => {
-                setLabel(e.target.value);
-                data.label = e.target.value;
-              }}
-              style={{ fontWeight: 'bold', flex: 1 }}
-              bordered={false}
-            />
-            <Button
-              type="text"
-              size="small"
-              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ padding: '0 4px' }}
-            />
-          </div>
-
-          {!collapsed && (
-            <>
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>扫描类型</div>
-                <Radio.Group
-                  size="small"
-                  value={scanType}
-                  onChange={(e) => {
-                    setScanType(e.target.value);
-                    data.scanType = e.target.value;
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">扫描类型</div>
+            <div className="grid grid-cols-2 gap-2">
+              {['3d', '2d'].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setScanType(value);
+                    data.scanType = value;
                   }}
-                  buttonStyle="solid"
+                  className={scanType === value ? 'rounded-md border border-primary bg-primary/15 px-2 py-1 text-xs text-primary' : 'rounded-md border border-input px-2 py-1 text-xs text-foreground'}
                 >
-                  <Radio.Button value="3d">3D</Radio.Button>
-                  <Radio.Button value="2d">2D</Radio.Button>
-                </Radio.Group>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>扫描时长</div>
-                <InputNumber
-                  size="small"
-                  min={1}
-                  max={60}
-                  value={duration}
-                  onChange={(value) => {
-                    setDuration(value || 5);
-                    data.duration = value || 5;
-                  }}
-                  addonAfter="秒"
-                  style={{ width: '100%' }}
-                />
-              </div>
-            </>
-          )}
-
-          {collapsed && (
-            <div style={{ fontSize: 11, color: '#666' }}>
-              {scanType === '3d' ? '3D' : '2D'} · {duration}秒
+                  {value.toUpperCase()}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">扫描时长</div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={60}
+                value={String(duration)}
+                onChange={(e) => {
+                  const value = Number(e.target.value) || 5;
+                  setDuration(value);
+                  data.duration = value;
+                }}
+                className="h-8"
+              />
+              <span className="text-[11px] text-muted-foreground">秒</span>
+            </div>
+          </div>
         </div>
-      </Card>
+      </TaskNodeShell>
 
       <Handle type="source" position={Position.Bottom} />
     </div>

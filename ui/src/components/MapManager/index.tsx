@@ -1,33 +1,59 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, List, Modal, Empty, message, Space, Badge, Alert } from 'antd';
+import { ArrowLeft, CheckCircle2, Edit3, Map, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
-  PlusOutlined,
-  DeleteOutlined,
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  EditOutlined,
-  ReloadOutlined,
-  ExclamationCircleOutlined,
-} from '@ant-design/icons';
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@astribot/ui';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
-import { ConnectionStatus } from '@/types';
-import type { MapData } from '@/types';
+import { ConnectionStatus, type MapData } from '@/types';
 import dayjs from 'dayjs';
 
-// LocalStorage key for current map
 const CURRENT_MAP_KEY = 'astribot_current_map_id';
 
-export const MapManager: React.FC = () => {
+function sortMaps(mapList: MapData[]): MapData[] {
+  return [...mapList].sort((a, b) => {
+    const aHasTime = a.createdAt && !Number.isNaN(new Date(a.createdAt).getTime());
+    const bHasTime = b.createdAt && !Number.isNaN(new Date(b.createdAt).getTime());
+
+    if (aHasTime && bHasTime) {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }
+    if (aHasTime && !bHasTime) {
+      return -1;
+    }
+    if (!aHasTime && bHasTime) {
+      return 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function formatCreatedAt(createdAt: string) {
+  const parsed = dayjs(createdAt);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : '未知时间';
+}
+
+export function MapManager() {
   const navigate = useNavigate();
   const { connectionStatus } = useRobot();
   const [maps, setMaps] = useState<MapData[]>([]);
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedMap, setSelectedMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // 从 localStorage 恢复当前地图ID
   const [currentMapId, setCurrentMapId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(CURRENT_MAP_KEY);
@@ -37,62 +63,37 @@ export const MapManager: React.FC = () => {
     }
   });
 
-  // 地图排序函数：优先按时间倒序，没有时间的按名字排序
-  const sortMaps = (mapList: MapData[]): MapData[] => {
-    return [...mapList].sort((a, b) => {
-      const aHasTime = a.createdAt && !isNaN(new Date(a.createdAt).getTime());
-      const bHasTime = b.createdAt && !isNaN(new Date(b.createdAt).getTime());
-
-      // 如果都有有效时间，按时间倒序（最新的在前）
-      if (aHasTime && bHasTime) {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
-
-      // 如果只有 a 有时间，a 排在前面
-      if (aHasTime && !bHasTime) {
-        return -1;
-      }
-
-      // 如果只有 b 有时间，b 排在前面
-      if (!aHasTime && bHasTime) {
-        return 1;
-      }
-
-      // 如果都没有时间，按名字字母顺序排序
-      return a.name.localeCompare(b.name);
-    });
-  };
-
   useEffect(() => {
-    loadMaps(false); // 默认从本地加载
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadMaps(false);
   }, []);
 
-  // 验证当前地图ID是否仍然存在
   useEffect(() => {
-    if (currentMapId && maps.length > 0) {
-      const mapExists = maps.some(map => map.id === currentMapId);
-      if (!mapExists) {
-        console.warn('[地图管理] 当前地图不存在，清除状态:', currentMapId);
-        setCurrentMapId(null);
-        try {
-          localStorage.removeItem(CURRENT_MAP_KEY);
-        } catch (error) {
-          console.error('清除 localStorage 失败:', error);
-        }
-      } else {
-        console.log('[地图管理] 当前地图状态已恢复:', currentMapId);
-      }
-    }
-  }, [maps, currentMapId]);
-
-  const loadMaps = async (forceRefresh: boolean = false) => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 后端');
+    if (!currentMapId || maps.length === 0) {
       return;
     }
+    const mapExists = maps.some((map) => map.id === currentMapId);
+    if (!mapExists) {
+      setCurrentMapId(null);
+      try {
+        localStorage.removeItem(CURRENT_MAP_KEY);
+      } catch (error) {
+        console.error('清除当前地图失败:', error);
+      }
+    }
+  }, [currentMapId, maps]);
+
+  const mapCountLabel = useMemo(() => `${maps.length} 张地图`, [maps.length]);
+
+  async function loadMaps(forceRefresh = false) {
+    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+      setStatusMessage('请先连接后端，再加载地图列表。');
+      return;
+    }
+
     try {
       setLoading(true);
+      setStatusMessage(null);
+
       if (forceRefresh) {
         try {
           const currentMapName = await apiService.getCurrentMapName();
@@ -104,326 +105,241 @@ export const MapManager: React.FC = () => {
             localStorage.removeItem(CURRENT_MAP_KEY);
           }
         } catch (error) {
-          console.error('[地图管理] 获取当前地图失败:', error);
+          console.error('获取当前地图失败:', error);
         }
       }
+
       const rosMaps = await apiService.getAllMapMetadata();
       setMaps(sortMaps(rosMaps));
-      loadFullMapData(rosMaps);
+      void loadFullMapData(rosMaps);
     } catch (error) {
       console.error('加载地图列表失败:', error);
-      message.error('加载地图列表失败');
+      setStatusMessage('加载地图列表失败。');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const loadFullMapData = async (mapList: MapData[]) => {
-    const validMaps = mapList.filter(map => map.id && map.name && map.id !== 'unknown_map');
-    await Promise.all(validMaps.map(async (map) => {
-      try {
-        const fullMapData = await apiService.loadMap(map.id);
-        if (fullMapData) {
-          setMaps((prevMaps) =>
-            prevMaps.map((m) => m.id === map.id ? { ...map, ...fullMapData, thumbnail: map.thumbnail } : m)
-          );
+  async function loadFullMapData(mapList: MapData[]) {
+    const validMaps = mapList.filter((map) => map.id && map.name && map.id !== 'unknown_map');
+    await Promise.all(
+      validMaps.map(async (map) => {
+        try {
+          const fullMapData = await apiService.loadMap(map.id);
+          if (fullMapData) {
+            setMaps((prevMaps) =>
+              prevMaps.map((item) =>
+                item.id === map.id ? { ...map, ...fullMapData, thumbnail: map.thumbnail } : item,
+              ),
+            );
+          }
+        } catch (error) {
+          console.error(`加载地图数据 ${map.name} 失败:`, error);
         }
-      } catch (error) {
-        console.error(`加载地图数据 ${map.name} 失败:`, error);
-      }
-    }));
-  };
+      }),
+    );
+  }
 
-  const handleCreateMap = () => {
+  function handleCreateMap() {
     navigate('/mapping');
-  };
+  }
 
-  const handleEditMap = (map: MapData) => {
-    // 从当前 maps 状态取最新数据（loadFullMapData 可能已更新）
-    const latestMap = maps.find(m => m.id === map.id) ?? map;
+  function handleEditMap(map: MapData) {
+    const latestMap = maps.find((item) => item.id === map.id) ?? map;
     if (!latestMap.data?.length) {
-      // 数据还没加载完，直接让编辑器自己从后端加载
       navigate(`/map-editor/${map.id}`);
       return;
     }
     navigate(`/map-editor/${map.id}`, { state: { mapData: latestMap } });
-  };
+  }
 
-  const handleApplyMap = async (map: MapData) => {
+  async function handleApplyMap(map: MapData) {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
-      message.warning('请先连接 后端');
+      setStatusMessage('请先连接后端，再应用地图。');
       return;
     }
+
     try {
-      message.loading({ content: '正在应用地图...', key: 'applyMap', duration: 0 });
+      setStatusMessage(`正在应用地图 “${map.name}” ...`);
       await apiService.setCurrentMap(map);
       setCurrentMapId(map.id);
-      try { localStorage.setItem(CURRENT_MAP_KEY, map.id); } catch { /* ignore */ }
-      message.success({ content: `地图 "${map.name}" 已应用为当前地图，SLAM 端将实时发布`, key: 'applyMap', duration: 3 });
+      localStorage.setItem(CURRENT_MAP_KEY, map.id);
+      setStatusMessage(`地图 “${map.name}” 已应用为当前地图。`);
     } catch (error) {
-      message.error({ content: '应用地图失败: ' + (error instanceof Error ? error.message : '未知错误'), key: 'applyMap' });
+      console.error('应用地图失败:', error);
+      setStatusMessage(`应用地图失败：${error instanceof Error ? error.message : '未知错误'}`);
     }
-  };
+  }
 
-  const handleDeleteMap = (map: MapData) => {
-    setSelectedMap(map);
-    setDeleteModalVisible(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!selectedMap) return;
+  async function confirmDelete() {
+    if (!selectedMap) {
+      return;
+    }
     try {
       await apiService.deleteMap(selectedMap.id);
       if (selectedMap.id === currentMapId) {
         setCurrentMapId(null);
-        try { localStorage.removeItem(CURRENT_MAP_KEY); } catch { /* ignore */ }
+        localStorage.removeItem(CURRENT_MAP_KEY);
       }
-      setMaps((prevMaps) => prevMaps.filter((m) => m.id !== selectedMap.id));
-      message.success('地图已删除');
-      setDeleteModalVisible(false);
-      setSelectedMap(null);
+      setMaps((prevMaps) => prevMaps.filter((map) => map.id !== selectedMap.id));
+      setStatusMessage(`地图 “${selectedMap.name}” 已删除。`);
     } catch (error) {
-      message.error('删除地图失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      console.error('删除地图失败:', error);
+      setStatusMessage(`删除地图失败：${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setSelectedMap(null);
     }
-  };
+  }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <Button
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
-        >
-          返回主页
-        </Button>
-      </div>
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, fontSize: '28px' }}>地图管理</h1>
-        <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => loadMaps(true)} // 强制从 ROS 刷新
-            disabled={connectionStatus !== ConnectionStatus.CONNECTED}
-            loading={loading}
-          >
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6">
+      <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card/80 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <Button variant="ghost" className="-ml-3 w-fit" onClick={() => navigate('/')}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            返回主页
+          </Button>
+          <div className="space-y-1">
+            <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Map Library</div>
+            <h1 className="text-2xl font-semibold text-foreground">地图管理</h1>
+            <p className="text-sm text-muted-foreground">查看已保存地图、应用到导航系统、或直接进入编辑模式。</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant="secondary">{mapCountLabel}</Badge>
+          <Button variant="secondary" onClick={() => void loadMaps(true)} disabled={loading}>
+            <RefreshCw className="mr-2 h-4 w-4" />
             刷新列表
           </Button>
-          <Button
-            icon={<PlusOutlined />}
-            onClick={handleCreateMap}
-          >
+          <Button onClick={handleCreateMap}>
+            <Plus className="mr-2 h-4 w-4" />
             新建地图
           </Button>
-        </Space>
-      </div>
+        </div>
+      </section>
 
       {connectionStatus !== ConnectionStatus.CONNECTED && (
-        <div style={{
-          padding: '16px',
-          background: '#fff7e6',
-          border: '1px solid #ffd591',
-          borderRadius: '4px',
-          marginBottom: '16px',
-        }}>
-          ⚠️ 请先连接 后端 以加载地图列表
-        </div>
+        <Card className="border-yellow-500/30 bg-yellow-500/10">
+          <CardContent className="p-4 text-sm text-yellow-500">
+            请先连接后端，再加载地图列表。
+          </CardContent>
+        </Card>
       )}
 
-      <h2 style={{ marginBottom: '16px', fontSize: '20px' }}>已保存的地图 ({maps.length})</h2>
+      {statusMessage && (
+        <Card className="border-border bg-secondary/40">
+          <CardContent className="p-4 text-sm text-muted-foreground">{statusMessage}</CardContent>
+        </Card>
+      )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#999' }}>
-          加载中...
-        </div>
+        <Card className="border-border bg-card/80">
+          <CardContent className="p-10 text-center text-sm text-muted-foreground">正在加载地图列表...</CardContent>
+        </Card>
       ) : maps.length === 0 ? (
-        <Empty
-          description="暂无已保存的地图，点击上方按钮创建新地图"
-          style={{ marginTop: '60px' }}
-        />
+        <Card className="border-dashed border-border bg-card/60">
+          <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 p-10 text-center">
+            <div className="rounded-2xl bg-primary/10 p-4 text-primary">
+              <Map className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-base font-medium">暂无地图</div>
+              <p className="text-sm text-muted-foreground">先去建图，或从后端同步地图元数据。</p>
+            </div>
+            <Button onClick={handleCreateMap}>
+              <Plus className="mr-2 h-4 w-4" />
+              创建第一张地图
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <div
-          style={{
-            maxHeight: 'calc(100vh - 280px)', // 动态计算最大高度，留出顶部空间
-            overflowY: 'auto', // 垂直滚动
-            paddingRight: '8px', // 为滚动条留出空间
-          }}
-        >
-          <List
-            grid={{
-              gutter: 16,
-              xs: 1,
-              sm: 2,
-              md: 3,
-              lg: 3,
-              xl: 4,
-              xxl: 4,
-            }}
-            dataSource={maps}
-            renderItem={(map) => {
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {maps.map((map) => {
             const isCurrentMap = currentMapId === map.id;
             return (
-              <List.Item>
-                <Badge.Ribbon
-                  text="使用中"
-                  color="green"
-                  style={{ display: isCurrentMap ? 'block' : 'none' }}
+              <Card key={map.id} className="overflow-hidden border-border bg-card/80 shadow-sm">
+                <div
+                  className="flex h-52 cursor-pointer items-center justify-center overflow-hidden bg-secondary/40"
+                  onClick={() => handleEditMap(map)}
                 >
-                  <Card
-                    hoverable
-                    style={{
-                      border: isCurrentMap ? '2px solid #52c41a' : undefined,
-                      boxShadow: isCurrentMap ? '0 4px 12px rgba(82, 196, 26, 0.3)' : undefined,
-                    }}
-                    cover={
-                    <div
-                      style={{
-                        height: '200px',
-                        background: '#f0f0f0',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                      }}
-                      onClick={() => handleEditMap(map)}
-                    >
-                      {map.thumbnail ? (
-                        <img
-                          src={map.thumbnail}
-                          alt={map.name}
-                          style={{ maxWidth: '100%', maxHeight: '100%' }}
-                        />
-                      ) : (
-                        <span style={{ color: '#999' }}>无缩略图</span>
-                      )}
+                  {map.thumbnail ? (
+                    <img src={map.thumbnail} alt={map.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="text-sm text-muted-foreground">无缩略图</div>
+                  )}
+                </div>
+
+                <CardHeader className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <CardTitle className="text-lg">{map.name}</CardTitle>
+                      <CardDescription>{formatCreatedAt(map.createdAt)}</CardDescription>
                     </div>
-                  }
-                  actions={[
+                    {isCurrentMap ? (
+                      <Badge className="bg-green-500/15 text-green-500 hover:bg-green-500/15">使用中</Badge>
+                    ) : (
+                      <Badge variant="secondary">可应用</Badge>
+                    )}
+                  </div>
+                </CardHeader>
+
+                <CardContent className="space-y-4">
+                  <dl className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">尺寸</dt>
+                      <dd className="font-medium">{map.width} × {map.height}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">分辨率</dt>
+                      <dd className="font-medium">{map.resolution} m/px</dd>
+                    </div>
+                  </dl>
+
+                  <div className="grid grid-cols-3 gap-2">
                     <Button
-                      key="apply"
-                      type="link"
-                      icon={<CheckCircleOutlined />}
-                      onClick={() => handleApplyMap(map)}
+                      size="sm"
+                      variant={isCurrentMap ? 'secondary' : 'default'}
+                      onClick={() => void handleApplyMap(map)}
                       disabled={isCurrentMap}
-                      style={{ color: isCurrentMap ? '#999' : '#52c41a' }}
-                      title={isCurrentMap ? "当前使用中" : "应用此地图"}
                     >
-                      {isCurrentMap ? '使用中' : '应用'}
-                    </Button>,
-                    <Button
-                      key="edit"
-                      type="link"
-                      icon={<EditOutlined />}
-                      onClick={() => handleEditMap(map)}
-                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      {isCurrentMap ? '当前地图' : '应用'}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => handleEditMap(map)}>
+                      <Edit3 className="mr-2 h-4 w-4" />
                       编辑
-                    </Button>,
-                    <Button
-                      key="delete"
-                      type="link"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteMap(map)}
-                    >
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setSelectedMap(map)}>
+                      <Trash2 className="mr-2 h-4 w-4" />
                       删除
-                    </Button>,
-                  ]}
-                >
-                    <Card.Meta
-                      title={map.name}
-                      description={dayjs(map.createdAt).format('YYYY-MM-DD HH:mm')}
-                    />
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#999' }}>
-                      {map.width} × {map.height} px
-                    </div>
-                  </Card>
-                </Badge.Ribbon>
-              </List.Item>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             );
-          }}
-        />
-        </div>
+          })}
+        </section>
       )}
 
-      <Modal
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 20 }} />
-            <span>删除地图</span>
-          </div>
-        }
-        open={deleteModalVisible}
-        centered
-        onOk={confirmDelete}
-        onCancel={() => setDeleteModalVisible(false)}
-        okText="确认删除"
-        cancelText="取消"
-        okButtonProps={{ danger: true }}
-        width={520}
-      >
-        {selectedMap && (
-          <div>
-            <Alert
-              message="警告：此操作不可恢复！"
-              description="该地图将从 ROS 后端删除，删除后将无法恢复。"
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-
-            <div style={{
-              display: 'flex',
-              gap: 16,
-              padding: 16,
-              background: '#fafafa',
-              borderRadius: 8,
-              border: '1px solid #f0f0f0',
-            }}>
-              {/* 地图缩略图 */}
-              <div style={{
-                width: 120,
-                height: 120,
-                flexShrink: 0,
-                background: '#f0f0f0',
-                borderRadius: 4,
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                {selectedMap.thumbnail ? (
-                  <img
-                    src={selectedMap.thumbnail}
-                    alt={selectedMap.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <span style={{ color: '#999', fontSize: 12 }}>无缩略图</span>
-                )}
-              </div>
-
-              {/* 地图信息 */}
-              <div style={{ flex: 1 }}>
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
-                    {selectedMap.name}
-                  </div>
-                </div>
-
-                <div style={{ fontSize: 13, color: '#666', lineHeight: '22px' }}>
-                  <div>创建时间：{dayjs(selectedMap.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
-                  <div>地图尺寸：{selectedMap.width} × {selectedMap.height} 像素</div>
-                  <div>分辨率：{selectedMap.resolution.toFixed(3)} m/px</div>
-                  <div>存储位置：<span style={{ color: '#52c41a' }}> ROS后端</span></div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 16, fontSize: 13, color: '#666' }}>
-              确定要删除地图 <strong style={{ color: '#ff4d4f' }}>"{selectedMap.name}"</strong> 吗？
-            </div>
-          </div>
-        )}
-      </Modal>
+      <Dialog open={Boolean(selectedMap)} onOpenChange={(open) => !open && setSelectedMap(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除地图</DialogTitle>
+            <DialogDescription>
+              {selectedMap ? `确定删除地图 “${selectedMap.name}” 吗？此操作无法撤销。` : '确定删除当前地图吗？'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setSelectedMap(null)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmDelete()}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-};
+}

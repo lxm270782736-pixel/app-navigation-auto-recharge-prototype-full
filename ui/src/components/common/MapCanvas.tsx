@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { Button as UIButton, cn } from '@astribot/ui';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -782,56 +783,62 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // ========== 渲染 ==========
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="relative h-full w-full">
       {/* 工具栏 */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '10px',
-          left: '10px',
-          zIndex: 10,
-          background: 'rgba(255, 255, 255, 0.9)',
-          padding: '8px',
-          borderRadius: '4px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        }}
-      >
-        <div style={{ fontSize: '12px', marginBottom: '4px' }}>
+      <div className="absolute left-2.5 top-2.5 z-10 rounded-md border border-border/70 bg-card/90 p-2 shadow-sm backdrop-blur">
+        <div className="mb-1 text-xs">
           缩放: {fitToViewScale > 0 ? ((scale / fitToViewScale) * 100).toFixed(0) : 100}%
         </div>
-        <div style={{ marginBottom: '8px' }}>
-          <button
+        <div className="mb-2 flex gap-1">
+          <UIButton
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setScale(Math.min(maxScale, scale * 1.2))}
-            style={{ padding: '4px 8px', marginRight: '4px', cursor: 'pointer', border: '1px solid #d9d9d9', borderRadius: '2px', background: 'white' }}
-          >+</button>
-          <button
+            className="h-7 px-2"
+          >
+            +
+          </UIButton>
+          <UIButton
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setScale(Math.max(minScale, scale / 1.2))}
-            style={{ padding: '4px 8px', marginRight: '4px', cursor: 'pointer', border: '1px solid #d9d9d9', borderRadius: '2px', background: 'white' }}
-          >-</button>
-          <button
+            className="h-7 px-2"
+          >
+            -
+          </UIButton>
+          <UIButton
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={resetView}
-            style={{ padding: '4px 8px', cursor: 'pointer', border: '1px solid #d9d9d9', borderRadius: '2px', background: 'white' }}
-          >适配</button>
+            className="h-7 px-2"
+          >
+            适配
+          </UIButton>
         </div>
         {robotPose && (
           <>
-            <button
+            <UIButton
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={centerToRobot}
-              style={{
-                padding: '4px 8px', marginBottom: '4px', cursor: 'pointer',
-                border: '1px solid #52c41a', borderRadius: '2px', background: 'white',
-                color: '#52c41a', width: '100%', fontSize: '12px',
-              }}
-            >居中机器人</button>
+              className="mb-1 h-7 w-full border-emerald-500 text-xs text-emerald-300 hover:bg-emerald-500/10 hover:text-emerald-200"
+            >
+              居中机器人
+            </UIButton>
             {showRobotTrail && robotTrail.length > 0 && (
-              <button
+              <UIButton
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={clearRobotTrail}
-                style={{
-                  padding: '4px 8px', cursor: 'pointer',
-                  border: '1px solid #ff4d4f', borderRadius: '2px', background: 'white',
-                  color: '#ff4d4f', width: '100%', fontSize: '12px',
-                }}
-              >清除轨迹</button>
+                className="h-7 w-full border-destructive text-xs text-destructive hover:bg-destructive/10"
+              >
+                清除轨迹
+              </UIButton>
             )}
           </>
         )}
@@ -845,40 +852,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { if (draggingWaypointIndex < 0) { handleMouseUp(); setBrushPreviewPos(null); } }}
         onContextMenu={handleContextMenu}
-        style={{
-          width: '100%', height: '100%', overflow: 'visible',
-          cursor: isDragging ? 'grabbing' : 'default',
-          position: 'relative',
-        }}
-        className={className}
+        className={cn(
+          'relative h-full w-full overflow-visible',
+          isDragging ? 'cursor-grabbing' : 'cursor-default',
+          className
+        )}
       >
         {/* Canvas 层：仅占据栅格位图 */}
         <canvas
           ref={canvasRef}
           onClick={handleClick}
+          className={cn(
+            'box-border border-2 border-black',
+            draggingWaypointIndex >= 0
+              ? 'cursor-grabbing'
+              : hoveredWaypointIndex >= 0
+                ? 'cursor-grab'
+                : onMapClick
+                  ? 'cursor-crosshair'
+                  : 'cursor-default'
+          )}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            cursor: draggingWaypointIndex >= 0 ? 'grabbing'
-                  : hoveredWaypointIndex >= 0 ? 'grab'
-                  : onMapClick ? 'crosshair' : 'default',
-            border: '2px solid #000',
-            boxSizing: 'border-box',
           }}
         />
 
         {/* SVG 覆盖层：所有矢量图形 */}
         <svg
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
             width: mapData.width,
             height: mapData.height,
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            pointerEvents: 'none',
-            overflow: 'visible',
           }}
         >
           {/* 栅格 */}
@@ -951,22 +958,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* 机器人位姿显示 */}
       {showRobotPose && robotPose && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '80px',
-            left: '10px',
-            background: 'rgba(255, 255, 255, 0.95)',
-            padding: '12px 16px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            zIndex: 10,
-            fontSize: '12px',
-            minWidth: '180px',
-          }}
-        >
-          <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>机器人位姿</div>
-          <div style={{ lineHeight: '1.6' }}>
+        <div className="absolute left-2.5 top-20 z-10 min-w-[180px] rounded-md border border-border/70 bg-card/95 px-4 py-3 text-xs shadow-md">
+          <div className="mb-2 text-[13px] font-bold">机器人位姿</div>
+          <div className="leading-relaxed">
             <div>X: {robotPose.x.toFixed(2)} m</div>
             <div>Y: {robotPose.y.toFixed(2)} m</div>
             <div>θ: {((robotPose.theta * 180) / Math.PI).toFixed(1)}°</div>
@@ -976,19 +970,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* 操作提示 */}
       {showOperationHints && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '10px',
-            left: '10px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '8px 12px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            zIndex: 10,
-          }}
-        >
+        <div className="absolute bottom-2.5 left-2.5 z-10 rounded-md bg-black/70 px-3 py-2 text-xs text-white">
           <div>滚轮：缩放</div>
           <div>中键拖动：平移</div>
           <div>左键点击并拖动：设置位置和方向</div>
