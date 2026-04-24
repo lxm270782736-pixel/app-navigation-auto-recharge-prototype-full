@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Select, Modal, notification, Segmented } from 'antd';
 import {
-  PlayCircleOutlined,
-  StopOutlined,
-  CheckCircleFilled,
-  CloseCircleFilled,
-  LoadingOutlined,
-  EnvironmentOutlined,
-  WarningFilled,
-  PauseCircleOutlined,
-  PictureOutlined,
-  StepForwardOutlined,
-} from '@ant-design/icons';
+  Button as UIButton,
+  Card as UICard,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Progress,
+  cn,
+} from '@astribot/ui';
+import { AlertTriangle, Image as ImageIcon } from 'lucide-react';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -55,18 +58,28 @@ export const TaskDispatchTab: React.FC = () => {
   const [advanceMode, setAdvanceMode] = useState<'auto' | 'manual'>('auto');
   const [advancing, setAdvancing] = useState(false);
   const [skipping, setSkipping] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [alertToasts, setAlertToasts] = useState<Array<{ id: string; message: string; description: string }>>([]);
 
   const fallEvent = patrolState?.fall_event ?? null;
   const stuckEvent = patrolState?.stuck_event ?? null;
+
+  const pushAlertToast = useCallback((message: string, description: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setAlertToasts((prev) => [...prev.slice(-3), { id, message, description }]);
+    window.setTimeout(() => {
+      setAlertToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 8000);
+  }, []);
 
   // 跌倒事件弹窗确认
   const handleAckFall = async () => {
     setFallAcking(true);
     try {
       await apiService.acknowledgeFall();
-      message.success('已确认处理');
+      setNotice({ tone: 'success', text: '已确认处理' });
     } catch {
-      message.error('确认失败，请重试');
+      setNotice({ tone: 'error', text: '确认失败，请重试' });
     } finally {
       setFallAcking(false);
     }
@@ -77,9 +90,9 @@ export const TaskDispatchTab: React.FC = () => {
     setStuckAcking(true);
     try {
       await apiService.acknowledgeStuck();
-      message.success('已确认处理');
+      setNotice({ tone: 'success', text: '已确认处理' });
     } catch {
-      message.error('确认失败，请重试');
+      setNotice({ tone: 'error', text: '确认失败，请重试' });
     } finally {
       setStuckAcking(false);
     }
@@ -169,7 +182,7 @@ export const TaskDispatchTab: React.FC = () => {
           pendingNotifications.current.push(n);
         } else {
           console.log('[alert] showing notification:', alert.id, alert.alert_type);
-          notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
+          pushAlertToast(n.message, n.description);
         }
       }
     };
@@ -190,10 +203,10 @@ export const TaskDispatchTab: React.FC = () => {
 
   const flushNotifications = useCallback(() => {
     for (const n of pendingNotifications.current) {
-      notification.warning({ message: n.message, description: n.description, duration: 8, placement: 'topRight' });
+      pushAlertToast(n.message, n.description);
     }
     pendingNotifications.current = [];
-  }, []);
+  }, [pushAlertToast]);
 
   // Modal 关闭後 flush 排队的 notification
   useEffect(() => {
@@ -282,36 +295,36 @@ export const TaskDispatchTab: React.FC = () => {
       : { advance_mode: advanceMode };
     const result = await apiService.startRoomPatrol(taskConfig as any);
     if (result.success) {
-      message.success(result.message);
+      setNotice({ tone: 'success', text: result.message });
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handleStop = async () => {
     const result = await apiService.stopRoomPatrol();
     if (result.success) {
-      message.info('导览已停止');
+      setNotice({ tone: 'success', text: '导览已停止' });
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handlePause = async () => {
     const result = await apiService.pauseRoomPatrol();
     if (result.success) {
-      message.info('导览已暂停');
+      setNotice({ tone: 'success', text: '导览已暂停' });
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handleResume = async () => {
     const result = await apiService.resumeRoomPatrol();
     if (result.success) {
-      message.success('导览已恢复');
+      setNotice({ tone: 'success', text: '导览已恢复' });
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
@@ -319,7 +332,7 @@ export const TaskDispatchTab: React.FC = () => {
     setAdvancing(true);
     try {
       const result = await apiService.advanceRoomPatrolStep(targetStepIndex);
-      if (!result.success) message.error(result.message);
+      if (!result.success) setNotice({ tone: 'error', text: result.message });
     } finally {
       setAdvancing(false);
     }
@@ -330,7 +343,7 @@ export const TaskDispatchTab: React.FC = () => {
     setSkipping(true);
     try {
       const result = await apiService.skipRoomPatrolStep(idx);
-      if (!result.success) message.error(result.message);
+      if (!result.success) setNotice({ tone: 'error', text: result.message });
     } finally {
       setSkipping(false);
     }
@@ -383,90 +396,80 @@ export const TaskDispatchTab: React.FC = () => {
     .map(m => m.waypointIdx);
 
   return (
-    <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+    <div className="relative flex h-full overflow-hidden bg-background">
+      {alertToasts.length > 0 && (
+        <div className="pointer-events-none absolute right-4 top-4 z-50 flex w-[320px] flex-col gap-2">
+          {alertToasts.map((toast) => (
+            <div
+              key={toast.id}
+              className="pointer-events-auto rounded-lg border border-amber-500/30 bg-card/95 px-4 py-3 shadow-lg backdrop-blur"
+            >
+              <div className="text-sm font-semibold text-amber-300">{toast.message}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{toast.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 跌倒检测告警弹窗 */}
-      <Modal
-        open={!!fallEvent}
-        closable={false}
-        maskClosable={false}
-        footer={null}
-        centered
-        width={460}
-      >
-        <div style={{ textAlign: 'center', padding: '16px 0' }}>
-          <WarningFilled style={{ fontSize: 56, color: '#ff4d4f' }} />
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#ff4d4f', margin: '16px 0 8px' }}>
-            检测到老人跌倒！
-          </div>
+      <Dialog open={!!fallEvent}>
+        <DialogContent className="sm:max-w-lg [&>button]:hidden">
+          <DialogHeader className="items-center text-center">
+            <div className="mb-2 rounded-full bg-destructive/10 p-4 text-destructive">
+              <AlertTriangle className="h-10 w-10" />
+            </div>
+            <DialogTitle className="text-2xl text-destructive">检测到老人跌倒</DialogTitle>
+            <DialogDescription>巡逻任务已暂停，请立即前往处理。</DialogDescription>
+          </DialogHeader>
           {fallEvent && (
-            <div style={{ color: '#666', marginBottom: 8 }}>
+            <div className="text-center text-sm text-muted-foreground">
               位置：<strong>{fallEvent.location}</strong>
-              &nbsp;&nbsp;置信度：<strong>{(fallEvent.confidence * 100).toFixed(0)}%</strong>
+              {'  '}置信度：<strong>{(fallEvent.confidence * 100).toFixed(0)}%</strong>
             </div>
           )}
-          {/* 跌倒现场照片 */}
           {fallEvent?.photo ? (
             <img
               src={`data:image/png;base64,${fallEvent.photo}`}
-              style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 8, marginBottom: 16 }}
+              className="max-h-[220px] w-full rounded-lg border border-border/70 object-cover"
             />
           ) : (
-            <div style={{ width: '100%', height: 120, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-              <PictureOutlined style={{ fontSize: 32, color: '#ccc' }} />
+            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/20 text-muted-foreground">
+              <ImageIcon className="h-8 w-8" />
             </div>
           )}
-          <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
-            巡逻任务已暂停，请立即前往处理
-          </div>
-          <Button
-            type="primary"
-            danger
-            size="large"
-            loading={fallAcking}
-            onClick={handleAckFall}
-            style={{ width: 200 }}
-          >
-            确认已处理
-          </Button>
-        </div>
-      </Modal>
+          <DialogFooter className="sm:justify-center">
+            <UIButton type="button" variant="destructive" size="lg" onClick={handleAckFall} disabled={fallAcking}>
+              确认已处理
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 机器人卡住告警弹窗 */}
-      <Modal
-        open={!!stuckEvent}
-        closable={false}
-        maskClosable={false}
-        footer={null}
-        centered
-        width={420}
-      >
-        <div style={{ textAlign: 'center', padding: '16px 0' }}>
-          <WarningFilled style={{ fontSize: 56, color: '#faad14' }} />
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#faad14', margin: '16px 0 8px' }}>
-            机器人导航失败，无法移动！
-          </div>
+      <Dialog open={!!stuckEvent}>
+        <DialogContent className="sm:max-w-md [&>button]:hidden">
+          <DialogHeader className="items-center text-center">
+            <div className="mb-2 rounded-full bg-amber-500/10 p-4 text-amber-400">
+              <AlertTriangle className="h-10 w-10" />
+            </div>
+            <DialogTitle className="text-2xl text-amber-300">机器人导航失败</DialogTitle>
+            <DialogDescription>巡逻任务已暂停，请人工处理后确认。</DialogDescription>
+          </DialogHeader>
           {stuckEvent && (
-            <div style={{ color: '#666', marginBottom: 8 }}>
+            <div className="text-center text-sm text-muted-foreground">
               区域：<strong>{stuckEvent.room_id}</strong>
             </div>
           )}
-          <div style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
-            巡逻任务已暂停，请人工处理后确认
-          </div>
-          <Button
-            type="primary"
-            size="large"
-            loading={stuckAcking}
-            onClick={handleAckStuck}
-            style={{ width: 200 }}
-          >
-            确认已处理
-          </Button>
-        </div>
-      </Modal>
+          <DialogFooter className="sm:justify-center">
+            <UIButton type="button" size="lg" onClick={handleAckStuck} disabled={stuckAcking}>
+              确认已处理
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Left: Map */}
-      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+      <div className="relative min-w-0 flex-1">
         {currentMap ? (
           <MapCanvas
             mapData={currentMap}
@@ -481,91 +484,109 @@ export const TaskDispatchTab: React.FC = () => {
             showRobotTrail={true}
           />
         ) : (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
           </div>
         )}
       </div>
 
       {/* Right: Control panel */}
-      <div style={{ width: 320, minWidth: 280, flexShrink: 0, borderLeft: '1px solid #f0f0f0', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="flex w-80 min-w-[280px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/70 bg-card/60 p-4">
+        {notice && (
+          <div
+            className={cn(
+              'rounded-lg border px-3 py-2 text-sm',
+              notice.tone === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                : 'border-destructive/40 bg-destructive/10 text-destructive'
+            )}
+          >
+            {notice.text}
+          </div>
+        )}
         {/* Start/Stop */}
-        <Card size="small" title="导览控制">
+        <UICard className="border-border/70 bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">导览控制</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
           {!isActive && presets.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>选择任务</div>
-              <Select
-                size="small"
+            <div>
+              <div className="mb-1 text-xs text-muted-foreground">选择任务</div>
+              <select
                 value={selectedPresetId}
-                onChange={setSelectedPresetId}
-                style={{ width: '100%' }}
-                options={presets.map(p => ({ value: p.id, label: `${p.is_default ? '⭐ ' : ''}${p.name}` }))}
-              />
+                onChange={(e) => setSelectedPresetId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              >
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {`${p.is_default ? '⭐ ' : ''}${p.name}`}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           {!isActive && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>步骤推进</div>
-              <Segmented
-                size="small"
-                block
-                value={advanceMode}
-                onChange={(v) => setAdvanceMode(v as 'auto' | 'manual')}
-                options={[
-                  { label: '自动', value: 'auto' },
-                  { label: '手动', value: 'manual' },
-                ]}
-              />
+            <div>
+              <div className="mb-1 text-xs text-muted-foreground">步骤推进</div>
+              <div className="grid grid-cols-2 gap-2">
+                <UIButton type="button" variant={advanceMode === 'auto' ? 'default' : 'outline'} size="sm" onClick={() => setAdvanceMode('auto')}>
+                  自动
+                </UIButton>
+                <UIButton type="button" variant={advanceMode === 'manual' ? 'default' : 'outline'} size="sm" onClick={() => setAdvanceMode('manual')}>
+                  手动
+                </UIButton>
+              </div>
             </div>
           )}
           {isActive ? (
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <div className="space-y-2">
               {patrolState?.awaiting_advance && (
-                <Button
-                  type="primary"
-                  block
-                  icon={<StepForwardOutlined />}
-                  onClick={() => handleAdvance()}
-                  loading={advancing}
-                >
+                <UIButton type="button" className="w-full" onClick={() => handleAdvance()} disabled={advancing}>
                   下一步
-                </Button>
+                </UIButton>
               )}
-              <Space.Compact block>
+              <div className="grid grid-cols-2 gap-2">
                 {patrolState?.status === 'paused_manual' ? (
-                  <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleResume} style={{ flex: 1 }}>
+                  <UIButton type="button" onClick={handleResume}>
                     继续导览
-                  </Button>
+                  </UIButton>
                 ) : (
-                  <Button icon={<PauseCircleOutlined />} onClick={handlePause} style={{ flex: 1 }}>
+                  <UIButton type="button" variant="outline" onClick={handlePause}>
                     暂停导览
-                  </Button>
+                  </UIButton>
                 )}
-                <Button type="primary" danger icon={<StopOutlined />} onClick={handleStop} style={{ flex: 1 }}>
+                <UIButton type="button" variant="destructive" onClick={handleStop}>
                   停止导览
-                </Button>
-              </Space.Compact>
-            </Space>
+                </UIButton>
+              </div>
+            </div>
           ) : (
-            <Button type="primary" block icon={<PlayCircleOutlined />} onClick={handleStart}
-              disabled={connectionStatus !== ConnectionStatus.CONNECTED}>
+            <UIButton type="button" className="w-full" onClick={handleStart} disabled={connectionStatus !== ConnectionStatus.CONNECTED}>
               开始导览
-            </Button>
+            </UIButton>
           )}
-        </Card>
+          </CardContent>
+        </UICard>
 
         {/* Status */}
         {patrolState && patrolState.status !== 'idle' && (
-          <Card size="small" title={`导览状态${patrolState.task_name ? ` — ${patrolState.task_name}` : ''}`}>
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <UICard className="border-border/70 bg-card/90">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{`导览状态${patrolState.task_name ? ` — ${patrolState.task_name}` : ''}`}</CardTitle>
+            </CardHeader>
+            <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
                 <span>状态</span>
-                <Tag color={
-                  patrolState.status === 'paused_manual' ? 'warning' :
-                  isActive ? 'processing' :
-                  patrolState.status === 'completed' ? 'success' :
-                  patrolState.status === 'failed' ? 'error' : 'default'
-                }>
+                <span className={cn(
+                  'rounded-full px-2 py-0.5 text-xs',
+                  patrolState.status === 'paused_manual' ? 'bg-amber-500/15 text-amber-300' :
+                  isActive ? 'bg-sky-500/15 text-sky-300' :
+                  patrolState.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300' :
+                  patrolState.status === 'failed' ? 'bg-destructive/15 text-destructive' :
+                  'bg-muted text-muted-foreground'
+                )}>
                   {patrolState.status === 'running' ? '导览中' :
                    patrolState.status === 'paused_manual' ? '已暂停' :
                    patrolState.status === 'paused_fall' ? '跌倒暂停' :
@@ -573,53 +594,56 @@ export const TaskDispatchTab: React.FC = () => {
                    patrolState.status === 'completed' ? '已完成' :
                    patrolState.status === 'stopped' ? '已停止' :
                    patrolState.status === 'failed' ? '失败' : patrolState.status}
-                </Tag>
+                </span>
               </div>
 
-              <Progress percent={progressPercent} size="small" />
+              <Progress value={progressPercent} className="h-2" />
 
               {isActive && patrolState.current_room && (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="flex justify-between text-sm">
                     <span>当前区域</span>
-                    <span style={{ fontWeight: 600 }}><EnvironmentOutlined /> {patrolState.current_room}</span>
+                    <span className="font-semibold">{patrolState.current_room}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="flex justify-between text-sm">
                     <span>当前步骤</span>
-                    <Tag color="blue"><LoadingOutlined /> {stepLabels[patrolState.current_step] || patrolState.current_step}</Tag>
+                    <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs text-sky-300">
+                      {stepLabels[patrolState.current_step] || patrolState.current_step}
+                    </span>
                   </div>
                   {patrolState.nav_fail_reason && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div className="flex justify-between text-sm">
                       <span>导航失败</span>
-                      <Tag color="red">{patrolState.nav_fail_reason}</Tag>
+                      <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs text-destructive">{patrolState.nav_fail_reason}</span>
                     </div>
                   )}
                 </>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="flex justify-between text-sm">
                 <span>完成</span>
-                <span>
-                  <Badge status="success" /> {patrolState.rooms_completed.length} / {patrolState.rooms_total}
+                <span className="text-emerald-300">
+                  {patrolState.rooms_completed.length} / {patrolState.rooms_total}
                 </span>
               </div>
 
               {patrolState.rooms_failed.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div className="flex justify-between text-sm">
                   <span>失败</span>
-                  <span style={{ color: '#ff4d4f' }}>
+                  <span className="text-destructive">
                     {patrolState.rooms_failed.join(', ')}
                   </span>
                 </div>
               )}
 
               {patrolState.error && (
-                <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 4 }}>
+                <div className="text-xs text-destructive">
                   {patrolState.error}
                 </div>
               )}
-            </Space>
-          </Card>
+            </div>
+            </CardContent>
+          </UICard>
         )}
 
         {/* Room progress list with step detail — 选中任务后即显示，执行时显示进度 */}
@@ -631,8 +655,12 @@ export const TaskDispatchTab: React.FC = () => {
               ? (patrolState?.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
               : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }));
             return (
-          <Card size="small" title={title} style={{ flex: 1, overflow: 'auto' }}>
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+          <UICard className="flex-1 overflow-auto border-border/70 bg-card/90">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+            <div className="space-y-2">
               {roomList.map((room: any) => {
                 const rid = room.room_id;
                 const isDone = isRunning && (patrolState?.rooms_completed?.includes(rid) ?? false);
@@ -647,26 +675,33 @@ export const TaskDispatchTab: React.FC = () => {
                   : -1;
 
                 return (
-                  <div key={rid} style={{
-                    border: `1px solid ${isCurrent ? '#1890ff' : '#f0f0f0'}`,
-                    borderRadius: 6,
-                    padding: '8px 10px',
-                    background: isCurrent ? '#e6f7ff' : isDone ? '#f6ffed' : isFailed ? '#fff2f0' : '#fff',
-                  }}>
+                  <div
+                    key={rid}
+                    className={cn(
+                      'rounded-lg border px-3 py-3',
+                      isCurrent
+                        ? 'border-sky-500/40 bg-sky-500/10'
+                        : isDone
+                          ? 'border-emerald-500/30 bg-emerald-500/10'
+                          : isFailed
+                            ? 'border-destructive/30 bg-destructive/10'
+                            : 'border-border/70 bg-background/70'
+                    )}
+                  >
                     {/* Room header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCurrent ? 8 : 0 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>
+                    <div className={cn('flex items-center justify-between', isCurrent && 'mb-2')}>
+                      <span className="text-sm font-semibold text-foreground">
                         {room.room_name || rid}
                       </span>
-                      {isDone && <Tag color="success" style={{ margin: 0 }}>已完成</Tag>}
-                      {isFailed && <Tag color="error" style={{ margin: 0 }}>失败</Tag>}
-                      {isCurrent && <Tag color="processing" style={{ margin: 0 }}><LoadingOutlined /> 执行中</Tag>}
-                      {isPending && <Tag style={{ margin: 0 }}>等待</Tag>}
+                      {isDone && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">已完成</span>}
+                      {isFailed && <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs text-destructive">失败</span>}
+                      {isCurrent && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs text-sky-300">执行中</span>}
+                      {isPending && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">等待</span>}
                     </div>
 
                     {/* Step progress — 执行中显示进度，预览时展开所有步骤 */}
                     {steps.length > 0 && (isCurrent || !isRunning) && (
-                      <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div className="mt-1 flex flex-col gap-1">
                         {steps.map((step: any, si: number) => {
                           const isAwaiting = isCurrent && (patrolState?.awaiting_advance ?? false);
                           const lastStepFailed = isAwaiting && (patrolState?.last_step_failed ?? false);
@@ -686,51 +721,62 @@ export const TaskDispatchTab: React.FC = () => {
                           const isCurrentStep = isCurrent && si === currentStepIdx && status === 'process';
                           const canJump = isAwaiting && si !== currentStepIdx + 1;
 
-                          const bgColor = status === 'process' ? '#e6f7ff' : status === 'error' ? '#fff2f0' : status === 'finish' ? '#f6ffed' : 'transparent';
-                          const borderColor = status === 'process' ? '#1890ff' : status === 'error' ? '#ff4d4f' : status === 'finish' ? '#b7eb8f' : '#f0f0f0';
-                          const icon = status === 'finish' ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 14 }} />
-                            : status === 'error' ? <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 14 }} />
-                            : status === 'process' ? <LoadingOutlined style={{ color: '#1890ff', fontSize: 14 }} />
-                            : <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #d9d9d9', boxSizing: 'border-box' }} />;
+                          const icon = status === 'finish'
+                            ? <span className="text-sm text-emerald-400">●</span>
+                            : status === 'error'
+                              ? <span className="text-sm text-destructive">●</span>
+                              : status === 'process'
+                                ? <span className="text-sm text-sky-400">●</span>
+                                : <span className="inline-block h-3.5 w-3.5 rounded-full border border-border/80" />;
 
                           return (
                             <div
                               key={si}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                padding: '5px 8px', borderRadius: 4,
-                                border: `1px solid ${borderColor}`,
-                                background: bgColor,
-                                transition: 'all 0.2s',
-                              }}
+                              className={cn(
+                                'flex items-center gap-2 rounded-md border px-2 py-1.5 transition',
+                                status === 'process'
+                                  ? 'border-sky-500/40 bg-sky-500/10'
+                                  : status === 'error'
+                                    ? 'border-destructive/30 bg-destructive/10'
+                                    : status === 'finish'
+                                      ? 'border-emerald-500/30 bg-emerald-500/10'
+                                      : 'border-border/60 bg-transparent'
+                              )}
                             >
                               {icon}
-                              <span style={{
-                                fontSize: 12, flex: 1, fontWeight: isCurrentStep ? 600 : 400,
-                                color: status === 'error' ? '#ff4d4f' : status === 'wait' ? '#999' : undefined,
-                              }}>
-                                <span style={{ color: '#bbb', marginRight: 4 }}>{si + 1}.</span>
+                              <span className={cn(
+                                'flex-1 text-xs',
+                                isCurrentStep && 'font-semibold',
+                                status === 'error'
+                                  ? 'text-destructive'
+                                  : status === 'wait'
+                                    ? 'text-muted-foreground'
+                                    : 'text-foreground'
+                              )}>
+                                <span className="mr-1 text-muted-foreground">{si + 1}.</span>
                                 {label}{suffix}
                               </span>
                               {isCurrentStep && (
-                                <Button
-                                  size="small" type="link" danger
-                                  style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
-                                  loading={skipping}
+                                <UIButton
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={skipping}
                                   onClick={(e) => { e.stopPropagation(); handleSkipStep(); }}
                                 >
                                   跳过
-                                </Button>
+                                </UIButton>
                               )}
                               {canJump && (
-                                <Button
-                                  size="small" type="link"
-                                  style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
-                                  loading={advancing}
+                                <UIButton
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={advancing}
                                   onClick={(e) => { e.stopPropagation(); handleAdvance(si); }}
                                 >
                                   {si <= currentStepIdx ? '重新执行' : '从此执行'}
-                                </Button>
+                                </UIButton>
                               )}
                             </div>
                           );
@@ -740,8 +786,9 @@ export const TaskDispatchTab: React.FC = () => {
                   </div>
                 );
               })}
-            </Space>
-          </Card>
+            </div>
+            </CardContent>
+          </UICard>
             );
           })()
         )}

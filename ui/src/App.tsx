@@ -6,18 +6,18 @@
  * browser history. Standalone bootstrapping lives in `main.tsx`.
  */
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
+import { Suspense, lazy } from 'react';
 import type { ReactNode } from 'react';
 import { RobotProvider } from '@/contexts/RobotContext';
 import { Dashboard } from '@/components/Dashboard';
-import { MapManager } from '@/components/MapManager';
-import { MapEditor } from '@/components/MapEditor';
-import { Mapping } from '@/components/Mapping';
-import { Navigation } from '@/components/Navigation';
-import { Settings } from '@/components/Settings';
-import { RoomPatrol } from '@/components/RoomPatrol';
 import './app.css';
+
+const MapManager = lazy(() => import('@/components/MapManager').then((module) => ({ default: module.MapManager })));
+const MapEditor = lazy(() => import('@/components/MapEditor').then((module) => ({ default: module.MapEditor })));
+const Mapping = lazy(() => import('@/components/Mapping').then((module) => ({ default: module.Mapping })));
+const Navigation = lazy(() => import('@/components/Navigation').then((module) => ({ default: module.Navigation })));
+const Settings = lazy(() => import('@/components/Settings').then((module) => ({ default: module.Settings })));
+const RoomPatrol = lazy(() => import('@/components/RoomPatrol').then((module) => ({ default: module.RoomPatrol })));
 
 export type AppComponentProps = {
   appId: string;
@@ -36,26 +36,26 @@ export function NavigationRoutes({ chromeClassName = 'app-shell' }: NavigationRo
 
   return (
     <div className={isFullScreen ? 'app-shell app-shell--fullscreen' : chromeClassName}>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/maps" element={<MapManager />} />
-        <Route path="/map-editor/:mapId" element={<MapEditor />} />
-        <Route path="/mapping" element={<Mapping />} />
-        <Route path="/navigation" element={<Navigation />} />
-        <Route path="/room-patrol" element={<RoomPatrol />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+      <Suspense fallback={<div className="app-loading">正在加载导航应用...</div>}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/maps" element={<MapManager />} />
+          <Route path="/map-editor/:mapId" element={<MapEditor />} />
+          <Route path="/mapping" element={<Mapping />} />
+          <Route path="/navigation" element={<Navigation />} />
+          <Route path="/room-patrol" element={<RoomPatrol />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }
 
 function NavigationAppProviders({ children }: { children: ReactNode }) {
   return (
-    <ConfigProvider locale={zhCN}>
-      <RobotProvider autoConnect={true}>
-        {children}
-      </RobotProvider>
-    </ConfigProvider>
+    <RobotProvider autoConnect={true}>
+      {children}
+    </RobotProvider>
   );
 }
 

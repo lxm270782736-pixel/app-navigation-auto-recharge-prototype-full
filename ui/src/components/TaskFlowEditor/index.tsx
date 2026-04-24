@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ReactFlow, {
   Node,
   Connection,
@@ -12,8 +12,8 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './TaskFlowEditor.css';
-import { Button, Space, message } from 'antd';
-import { SaveOutlined, UndoOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button as UIButton, cn } from '@astribot/ui';
+import { RotateCcw, Save, Trash2 } from 'lucide-react';
 import { TaskConfig } from '@/types';
 import { flowToTasks, tasksToFlow } from './utils/converter';
 import { WaitTaskNode } from './nodes/WaitTaskNode';
@@ -50,6 +50,7 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
   const initialFlow = tasksToFlow(tasks);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlow.edges);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // 监听键盘事件删除选中的节点和连接
   useEffect(() => {
@@ -63,7 +64,7 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
 
         const hasSelectedItems = nodes.some(n => n.selected) || edges.some(e => e.selected);
         if (hasSelectedItems) {
-          message.success('已删除选中项');
+          setNotice({ tone: 'success', text: '已删除选中项' });
         }
       }
     };
@@ -80,7 +81,7 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
     const selectedEdges = edges.filter((edge) => edge.selected);
 
     if (selectedNodes.length === 0 && selectedEdges.length === 0) {
-      message.warning('请先选中要删除的节点或连接线');
+      setNotice({ tone: 'info', text: '请先选中要删除的节点或连接线' });
       return;
     }
 
@@ -88,9 +89,7 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
     setNodes((nds) => nds.filter((node) => !node.selected));
     setEdges((eds) => eds.filter((edge) => !edge.selected));
 
-    message.success(
-      `已删除 ${selectedNodes.length} 个节点和 ${selectedEdges.length} 条连接线`
-    );
+    setNotice({ tone: 'success', text: `已删除 ${selectedNodes.length} 个节点和 ${selectedEdges.length} 条连接线` });
   }, [nodes, edges, setNodes, setEdges]);
 
   const onConnect = useCallback(
@@ -136,9 +135,9 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
     try {
       const convertedTasks = flowToTasks(nodes, edges);
       onChange(convertedTasks);
-      message.success(`已保存 ${convertedTasks.length} 个任务`);
+      setNotice({ tone: 'success', text: `已保存 ${convertedTasks.length} 个任务` });
     } catch (error) {
-      message.error('保存失败: ' + (error as Error).message);
+      setNotice({ tone: 'error', text: '保存失败: ' + (error as Error).message });
     }
   };
 
@@ -146,16 +145,16 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
     const initialFlow = tasksToFlow(tasks);
     setNodes(initialFlow.nodes);
     setEdges(initialFlow.edges);
-    message.info('已重置到初始状态');
+    setNotice({ tone: 'info', text: '已重置到初始状态' });
   };
 
   return (
-    <div style={{ width: '100%', height: '600px', display: 'flex', gap: 12 }}>
+    <div className="flex h-[600px] w-full gap-3">
       {/* 左侧任务选择面板 */}
       <TaskPalette />
 
       {/* 右侧流程编辑区域 */}
-      <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: 4, position: 'relative' }}>
+      <div className="relative flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/80">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -176,35 +175,45 @@ export const TaskFlowEditor: React.FC<TaskFlowEditorProps> = ({ tasks, onChange 
             nodeStrokeWidth={3}
             zoomable
             pannable
-            style={{ backgroundColor: '#f0f0f0' }}
+            className="bg-muted/50"
           />
           <Background gap={12} size={1} />
 
           {/* 顶部工具栏 */}
           <Panel position="top-right">
-            <Space>
-              <Button
-                icon={<DeleteOutlined />}
+            <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-card/95 p-2 shadow-sm">
+              <UIButton
+                type="button"
+                variant="destructive"
+                size="sm"
                 onClick={handleDelete}
-                size="small"
-                danger
               >
+                <Trash2 className="mr-2 h-4 w-4" />
                 删除选中
-              </Button>
-              <Button icon={<UndoOutlined />} onClick={handleReset} size="small">
+              </UIButton>
+              <UIButton type="button" variant="outline" size="sm" onClick={handleReset}>
+                <RotateCcw className="mr-2 h-4 w-4" />
                 重置
-              </Button>
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
-                onClick={handleSave}
-                size="small"
-              >
+              </UIButton>
+              <UIButton type="button" size="sm" onClick={handleSave}>
+                <Save className="mr-2 h-4 w-4" />
                 保存流程
-              </Button>
-            </Space>
+              </UIButton>
+            </div>
           </Panel>
         </ReactFlow>
+        {notice && (
+          <div
+            className={cn(
+              'absolute bottom-4 left-4 z-20 rounded-lg border px-3 py-2 text-sm shadow-sm',
+              notice.tone === 'success' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+              notice.tone === 'error' && 'border-destructive/40 bg-destructive/10 text-destructive',
+              notice.tone === 'info' && 'border-sky-500/30 bg-sky-500/10 text-sky-200'
+            )}
+          >
+            {notice.text}
+          </div>
+        )}
       </div>
     </div>
   );

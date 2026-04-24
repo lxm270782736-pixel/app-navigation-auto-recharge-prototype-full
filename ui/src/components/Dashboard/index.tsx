@@ -1,33 +1,95 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Statistic, Badge, Progress, Space } from 'antd';
 import {
-  RobotOutlined,
-  ThunderboltOutlined,
-  WifiOutlined,
-  EnvironmentOutlined,
-  CompassOutlined,
-  DashboardOutlined,
-  ToolOutlined,
-  ApiOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
+  Activity,
+  BatteryCharging,
+  Compass,
+  Map,
+  MoveRight,
+  Radar,
+  Route,
+  Settings2,
+  Wifi,
+} from 'lucide-react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@astribot/ui';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
-import { useRobot } from '@/contexts/RobotContext';
-import { ConnectionStatus } from '@/types';
-import type { Pose } from '@/types';
 import { MetaLauncher } from '@/components/common/MetaLauncher';
+import { useRobot } from '@/contexts/RobotContext';
+import { ConnectionStatus, type Pose } from '@/types';
 
-export const Dashboard: React.FC = () => {
+type MetricCardProps = {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: ComponentType<{ className?: string }>;
+  tone?: 'default' | 'success' | 'warning';
+};
+
+type ActionCardProps = {
+  title: string;
+  description: string;
+  icon: ComponentType<{ className?: string }>;
+  onClick: () => void;
+};
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(' ');
+}
+
+function MetricCard({ title, value, subtitle, icon: Icon, tone = 'default' }: MetricCardProps) {
+  const toneClass =
+    tone === 'success'
+      ? 'bg-green-500/10 text-green-500'
+      : tone === 'warning'
+        ? 'bg-yellow-500/10 text-yellow-500'
+        : 'bg-primary/10 text-primary';
+
+  return (
+    <Card className="border-border bg-card/80 shadow-sm">
+      <CardContent className="flex items-start justify-between p-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
+          <div className="text-2xl font-semibold text-foreground">{value}</div>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+        <div className={cn('rounded-xl p-3', toneClass)}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionCard({ title, description, icon: Icon, onClick }: ActionCardProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-xl border border-border bg-card/80 p-5 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-accent"
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <div className="rounded-xl bg-primary/10 p-3 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+          <Icon className="h-5 w-5" />
+        </div>
+        <MoveRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-foreground" />
+      </div>
+      <div className="space-y-1">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+    </button>
+  );
+}
+
+export function Dashboard() {
   const navigate = useNavigate();
   const { connectionStatus } = useRobot();
   const [robotPose, setRobotPose] = useState<Pose | null>(null);
-  // 暂时使用固定电池电量，等待真实 ROS 环境提供电池话题
   const [batteryLevel] = useState<number>(85);
   const [velocity, setVelocity] = useState({ linear: 0, angular: 0 });
 
-  // 订阅机器人位姿
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       return;
@@ -39,10 +101,9 @@ export const Dashboard: React.FC = () => {
       (poseMsg) => {
         const position = poseMsg.pose.pose.position;
         const orientation = poseMsg.pose.pose.orientation;
-
         const theta = Math.atan2(
           2.0 * (orientation.w * orientation.z + orientation.x * orientation.y),
-          1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z)
+          1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z),
         );
 
         setRobotPose({
@@ -50,7 +111,7 @@ export const Dashboard: React.FC = () => {
           y: position.y,
           theta,
         });
-      }
+      },
     );
 
     return () => {
@@ -58,27 +119,6 @@ export const Dashboard: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  // 订阅电池状态
-  // 注意：真实 ROS 环境中暂时没有 /battery_state 话题，暂时注释掉
-  // useEffect(() => {
-  //   if (connectionStatus !== ConnectionStatus.CONNECTED) {
-  //     return;
-  //   }
-
-  //   const unsubscribe = apiService.subscribeTopic<any>(
-  //     '/battery_state',
-  //     'sensor_msgs/BatteryState',
-  //     (batteryMsg) => {
-  //       setBatteryLevel(batteryMsg.percentage * 100);
-  //     }
-  //   );
-
-  //   return () => {
-  //     unsubscribe();
-  //   };
-  // }, [connectionStatus]);
-
-  // 订阅速度信息
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       return;
@@ -92,7 +132,7 @@ export const Dashboard: React.FC = () => {
           linear: twistMsg.linear.x,
           angular: twistMsg.angular.z,
         });
-      }
+      },
     );
 
     return () => {
@@ -100,223 +140,83 @@ export const Dashboard: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  const getBatteryColor = (level: number) => {
-    if (level > 60) return '#52c41a';
-    if (level > 30) return '#faad14';
-    return '#ff4d4f';
-  };
-
-  const getConnectionStatusInfo = () => {
+  const connectionBadge = useMemo(() => {
     switch (connectionStatus) {
       case ConnectionStatus.CONNECTED:
-        return { status: 'success', text: '在线' };
+        return <Badge className="bg-green-500/15 text-green-500 hover:bg-green-500/15">在线</Badge>;
       case ConnectionStatus.CONNECTING:
-        return { status: 'processing', text: '连接中' };
+        return <Badge className="bg-yellow-500/15 text-yellow-500 hover:bg-yellow-500/15">连接中</Badge>;
       case ConnectionStatus.ERROR:
-        return { status: 'error', text: '错误' };
+        return <Badge variant="destructive">错误</Badge>;
       default:
-        return { status: 'default', text: '离线' };
+        return <Badge variant="secondary">离线</Badge>;
     }
-  };
+  }, [connectionStatus]);
 
-  const statusInfo = getConnectionStatusInfo();
+  const positionText = robotPose ? `${robotPose.x.toFixed(2)}, ${robotPose.y.toFixed(2)}` : '--';
+  const headingText = robotPose ? `${((robotPose.theta * 180) / Math.PI).toFixed(1)}°` : '--';
+  const speedText = `${velocity.linear.toFixed(2)} m/s`;
+  const speedSubtitle = `角速度 ${velocity.angular.toFixed(2)} rad/s`;
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* 标题栏 */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', marginBottom: '8px' }}>
-          <RobotOutlined /> 机器人建图导航
-        </h1>
-        <p style={{ color: '#666', fontSize: '14px' }}>实时监控机器人状态和性能</p>
-      </div>
-
-      {/* 连接状态和节点控制区域 */}
-      <Card style={{ marginBottom: '24px' }}>
-        <Row gutter={[24, 16]}>
-          {/* ROS连接状态 */}
-          <Col xs={24} lg={12}>
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6">
+      <section className="rounded-2xl border border-border bg-card/80 p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <Route className="h-6 w-6" />
+              </div>
               <div>
-                <ApiOutlined style={{ fontSize: '24px', marginRight: '8px', color: '#1890ff' }} />
-                <span style={{ fontSize: '16px', fontWeight: 500 }}>ROS连接状态</span>
+                <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Navigation Control</div>
+                <h1 className="text-2xl font-semibold text-foreground">机器人建图与导航</h1>
               </div>
-              <div style={{ paddingLeft: '32px' }}>
-                <Space size="large">
-                  <div>
-                    <Badge
-                      status={statusInfo.status as any}
-                      text={statusInfo.text}
-                      style={{ fontSize: '16px' }}
-                    />
-                  </div>
-                  {connectionStatus === ConnectionStatus.CONNECTED && (
-                    <div style={{ color: '#52c41a' }}>
-                      <WifiOutlined style={{ marginRight: '4px' }} />
-                      ws://localhost:9090
-                    </div>
-                  )}
-                </Space>
-              </div>
-            </Space>
-          </Col>
-
-          {/* Meta 服务控制 */}
-          <Col xs={24} lg={12}>
-            <MetaLauncher />
-          </Col>
-        </Row>
-      </Card>
-
-      {/* 主要状态卡片 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        {/* 电池状态 */}
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="电池电量"
-              value={batteryLevel}
-              precision={0}
-              valueStyle={{ color: getBatteryColor(batteryLevel) }}
-              prefix={<ThunderboltOutlined />}
-              suffix="%"
-            />
-            <Progress
-              percent={batteryLevel}
-              strokeColor={getBatteryColor(batteryLevel)}
-              showInfo={false}
-              style={{ marginTop: '12px' }}
-            />
-          </Card>
-        </Col>
-
-        {/* 位置信息 */}
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="位置 (X, Y)"
-              value={robotPose ? `${robotPose.x.toFixed(2)}, ${robotPose.y.toFixed(2)}` : '-'}
-              prefix={<EnvironmentOutlined />}
-              valueStyle={{ fontSize: '18px' }}
-            />
-          </Card>
-        </Col>
-
-        {/* 朝向 */}
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="朝向角度"
-              value={robotPose ? ((robotPose.theta * 180) / Math.PI).toFixed(1) : '-'}
-              prefix={<CompassOutlined />}
-              suffix="°"
-            />
-          </Card>
-        </Col>
-
-        {/* 速度 */}
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="线速度"
-              value={velocity.linear.toFixed(2)}
-              prefix={<DashboardOutlined />}
-              suffix="m/s"
-            />
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#999' }}>
-              角速度: {velocity.angular.toFixed(2)} rad/s
             </div>
-          </Card>
-        </Col>
-      </Row>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              按照宿主应用模板渲染的导航控制台。首屏只保留核心状态与入口，重型导航页面按路由懒加载。
+            </p>
+          </div>
 
-      {/* 功能卡片 */}
-      <Row gutter={[16, 16]}>
-        {/* 地图管理 */}
-        <Col xs={24} md={12} lg={8}>
-          <Card
-            hoverable
-            onClick={() => navigate('/maps')}
-            style={{ height: '180px', cursor: 'pointer' }}
-          >
-            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-              <EnvironmentOutlined style={{ fontSize: '48px', color: '#1890ff' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>地图管理</h3>
-              <p style={{ color: '#999', marginTop: '8px' }}>
-                查看、编辑和管理地图
-              </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
+              <Wifi className="h-4 w-4" />
+              ROS / FastAPI
+              {connectionBadge}
             </div>
-          </Card>
-        </Col>
+            <Button variant="secondary" onClick={() => navigate('/settings')}>
+              <Settings2 className="mr-2 h-4 w-4" />
+              设置
+            </Button>
+          </div>
+        </div>
+      </section>
 
-        {/* 建图功能 */}
-        <Col xs={24} md={12} lg={8}>
-          <Card
-            hoverable
-            onClick={() => navigate('/mapping')}
-            style={{ height: '180px', cursor: 'pointer' }}
-          >
-            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-              <CompassOutlined style={{ fontSize: '48px', color: '#52c41a' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>SLAM建图</h3>
-              <p style={{ color: '#999', marginTop: '8px' }}>
-                启动建图模式创建新地图
-              </p>
-            </div>
-          </Card>
-        </Col>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard title="电池" value={`${batteryLevel}%`} subtitle="当前为模拟值，等待真实话题接入" icon={BatteryCharging} tone={batteryLevel > 60 ? 'success' : 'warning'} />
+        <MetricCard title="位置" value={positionText} subtitle="X / Y 坐标" icon={Map} />
+        <MetricCard title="朝向" value={headingText} subtitle="机器人当前朝向角" icon={Compass} />
+        <MetricCard title="速度" value={speedText} subtitle={speedSubtitle} icon={Activity} />
+      </section>
 
-        {/* 导航功能 */}
-        <Col xs={24} md={12} lg={8}>
-          <Card
-            hoverable
-            onClick={() => navigate('/navigation')}
-            style={{ height: '180px', cursor: 'pointer' }}
-          >
-            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-              <SendOutlined style={{ fontSize: '48px', color: '#722ed1' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>导航功能</h3>
-              <p style={{ color: '#999', marginTop: '8px' }}>
-                选择地图进行自主导航
-              </p>
-            </div>
-          </Card>
-        </Col>
+      <section className="grid gap-4 xl:grid-cols-[1.25fr,0.75fr]">
+        <Card className="border-border bg-card/80 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Radar className="h-4 w-4 text-primary" />
+              工作区入口
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <ActionCard title="地图管理" description="查看地图版本、切换地图、编辑已有栅格数据。" icon={Map} onClick={() => navigate('/maps')} />
+            <ActionCard title="SLAM 建图" description="启动建图流程并把结果保存为导航地图。" icon={Compass} onClick={() => navigate('/mapping')} />
+            <ActionCard title="自主导航" description="基于当前地图下发导航目标并观测轨迹反馈。" icon={Route} onClick={() => navigate('/navigation')} />
+            <ActionCard title="导览任务" description="配置点位、编排任务流并下发巡检/导览任务。" icon={Radar} onClick={() => navigate('/room-patrol')} />
+            <ActionCard title="系统设置" description="集中管理导航相关 Meta、参数与运行模式。" icon={Settings2} onClick={() => navigate('/settings')} />
+          </CardContent>
+        </Card>
 
-        {/* 导览任务 */}
-        <Col xs={24} md={12} lg={8}>
-          <Card
-            hoverable
-            onClick={() => navigate('/room-patrol')}
-            style={{ height: '180px', cursor: 'pointer' }}
-          >
-            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-              <EnvironmentOutlined style={{ fontSize: '48px', color: '#eb2f96' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>导览任务</h3>
-              <p style={{ color: '#999', marginTop: '8px' }}>
-                点位录制、任务编排、任务下发
-              </p>
-            </div>
-          </Card>
-        </Col>
-
-        {/* 系统设置 */}
-        <Col xs={24} md={12} lg={8}>
-          <Card
-            hoverable
-            onClick={() => navigate('/settings')}
-            style={{ height: '180px', cursor: 'pointer' }}
-          >
-            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-              <ToolOutlined style={{ fontSize: '48px', color: '#faad14' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>系统设置</h3>
-              <p style={{ color: '#999', marginTop: '8px' }}>
-                配置机器人参数和选项
-              </p>
-            </div>
-          </Card>
-        </Col>
-      </Row>
+        <MetaLauncher />
+      </section>
     </div>
   );
-};
+}

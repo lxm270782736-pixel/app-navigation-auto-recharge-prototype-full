@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input, Button } from 'antd';
-import { EyeOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { Input } from '@astribot/ui';
+import { Eye } from 'lucide-react';
+import { TaskNodeShell } from './TaskNodeShell';
 
 export const InspectTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [targetType, setTargetType] = useState(data.targetType || 'person');
@@ -13,76 +14,51 @@ export const InspectTaskNode: React.FC<NodeProps> = ({ data }) => {
     <div className="custom-task-node">
       <Handle type="target" position={Position.Top} />
 
-      <Card
-        size="small"
-        style={{
-          minWidth: 180,
-          backgroundColor: '#fce4ec',
-          border: '2px solid #c2185b',
+      <TaskNodeShell
+        icon={<Eye className="h-5 w-5" />}
+        iconColor="#c2185b"
+        borderColor="#c2185b"
+        backgroundColor="#fce4ec"
+        label={label}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        onLabelChange={(value) => {
+          setLabel(value);
+          data.label = value;
         }}
+        collapsedSummary={`${targetType} · ${confidenceThreshold}`}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <EyeOutlined style={{ fontSize: 20, color: '#c2185b' }} />
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">目标类型</div>
             <Input
-              size="small"
-              value={label}
+              value={targetType}
               onChange={(e) => {
-                setLabel(e.target.value);
-                data.label = e.target.value;
+                setTargetType(e.target.value);
+                data.targetType = e.target.value;
               }}
-              style={{ fontWeight: 'bold', flex: 1 }}
-              bordered={false}
-            />
-            <Button
-              type="text"
-              size="small"
-              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ padding: '0 4px' }}
+              placeholder="person, object, etc."
+              className="h-8"
             />
           </div>
-
-          {!collapsed && (
-            <>
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>目标类型</div>
-                <Input
-                  size="small"
-                  value={targetType}
-                  onChange={(e) => {
-                    setTargetType(e.target.value);
-                    data.targetType = e.target.value;
-                  }}
-                  placeholder="person, object, etc."
-                />
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>置信度阈值</div>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={confidenceThreshold}
-                  onChange={(value) => {
-                    setConfidenceThreshold(value || 0.7);
-                    data.confidenceThreshold = value || 0.7;
-                  }}
-                  style={{ width: '100%' }}
-                />
-              </div>
-            </>
-          )}
-
-          {collapsed && (
-            <div style={{ fontSize: 11, color: '#666' }}>
-              {targetType} · {confidenceThreshold}
-            </div>
-          )}
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">置信度阈值</div>
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={String(confidenceThreshold)}
+              onChange={(e) => {
+                const value = Number(e.target.value) || 0.7;
+                setConfidenceThreshold(value);
+                data.confidenceThreshold = value;
+              }}
+              className="h-8"
+            />
+          </div>
         </div>
-      </Card>
+      </TaskNodeShell>
 
       <Handle type="source" position={Position.Bottom} />
     </div>

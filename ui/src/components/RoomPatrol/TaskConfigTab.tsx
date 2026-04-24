@@ -1,17 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Button, Card, Select, Checkbox, message, Empty, Tag, Tooltip, Input, InputNumber, Switch, Modal, Popconfirm } from 'antd';
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  SaveOutlined,
-  HolderOutlined,
-  SettingOutlined,
-  CopyOutlined,
-  StarOutlined,
-  StarFilled,
-  EditOutlined,
-  ExclamationCircleOutlined,
-} from '@ant-design/icons';
 import {
   DndContext,
   closestCenter,
@@ -29,6 +16,26 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+  Badge,
+  Button as UIButton,
+  Card as UICard,
+  CardContent,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Switch as UISwitch,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from '@astribot/ui';
+import { CircleAlert, Copy, GripVertical, Pencil, Plus, Settings2, Star, Trash2 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
@@ -117,23 +124,19 @@ const ResizeHandle: React.FC<{
   return (
     <div
       onMouseDown={e => { startX.current = e.clientX; setActive(true); }}
-      style={{
-        width: 6,
-        cursor: 'col-resize',
-        background: active ? 'rgba(24,144,255,0.3)' : 'transparent',
-        flexShrink: 0,
-        position: 'relative',
-        zIndex: 5,
-        transition: 'background 0.15s',
-      }}
+      className={cn(
+        'relative z-[5] w-1.5 shrink-0 cursor-col-resize transition-colors',
+        active ? 'bg-sky-500/30' : 'bg-transparent'
+      )}
       onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.background = 'rgba(24,144,255,0.15)'; }}
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
     >
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        width: 2, height: 24, borderRadius: 1, background: active ? '#1890ff' : '#d9d9d9',
-        transition: 'background 0.15s',
-      }} />
+      <div
+        className={cn(
+          'absolute left-1/2 top-1/2 h-6 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-[1px] transition-colors',
+          active ? 'bg-sky-500' : 'bg-border'
+        )}
+      />
     </div>
   );
 };
@@ -159,33 +162,29 @@ const SortableRoomItem: React.FC<{
   return (
     <div
       ref={setNodeRef}
-      style={{
-        ...style,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '6px 8px',
-        marginBottom: 4,
-        borderRadius: 6,
-        border: `1px solid ${isSelected ? '#1890ff' : '#f0f0f0'}`,
-        background: isSelected ? '#e6f7ff' : '#fff',
-        cursor: 'pointer',
-      }}
+      style={style}
+      className={cn(
+        'mb-2 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition',
+        isSelected ? 'border-primary/50 bg-primary/10' : 'border-border/70 bg-card/90',
+        !room.enabled && 'opacity-50'
+      )}
       onClick={onSelect}
     >
-      <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#999', display: 'flex' }} onClick={e => e.stopPropagation()}>
-        <HolderOutlined />
+      <span {...attributes} {...listeners} className="flex cursor-grab text-muted-foreground" onClick={e => e.stopPropagation()}>
+        <GripVertical className="h-4 w-4" />
       </span>
-      <Checkbox
+      <input
+        type="checkbox"
         checked={room.enabled}
         onChange={() => onToggle()}
         onClick={e => e.stopPropagation()}
+        className="h-4 w-4 accent-[hsl(var(--primary))]"
       />
-      <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>
-        <span style={{ color: '#999', marginRight: 4, fontSize: 11 }}>{idx + 1}.</span>
+      <span className="flex-1 text-sm font-medium text-foreground">
+        <span className="mr-1 text-[11px] text-muted-foreground">{idx + 1}.</span>
         {room.room_name || room.room_id}
       </span>
-      {!isReady && <Tag color="red" style={{ fontSize: 9, lineHeight: '16px', padding: '0 4px' }}>未录</Tag>}
+      {!isReady && <Badge className="bg-destructive/15 text-destructive">未录</Badge>}
     </div>
   );
 };
@@ -204,21 +203,22 @@ const SortableStepItem: React.FC<{
     marginBottom: 8,
   };
   return (
-    <div ref={setNodeRef} style={style}>
-      <Card size="small" style={{ borderLeft: `3px solid ${borderColor}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#999', display: 'flex' }}>
-            <HolderOutlined />
+    <div ref={setNodeRef} style={style} className="mb-2">
+      <UICard className="border-border/70 bg-card/90 shadow-sm" style={{ borderLeft: `3px solid ${borderColor}` }}>
+        <CardContent className="flex items-center gap-2 p-3">
+          <span {...attributes} {...listeners} className="flex cursor-grab text-muted-foreground">
+            <GripVertical className="h-4 w-4" />
           </span>
           {children}
-        </div>
-      </Card>
+        </CardContent>
+      </UICard>
     </div>
   );
 };
 
 export const TaskConfigTab: React.FC = () => {
   const { connectionStatus } = useRobot();
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [presets, setPresets] = useState<TaskPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
@@ -239,6 +239,7 @@ export const TaskConfigTab: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [deletePresetId, setDeletePresetId] = useState<string | null>(null);
 
   // Dynamic step options: built-in + custom
   const allStepOptions = useMemo(() => [
@@ -380,7 +381,7 @@ export const TaskConfigTab: React.FC = () => {
   const applyDefault = () => {
     if (!selectedRoom) return;
     updateSteps([...DEFAULT_STEPS]);
-    message.success('已应用默认巡检模板');
+    setNotice({ tone: 'success', text: '已应用默认巡检模板' });
   };
 
   // Save current editing preset to backend
@@ -388,17 +389,17 @@ export const TaskConfigTab: React.FC = () => {
     if (!editingPreset) return;
     const result = await apiService.saveTaskPreset(editingPreset);
     if (result.success) {
-      message.success('已保存');
+      setNotice({ tone: 'success', text: '已保存' });
       setIsDirty(false);
       loadData();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   // Preset management
   const handleNewPreset = async () => {
-    if (!newPresetName.trim()) { message.error('请输入任务名称'); return; }
+    if (!newPresetName.trim()) { setNotice({ tone: 'error', text: '请输入任务名称' }); return; }
     const preset: any = {
       id: '',
       name: newPresetName.trim(),
@@ -412,13 +413,13 @@ export const TaskConfigTab: React.FC = () => {
     };
     const result = await apiService.saveTaskPreset(preset);
     if (result.success) {
-      message.success('已创建');
+      setNotice({ tone: 'success', text: '已创建' });
       setNewPresetModal(false);
       setNewPresetName('');
       await loadData();
       if (result.preset_id) setSelectedPresetId(result.preset_id);
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
@@ -426,29 +427,29 @@ export const TaskConfigTab: React.FC = () => {
     const source = presets.find(p => p.id === presetId);
     const result = await apiService.duplicateTaskPreset(presetId, `${source?.name || '任务'} 副本`);
     if (result.success) {
-      message.success('已复制');
+      setNotice({ tone: 'success', text: '已复制' });
       await loadData();
       if (result.preset?.id) setSelectedPresetId(result.preset.id);
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handleDeletePreset = async (presetId: string) => {
     const result = await apiService.deleteTaskPreset(presetId);
     if (result.success) {
-      message.success('已删除');
+      setNotice({ tone: 'success', text: '已删除' });
       if (selectedPresetId === presetId) setSelectedPresetId('');
       loadData();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handleSetDefault = async (presetId: string) => {
     const result = await apiService.setDefaultPreset(presetId);
     if (result.success) {
-      message.success('已设为默认');
+      setNotice({ tone: 'success', text: '已设为默认' });
       loadData();
     }
   };
@@ -503,34 +504,42 @@ export const TaskConfigTab: React.FC = () => {
   );
 
   return (
-    <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+    <div className="flex h-full overflow-hidden bg-background">
       {/* Col 1: Preset list */}
-      <div style={{ width: col1Width, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>任务管理</div>
+      <div style={{ width: col1Width }} className="flex shrink-0 flex-col overflow-y-auto p-3">
+        <div className="mb-3 text-sm font-semibold text-foreground">任务管理</div>
 
-        {presets.length === 0 && <Empty description="暂无任务" style={{ marginTop: 30 }} />}
+        {notice && (
+          <div
+            className={cn(
+              'mb-3 rounded-lg border px-3 py-2 text-sm',
+              notice.tone === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                : 'border-destructive/40 bg-destructive/10 text-destructive'
+            )}
+          >
+            {notice.text}
+          </div>
+        )}
+
+        {presets.length === 0 && <div className="mt-8 text-center text-sm text-muted-foreground">暂无任务</div>}
 
         {presets.map(p => (
           <div
             key={p.id}
             onClick={() => setSelectedPresetId(p.id)}
-            style={{
-              padding: '8px 10px',
-              marginBottom: 4,
-              borderRadius: 6,
-              border: `1px solid ${selectedPresetId === p.id ? '#1890ff' : '#f0f0f0'}`,
-              background: selectedPresetId === p.id ? '#e6f7ff' : '#fff',
-              cursor: 'pointer',
-            }}
+            className={cn(
+              'mb-2 cursor-pointer rounded-lg border px-3 py-2 transition',
+              selectedPresetId === p.id ? 'border-primary/50 bg-primary/10' : 'border-border/70 bg-card/90'
+            )}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="flex items-center justify-between">
               {renamingId === p.id ? (
                 <Input
-                  size="small"
                   value={renameValue}
                   onChange={e => setRenameValue(e.target.value)}
-                  onPressEnter={async () => {
-                    if (!renameValue.trim()) return;
+                  onKeyDown={async (e) => {
+                    if (e.key !== 'Enter' || !renameValue.trim()) return;
                     const target = presets.find(x => x.id === p.id);
                     if (target) {
                       await apiService.saveTaskPreset({ ...target, name: renameValue.trim() });
@@ -540,73 +549,101 @@ export const TaskConfigTab: React.FC = () => {
                   }}
                   onBlur={() => setRenamingId(null)}
                   autoFocus
-                  style={{ width: '100%' }}
                   onClick={e => e.stopPropagation()}
+                  className="h-8"
                 />
               ) : (
-                <span style={{ fontSize: 13, fontWeight: 500 }}>
-                  {p.is_default ? <StarFilled style={{ color: '#faad14', marginRight: 4, fontSize: 11 }} /> : null}
+                <span className="text-sm font-medium text-foreground">
+                  {p.is_default ? <Star className="mr-1 inline h-3.5 w-3.5 fill-yellow-400 text-yellow-400" /> : null}
                   {p.name}
                   {selectedPresetId === p.id && isDirty && (
-                    <ExclamationCircleOutlined style={{ color: '#faad14', marginLeft: 4, fontSize: 11 }} />
+                    <CircleAlert className="ml-1 inline h-3.5 w-3.5 text-yellow-400" />
                   )}
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
-              <Tooltip title="重命名">
-                <Button size="small" type="text" icon={<EditOutlined />} style={{ fontSize: 11, padding: '0 2px' }}
-                  onClick={e => { e.stopPropagation(); setRenamingId(p.id); setRenameValue(p.name); }} />
-              </Tooltip>
+            <div className="mt-2 flex gap-1">
+              <UIButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="重命名"
+                onClick={e => { e.stopPropagation(); setRenamingId(p.id); setRenameValue(p.name); }}
+              >
+                <Pencil className="h-4 w-4" />
+              </UIButton>
               {!p.is_default && (
-                <Tooltip title="设为默认">
-                  <Button size="small" type="text" icon={<StarOutlined />} style={{ fontSize: 11, padding: '0 2px' }}
-                    onClick={e => { e.stopPropagation(); handleSetDefault(p.id); }} />
-                </Tooltip>
+                <UIButton
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="设为默认"
+                  onClick={e => { e.stopPropagation(); handleSetDefault(p.id); }}
+                >
+                  <Star className="h-4 w-4" />
+                </UIButton>
               )}
-              <Tooltip title="复制">
-                <Button size="small" type="text" icon={<CopyOutlined />} style={{ fontSize: 11, padding: '0 2px' }}
-                  onClick={e => { e.stopPropagation(); handleDuplicate(p.id); }} />
-              </Tooltip>
-              <Popconfirm title="确认删除？" onConfirm={() => handleDeletePreset(p.id)}>
-                <Button size="small" type="text" danger icon={<DeleteOutlined />} style={{ fontSize: 11, padding: '0 2px' }}
-                  onClick={e => e.stopPropagation()} />
-              </Popconfirm>
+              <UIButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="复制"
+                onClick={e => { e.stopPropagation(); handleDuplicate(p.id); }}
+              >
+                <Copy className="h-4 w-4" />
+              </UIButton>
+              <UIButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="删除"
+                onClick={e => { e.stopPropagation(); setDeletePresetId(p.id); }}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </UIButton>
             </div>
           </div>
         ))}
 
-        <Button type="dashed" block icon={<PlusOutlined />} onClick={() => setNewPresetModal(true)} style={{ marginTop: 8 }}>
+        <UIButton type="button" variant="outline" className="mt-2 w-full" onClick={() => setNewPresetModal(true)}>
+          <Plus className="mr-2 h-4 w-4" />
           新建任务
-        </Button>
+        </UIButton>
       </div>
 
       <ResizeHandle onResize={handleResize1} />
 
       {/* Col 2: Room list */}
-      <div style={{ width: col2Width, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>导览顺序</span>
+      <div style={{ width: col2Width }} className="flex shrink-0 flex-col overflow-y-auto p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-sm font-semibold text-foreground">导览顺序</span>
           {editingPreset && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}>
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
               跌倒检测
-              <Switch
-                size="small"
+              <UISwitch
                 checked={editingPreset.fall_detection_enabled ?? true}
-                onChange={v => setEditingPreset({ ...editingPreset, fall_detection_enabled: v })}
+                onCheckedChange={v => setEditingPreset({ ...editingPreset, fall_detection_enabled: v })}
               />
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Checkbox checked={allEnabled} onChange={toggleAll} style={{ fontSize: 12 }}>全选</Checkbox>
+        <div className="mb-2 flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={allEnabled}
+              onChange={toggleAll}
+              className="h-4 w-4 accent-[hsl(var(--primary))]"
+            />
+            全选
+          </label>
         </div>
-        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与导览的区域</div>
+        <div className="mb-3 text-xs text-muted-foreground">拖拽调整顺序，勾选参与导览的区域</div>
 
         {!editingPreset ? (
-          <Empty description="选择左侧任务" style={{ marginTop: 40 }} />
+          <div className="mt-10 text-center text-sm text-muted-foreground">选择左侧任务</div>
         ) : editingPreset.rooms.length === 0 ? (
-          <Empty description="请先在「点位录制」录制区域" style={{ marginTop: 40 }} />
+          <div className="mt-10 text-center text-sm text-muted-foreground">请先在「点位录制」录制区域</div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRoomDragEnd}>
             <SortableContext items={editingPreset.rooms.map(r => r.room_id)} strategy={verticalListSortingStrategy}>
@@ -633,23 +670,33 @@ export const TaskConfigTab: React.FC = () => {
       <ResizeHandle onResize={handleResize2} />
 
       {/* Col 3: Step editor */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择区域'}</span>
-          <div style={{ flex: 1 }} />
-          <Button size="small" icon={<SettingOutlined />} onClick={() => setShowManager(true)}>自定义步骤</Button>
-          <Button size="small" onClick={applyDefault} disabled={!selectedRoom}>默认模板</Button>
-          <Button size="small" icon={<PlusOutlined />} onClick={addStep} disabled={!selectedRoom}>添加步骤</Button>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={handleSave} disabled={!editingPreset}>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border/70 bg-card/70 px-4 py-3">
+          <span className="text-sm font-semibold text-foreground">{selectedRoom?.room_name || '选择区域'}</span>
+          <div className="flex-1" />
+          <UIButton type="button" variant="outline" size="sm" onClick={() => setShowManager(true)}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            自定义步骤
+          </UIButton>
+          <UIButton type="button" variant="outline" size="sm" onClick={applyDefault} disabled={!selectedRoom}>默认模板</UIButton>
+          <UIButton type="button" variant="outline" size="sm" onClick={addStep} disabled={!selectedRoom}>
+            <Plus className="mr-2 h-4 w-4" />
+            添加步骤
+          </UIButton>
+          <UIButton type="button" size="sm" onClick={handleSave} disabled={!editingPreset}>
             {isDirty ? '保存配置 *' : '保存配置'}
-          </Button>
+          </UIButton>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+        <div className="flex-1 overflow-y-auto px-4 py-3">
           {!selectedRoom ? (
-            <Empty description={editingPreset ? '选择区域编辑步骤' : '选择左侧任务'} />
+            <div className="mt-10 text-center text-sm text-muted-foreground">
+              {editingPreset ? '选择区域编辑步骤' : '选择左侧任务'}
+            </div>
           ) : selectedRoom.steps.length === 0 ? (
-            <Empty description="暂无步骤，点击「默认模板」或「添加步骤」" />
+            <div className="mt-10 text-center text-sm text-muted-foreground">
+              暂无步骤，点击「默认模板」或「添加步骤」
+            </div>
           ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
               <SortableContext items={stepIds} strategy={verticalListSortingStrategy}>
@@ -658,85 +705,125 @@ export const TaskConfigTab: React.FC = () => {
                   const customDef = isCustom ? customStepTypes.find(d => `custom:${d.id}` === step.type) : null;
                   return (
                     <SortableStepItem key={stepIds[idx]} id={stepIds[idx]} borderColor={stepColors[step.type] || '#999'}>
-                      <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
-                      <Switch size="small" checked={step.enabled !== false} onChange={(v) => updateStep(idx, { enabled: v })} />
-                      <Select
-                        size="small"
+                      <span className="w-5 text-center text-xs font-semibold text-muted-foreground">{idx + 1}</span>
+                      <UISwitch checked={step.enabled !== false} onCheckedChange={(v) => updateStep(idx, { enabled: v })} />
+                      <select
                         value={step.type}
-                        onChange={(v) => updateStep(idx, { type: v as any })}
+                        onChange={(e) => updateStep(idx, { type: e.target.value as any })}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                         style={{ width: 140, opacity: step.enabled === false ? 0.45 : 1 }}
                         disabled={step.enabled === false}
-                        options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
-                      />
+                      >
+                        {allStepOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       {step.type === 'navigate' && (
                         <>
-                          <Select size="small" value={step.target} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
-                            options={buildNavTargetOptions(roomConfigs.find(r => r.room_id === selectedRoomId))} />
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: '#999' }}>重试:</span>
-                            <InputNumber
-                              size="small"
+                          <select
+                            value={step.target}
+                            onChange={(e) => updateStep(idx, { target: e.target.value })}
+                            className="h-8 w-[100px] rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                          >
+                            {buildNavTargetOptions(roomConfigs.find(r => r.room_id === selectedRoomId)).map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="flex items-center gap-1">
+                            <span className="text-[11px] text-muted-foreground">重试:</span>
+                            <Input
+                              type="number"
                               min={1}
                               max={100}
-                              value={step.retry_limit ?? 30}
-                              onChange={(v) => updateStep(idx, { retry_limit: v ?? 30 })}
-                              style={{ width: 70 }}
+                              value={String(step.retry_limit ?? 30)}
+                              onChange={(e) => updateStep(idx, { retry_limit: Number(e.target.value) || 30 })}
+                              className="h-8 w-[70px]"
                             />
                           </span>
                         </>
                       )}
                       {step.type === 'wait' && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <InputNumber
-                            size="small"
+                        <span className="flex items-center gap-1">
+                          <Input
+                            type="number"
                             min={100}
                             step={500}
-                            value={step.duration ?? 1000}
-                            onChange={(v) => updateStep(idx, { duration: v ?? 1000 })}
-                            style={{ width: 80 }}
+                            value={String(step.duration ?? 1000)}
+                            onChange={(e) => updateStep(idx, { duration: Number(e.target.value) || 1000 })}
+                            className="h-8 w-20"
                           />
-                          <span style={{ fontSize: 11, color: '#999' }}>ms</span>
+                          <span className="text-[11px] text-muted-foreground">ms</span>
                         </span>
                       )}
                       {step.type === 'photo' && (
-                        <input placeholder="标签" value={step.label || ''} onChange={(e) => updateStep(idx, { label: e.target.value })}
-                          style={{ width: 80, fontSize: 12, border: '1px solid #d9d9d9', borderRadius: 4, padding: '2px 6px' }} />
+                        <Input
+                          placeholder="标签"
+                          value={step.label || ''}
+                          onChange={(e) => updateStep(idx, { label: e.target.value })}
+                          className="h-8 w-20"
+                        />
                       )}
                       {isCustom && customDef && customDef.parameters.map(p => (
-                        <span key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <span style={{ fontSize: 11, color: '#999' }}>{p.label}:</span>
-                          {p.type === 'number' && <InputNumber size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 60 }} />}
-                          {p.type === 'string' && <Input size="small" value={step.params?.[p.key] ?? p.default_value ?? ''} onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })} style={{ width: 80 }} />}
-                          {p.type === 'boolean' && <Switch size="small" checked={step.params?.[p.key] ?? p.default_value ?? false} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} />}
-                          {p.type === 'select' && <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 80 }} options={p.options || []} />}
+                        <span key={p.key} className="flex items-center gap-1">
+                          <span className="text-[11px] text-muted-foreground">{p.label}:</span>
+                          {p.type === 'number' && (
+                            <Input
+                              type="number"
+                              value={String(step.params?.[p.key] ?? p.default_value ?? 0)}
+                              onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: Number(e.target.value) || 0 } })}
+                              className="h-8 w-[60px]"
+                            />
+                          )}
+                          {p.type === 'string' && <Input value={step.params?.[p.key] ?? p.default_value ?? ''} onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })} className="h-8 w-20" />}
+                          {p.type === 'boolean' && <UISwitch checked={step.params?.[p.key] ?? p.default_value ?? false} onCheckedChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} />}
+                          {p.type === 'select' && (
+                            <select
+                              value={String(step.params?.[p.key] ?? p.default_value ?? '')}
+                              onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })}
+                              className="h-8 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                            >
+                              {(p.options || []).map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </span>
                       ))}
                       {isCustom && customDef?.action?.type === 'meta' && (
-                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
-                            <Switch
-                              size="small"
-                              checked={step.deactivate_after ?? customDef.action.deactivate_after ?? false}
-                              onChange={v => updateStep(idx, { deactivate_after: v })}
-                            />
-                          </span>
-                        </Tooltip>
+                        <span className="flex items-center gap-1">
+                          <span className="text-[11px] text-muted-foreground">结束后停用:</span>
+                          <UISwitch
+                            checked={step.deactivate_after ?? customDef.action.deactivate_after ?? false}
+                            onCheckedChange={v => updateStep(idx, { deactivate_after: v })}
+                          />
+                        </span>
                       )}
                       {!isCustom && BUILTIN_META_SERVICE[step.type] && (
-                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
-                            <Switch
-                              size="small"
-                              checked={step.deactivate_after ?? false}
-                              onChange={v => updateStep(idx, { deactivate_after: v })}
-                            />
-                          </span>
-                        </Tooltip>
+                        <span className="flex items-center gap-1">
+                          <span className="text-[11px] text-muted-foreground">结束后停用:</span>
+                          <UISwitch
+                            checked={step.deactivate_after ?? false}
+                            onCheckedChange={v => updateStep(idx, { deactivate_after: v })}
+                          />
+                        </span>
                       )}
-                      <div style={{ flex: 1 }} />
-                      <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
+                      <div className="flex-1" />
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <UIButton type="button" variant="ghost" size="icon" onClick={() => removeStep(idx)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </UIButton>
+                          </TooltipTrigger>
+                          <TooltipContent>删除</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </SortableStepItem>
                   );
                 })}
@@ -749,22 +836,55 @@ export const TaskConfigTab: React.FC = () => {
       {/* Modals */}
       <CustomStepManager open={showManager} onClose={() => { setShowManager(false); loadData(); }} />
 
-      <Modal
-        title="新建任务"
-        open={newPresetModal}
-        onOk={handleNewPreset}
-        onCancel={() => { setNewPresetModal(false); setNewPresetName(''); }}
-        okText="创建"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 4, fontSize: 13 }}>任务名称 *</div>
-        <Input
-          placeholder="如: 标准巡检"
-          value={newPresetName}
-          onChange={e => setNewPresetName(e.target.value)}
-          onPressEnter={handleNewPreset}
-        />
-      </Modal>
+      <Dialog open={newPresetModal} onOpenChange={(open) => {
+        setNewPresetModal(open);
+        if (!open) setNewPresetName('');
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新建任务</DialogTitle>
+            <DialogDescription>创建一个新的巡检任务预设，并自动带入当前已录制房间。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <label className="text-sm text-muted-foreground">任务名称 *</label>
+            <Input
+              placeholder="如: 标准巡检"
+              value={newPresetName}
+              onChange={e => setNewPresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleNewPreset();
+              }}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <UIButton type="button" variant="outline" onClick={() => setNewPresetModal(false)}>取消</UIButton>
+            <UIButton type="button" onClick={handleNewPreset}>创建</UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deletePresetId !== null} onOpenChange={(open) => !open && setDeletePresetId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除任务预设</DialogTitle>
+            <DialogDescription>确认删除该任务预设？这不会删除已经生成的巡检历史。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <UIButton type="button" variant="outline" onClick={() => setDeletePresetId(null)}>取消</UIButton>
+            <UIButton
+              type="button"
+              variant="destructive"
+              onClick={async () => {
+                if (!deletePresetId) return;
+                await handleDeletePreset(deletePresetId);
+                setDeletePresetId(null);
+              }}
+            >
+              删除
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

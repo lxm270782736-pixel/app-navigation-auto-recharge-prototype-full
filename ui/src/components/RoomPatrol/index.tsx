@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Tabs, Tag } from 'antd';
-import { ArrowLeftOutlined, EnvironmentOutlined, ToolOutlined, SendOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Badge, Button, Tabs, TabsContent, TabsList, TabsTrigger } from '@astribot/ui';
+import { ArrowLeft, ClipboardList, History, MapPinned, Send } from 'lucide-react';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import { WaypointRecordTab } from './WaypointRecordTab';
@@ -9,83 +9,84 @@ import { TaskConfigTab } from './TaskConfigTab';
 import { TaskDispatchTab } from './TaskDispatchTab';
 import { HistoryTab } from './HistoryTab';
 
+type PatrolTab = 'waypoints' | 'tasks' | 'dispatch' | 'history';
+
 export const RoomPatrol: React.FC = () => {
   const navigate = useNavigate();
   const { connectionStatus } = useRobot();
-  const [activeTab, setActiveTab] = useState('waypoints');
+  const [activeTab, setActiveTab] = useState<PatrolTab>('waypoints');
+
+  const connectionBadge = useMemo(
+    () =>
+      connectionStatus === ConnectionStatus.CONNECTED
+        ? { label: '已连接', className: 'bg-emerald-500/15 text-emerald-200' }
+        : { label: '未连接', className: 'bg-red-500/15 text-red-200' },
+    [connectionStatus]
+  );
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top toolbar */}
-      <div
-        style={{
-          padding: '12px 24px',
-          background: '#fff',
-          borderBottom: '1px solid #f0f0f0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-        }}
-      >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>
+    <div className="flex h-screen flex-col bg-background">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/70 bg-card/80 px-4 py-4">
+        <Button type="button" variant="outline" onClick={() => navigate('/')}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
           返回
         </Button>
-        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          导览任务
+        <div>
+          <div className="text-base font-semibold text-foreground">导览任务</div>
+          <div className="text-sm text-muted-foreground">点位录制、任务编排、任务下发和历史记录。</div>
         </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <Tag color={connectionStatus === ConnectionStatus.CONNECTED ? 'green' : 'red'}>
-            {connectionStatus === ConnectionStatus.CONNECTED ? '已连接' : '未连接'}
-          </Tag>
+        <div className="ml-auto">
+          <Badge className={connectionBadge.className}>{connectionBadge.label}</Badge>
         </div>
       </div>
 
-      {/* Tabs */}
       <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        destroyInactiveTabPane
-        style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-        tabBarStyle={{ paddingLeft: 24, marginBottom: 0 }}
-        items={[
-          {
-            key: 'waypoints',
-            label: <span><EnvironmentOutlined /> 点位录制</span>,
-            children: (
-              <div style={{ flex: 1, height: 'calc(100vh - 110px)' }}>
-                <WaypointRecordTab />
-              </div>
-            ),
-          },
-          {
-            key: 'tasks',
-            label: <span><ToolOutlined /> 任务编排</span>,
-            children: (
-              <div style={{ flex: 1, height: 'calc(100vh - 110px)' }}>
-                <TaskConfigTab />
-              </div>
-            ),
-          },
-          {
-            key: 'dispatch',
-            label: <span><SendOutlined /> 任务下发</span>,
-            children: (
-              <div style={{ flex: 1, height: 'calc(100vh - 110px)' }}>
-                <TaskDispatchTab />
-              </div>
-            ),
-          },
-          {
-            key: 'history',
-            label: <span><HistoryOutlined /> 历史记录</span>,
-            children: (
-              <div style={{ flex: 1, height: 'calc(100vh - 110px)' }}>
-                <HistoryTab />
-              </div>
-            ),
-          },
-        ]}
-      />
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as PatrolTab)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="border-b border-border/70 bg-muted/20 px-4 py-3">
+          <TabsList className="grid w-full max-w-3xl grid-cols-4">
+            <TabsTrigger value="waypoints">
+              <MapPinned className="mr-2 h-4 w-4" />
+              点位录制
+            </TabsTrigger>
+            <TabsTrigger value="tasks">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              任务编排
+            </TabsTrigger>
+            <TabsTrigger value="dispatch">
+              <Send className="mr-2 h-4 w-4" />
+              任务下发
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <History className="mr-2 h-4 w-4" />
+              历史记录
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="waypoints" className="mt-0 min-h-0 flex-1">
+          <div className="h-full">
+            <WaypointRecordTab />
+          </div>
+        </TabsContent>
+        <TabsContent value="tasks" className="mt-0 min-h-0 flex-1">
+          <div className="h-full">
+            <TaskConfigTab />
+          </div>
+        </TabsContent>
+        <TabsContent value="dispatch" className="mt-0 min-h-0 flex-1">
+          <div className="h-full">
+            <TaskDispatchTab />
+          </div>
+        </TabsContent>
+        <TabsContent value="history" className="mt-0 min-h-0 flex-1">
+          <div className="h-full">
+            <HistoryTab />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

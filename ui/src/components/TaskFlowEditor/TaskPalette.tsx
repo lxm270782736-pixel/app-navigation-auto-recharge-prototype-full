@@ -1,5 +1,15 @@
-import React from 'react';
-import { Card, Collapse } from 'antd';
+import React, { useMemo, useState } from 'react';
+import {
+  Card as UICard,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  cn,
+} from '@astribot/ui';
+import { ChevronDown } from 'lucide-react';
 import './TaskPalette.css';
 
 const taskCategories = {
@@ -33,52 +43,65 @@ const taskCategories = {
       { type: 'conditional', label: '条件分支', icon: '🔀', color: '#fa541c' },
     ],
   },
-};
+} as const;
 
 export const TaskPalette: React.FC = () => {
+  const defaultOpen = useMemo(
+    () => Object.keys(taskCategories).reduce<Record<string, boolean>>((acc, key) => {
+      acc[key] = true;
+      return acc;
+    }, {}),
+    []
+  );
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(defaultOpen);
+
   const onDragStart = (event: React.DragEvent, taskType: string) => {
     event.dataTransfer.setData('application/reactflow', taskType);
     event.dataTransfer.effectAllowed = 'move';
   };
 
   return (
-    <Card
-      size="small"
-      title="任务工具箱"
-      style={{ width: 220, height: '100%', overflow: 'auto' }}
-      styles={{ body: { padding: 8 } }}
-    >
-      <div style={{ marginBottom: 12, fontSize: 12, color: '#666' }}>
-        拖拽任务到右侧画布
-      </div>
+    <UICard className="h-full w-[220px] overflow-auto border-border/70 bg-card/90">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">任务工具箱</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-3 pt-0">
+        <div className="text-xs text-muted-foreground">拖拽任务到右侧画布</div>
 
-      <Collapse
-        ghost
-        defaultActiveKey={['basic', 'perception', 'interaction', 'control']}
-        items={Object.entries(taskCategories).map(([key, category]) => ({
-          key,
-          label: category.label,
-          children: (
-            <div className="task-palette-items">
-              {category.tasks.map((task) => (
-                <div
-                  key={task.type}
-                  className="palette-item"
-                  draggable
-                  onDragStart={(e) => onDragStart(e, task.type)}
-                  style={{
-                    borderColor: task.color,
-                    backgroundColor: `${task.color}15`,
-                  }}
-                >
-                  <span className="palette-icon">{task.icon}</span>
-                  <span className="palette-label">{task.label}</span>
-                </div>
-              ))}
-            </div>
-          ),
-        }))}
-      />
-    </Card>
+        {Object.entries(taskCategories).map(([key, category]) => {
+          const open = openSections[key] ?? true;
+          return (
+            <Collapsible
+              key={key}
+              open={open}
+              onOpenChange={(value) => setOpenSections((prev) => ({ ...prev, [key]: value }))}
+            >
+              <div className="rounded-lg border border-border/70 bg-background/60">
+                <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-foreground">
+                  <span>{category.label}</span>
+                  <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="task-palette-items border-t border-border/60 px-2 pb-2 pt-1">
+                    {category.tasks.map((task) => (
+                      <div
+                        key={task.type}
+                        className="palette-item rounded-md border"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, task.type)}
+                        style={{ borderColor: task.color, backgroundColor: `${task.color}15` }}
+                      >
+                        <span className="palette-icon">{task.icon}</span>
+                        <span className="palette-label">{task.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          );
+        })}
+      </CardContent>
+    </UICard>
   );
 };

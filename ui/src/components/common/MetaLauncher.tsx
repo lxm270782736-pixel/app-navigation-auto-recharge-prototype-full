@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Space, Tag, message } from 'antd';
-import { RocketOutlined, ApiOutlined, PoweroffOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, Bot, Power, Radar, RefreshCw, Rocket } from 'lucide-react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@astribot/ui';
 import { apiService } from '@/services/api';
 
-const STATE_LABELS: Record<string, { text: string; color: string }> = {
-  disconnected: { text: '未连接', color: '#8c8c8c' },
-  connected:    { text: '已连接', color: '#faad14' },
-  unconfigured: { text: '未配置', color: '#fa8c16' },
-  inactive:     { text: '未激活', color: '#1890ff' },
-  active:       { text: '运行中', color: '#52c41a' },
-  finalized:    { text: '已终止', color: '#8c8c8c' },
+const STATE_LABELS: Record<string, { text: string; tone: string }> = {
+  disconnected: { text: '未连接', tone: 'bg-muted text-muted-foreground' },
+  connected: { text: '已连接', tone: 'bg-yellow-500/15 text-yellow-500' },
+  unconfigured: { text: '未配置', tone: 'bg-orange-500/15 text-orange-500' },
+  inactive: { text: '未激活', tone: 'bg-blue-500/15 text-blue-400' },
+  active: { text: '运行中', tone: 'bg-green-500/15 text-green-500' },
+  finalized: { text: '已终止', tone: 'bg-muted text-muted-foreground' },
 };
 
 const SHORT_LABELS: Record<string, string> = {
@@ -20,177 +20,198 @@ const SHORT_LABELS: Record<string, string> = {
   camera: '相机',
 };
 
+const SERVICE_ICONS: Record<string, typeof Bot> = {
+  localization: Radar,
+  astribot_navigation: Bot,
+  detection: Activity,
+};
+
 interface ServiceInfo {
   name: string;
   state: string;
   startup: boolean;
 }
 
-export const MetaLauncher: React.FC = () => {
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(' ');
+}
+
+function getShortName(name: string) {
+  return name.replace('meta.', '');
+}
+
+function getServiceLabel(name: string) {
+  return SHORT_LABELS[getShortName(name)] || getShortName(name);
+}
+
+function getServiceIcon(name: string) {
+  return SERVICE_ICONS[getShortName(name)] ?? Bot;
+}
+
+export function MetaLauncher() {
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [loading, setLoading] = useState<Record<string, boolean>>({ all: false });
+  const startupServices = useMemo(() => services.filter((service) => service.startup), [services]);
+  const isAllActive = startupServices.length > 0 && startupServices.every((service) => service.state === 'active');
 
-  const startupServices = services.filter(s => s.startup);
-  const isAllActive = startupServices.length > 0 && startupServices.every(s => s.state === 'active');
-
-  const getState = (name: string) => services.find(s => s.name === name)?.state || 'disconnected';
-  const getShort = (name: string) => name.replace('meta.', '');
-  const getLabel = (name: string) => SHORT_LABELS[getShort(name)] || getShort(name);
-
-  // 从 SSE state 事件更新（实时）
   useEffect(() => {
-    const handler = (state: any) => {
-      setServices(prev => {
-        if (!prev.length) return prev;
-        return prev.map(s => {
-          const short = getShort(s.name);
+    const handler = (state: Record<string, unknown>) => {
+      setServices((prev) =>
+        prev.map((service) => {
+          const short = getShortName(service.name);
           const key = short === 'detection' ? 'fall_state' : `${short}_state`;
-          const newState = state[key];
-          return newState ? { ...s, state: newState } : s;
-        });
-      });
+          const nextState = state[key];
+          return typeof nextState === 'string' ? { ...service, state: nextState } : service;
+        }),
+      );
     };
+
     apiService.on('state', handler);
-    return () => { apiService.off('state', handler); };
+    return () => {
+      apiService.off('state', handler);
+    };
   }, []);
 
-  // 初始加载 + 手动刷新
   const loadStatus = useCallback(async () => {
     try {
-      const s = await apiService.getMetaStatus() as any;
-      if (s.services) setServices(s.services);
-    } catch { /* ignore */ }
+      const metaConfig = await apiService.getMetaServicesConfig();
+      const metaStatus = (await apiService.getMetaStatus()) as Record<string, unknown>;
+      const statesByName: Record<string, string> = {
+        'meta.localization': String(metaStatus.loc_state ?? 'disconnected'),
+        'meta.astribot_navigation': String(metaStatus.nav_state ?? 'disconnected'),
+        'meta.detection': String(metaStatus.fall_state ?? 'disconnected'),
+      };
+
+      setServices(
+        (metaConfig.services ?? []).map((service) => ({
+          name: service.name,
+          startup: service.startup,
+          state: statesByName[service.name] ?? 'disconnected',
+        })),
+      );
+    } catch (error) {
+      console.error('Failed to load meta status:', error);
+    }
   }, []);
 
-  useEffect(() => { loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
 
-  const handleAll = async () => {
-    setLoading(prev => ({ ...prev, all: true }));
+  const handleAll = useCallback(async () => {
+    setLoading((prev) => ({ ...prev, all: true }));
     try {
-      const result = await apiService.startMeta();
-      if (result.success) message.success('Meta 服务已启动');
-      else message.error(result.message || '启动失败');
-      await loadStatus();
-    } catch { message.error('启动失败'); }
-    finally { setLoading(prev => ({ ...prev, all: false })); }
-  };
-
-  const handleControl = async (name: string, action: 'start' | 'stop') => {
-    const short = getShort(name);
-    // 映射到后端 metaControl 的 service key
-    const keyMap: Record<string, string> = {
-      localization: 'loc',
-      astribot_navigation: 'nav',
-      detection: 'detection',
-    };
-    const controlKey = keyMap[short];
-    setLoading(prev => ({ ...prev, [name]: true }));
-    try {
-      if (controlKey) {
-        const result = await apiService.metaControl(controlKey as any, action);
-        if (result.success) message.success(action === 'start' ? '已启动' : '已停止');
-        else message.error(result.message || '操作失败');
+      if (isAllActive) {
+        await apiService.deactivateMeta();
       } else {
-        message.warning(`${short} 暂不支持单独控制`);
+        await apiService.startMeta();
       }
       await loadStatus();
-    } catch { message.error('操作失败'); }
-    finally { setLoading(prev => ({ ...prev, [name]: false })); }
-  };
+    } catch (error) {
+      console.error('Failed to toggle meta services:', error);
+    } finally {
+      setLoading((prev) => ({ ...prev, all: false }));
+    }
+  }, [isAllActive, loadStatus]);
 
-  const StatusDot: React.FC<{ state: string }> = ({ state }) => (
-    <span style={{
-      width: 8, height: 8, borderRadius: '50%',
-      background: STATE_LABELS[state]?.color || '#8c8c8c',
-      display: 'inline-block', marginRight: 6, flexShrink: 0,
-    }} />
+  const handleControl = useCallback(
+    async (name: string, action: 'start' | 'stop') => {
+      const short = getShortName(name);
+      const keyMap: Record<string, 'loc' | 'nav' | 'detection'> = {
+        localization: 'loc',
+        astribot_navigation: 'nav',
+        detection: 'detection',
+      };
+      const controlKey = keyMap[short];
+      if (!controlKey) {
+        return;
+      }
+
+      setLoading((prev) => ({ ...prev, [name]: true }));
+      try {
+        await apiService.metaControl(controlKey, action);
+        await loadStatus();
+      } catch (error) {
+        console.error(`Failed to ${action} ${name}:`, error);
+      } finally {
+        setLoading((prev) => ({ ...prev, [name]: false }));
+      }
+    },
+    [loadStatus],
   );
 
   return (
-    <div style={{
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      borderRadius: 8, padding: 16,
-    }}>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ color: 'white' }}>
-            <ApiOutlined style={{ fontSize: 20, marginRight: 8 }} />
-            <span style={{ fontSize: 16, fontWeight: 500 }}>Meta 服务控制</span>
-          </div>
-          {isAllActive && <Tag color="green" style={{ fontWeight: 500 }}>全部运行中</Tag>}
+    <Card className="border-border bg-card/80 shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0">
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Rocket className="h-4 w-4 text-primary" />
+            Meta 服务控制
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">导航链路依赖的基础服务生命周期</p>
         </div>
-
-        {/* 一键启动 / 停止 */}
-        {isAllActive ? (
-          <Button
-            size="large" icon={<PoweroffOutlined />}
-            onClick={async () => {
-              setLoading(prev => ({ ...prev, all: true }));
-              try {
-                await apiService.deactivateMeta();
-                message.info('Meta 服务已停用');
-                await loadStatus();
-              } catch { message.error('停用失败'); }
-              finally { setLoading(prev => ({ ...prev, all: false })); }
-            }}
-            loading={loading.all} block
-            style={{ background: 'rgba(255,255,255,0.15)', color: 'white', borderColor: 'rgba(255,255,255,0.3)', fontWeight: 500, height: 44 }}
-          >
-            停止所有服务
+        <div className="flex items-center gap-2">
+          {isAllActive ? (
+            <Badge className="bg-green-500/15 text-green-500 hover:bg-green-500/15">全部运行中</Badge>
+          ) : (
+            <Badge variant="secondary">待启动</Badge>
+          )}
+          <Button variant="ghost" size="icon" onClick={() => void loadStatus()} aria-label="刷新状态">
+            <RefreshCw className="h-4 w-4" />
           </Button>
-        ) : (
-          <Button
-            type="primary" size="large" icon={<RocketOutlined />}
-            onClick={handleAll} loading={loading.all} block
-            style={{ background: 'white', color: '#667eea', borderColor: 'white', fontWeight: 500, height: 44 }}
-          >
-            一键启动所有服务
-          </Button>
-        )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button className="w-full" variant={isAllActive ? 'secondary' : 'default'} onClick={() => void handleAll()} disabled={loading.all}>
+          {isAllActive ? (
+            <>
+              <Power className="mr-2 h-4 w-4" />
+              停止所有服务
+            </>
+          ) : (
+            <>
+              <Rocket className="mr-2 h-4 w-4" />
+              一键启动所有服务
+            </>
+          )}
+        </Button>
 
-        {/* 每个 startup 服务独立控制 */}
-        <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 12px' }}>
-          <Space direction="vertical" style={{ width: '100%' }} size={6}>
-            {startupServices.map(({ name }) => {
-              const state = getState(name);
-              const isActive = state === 'active';
-              return (
-                <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.9)', fontSize: 12, flex: 1 }}>
-                    <StatusDot state={state} />
-                    <span>{getLabel(name)}: </span>
-                    <span style={{ marginLeft: 4, color: STATE_LABELS[state]?.color || '#fff' }}>
-                      {STATE_LABELS[state]?.text || state}
-                    </span>
+        <div className="grid gap-3 md:grid-cols-3">
+          {startupServices.map((service) => {
+            const Icon = getServiceIcon(service.name);
+            const stateInfo = STATE_LABELS[service.state] ?? STATE_LABELS.disconnected;
+            const isActive = service.state === 'active';
+
+            return (
+              <div key={service.name} className="rounded-lg border border-border bg-secondary/30 p-3">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-md bg-primary/10 p-2 text-primary">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">{getServiceLabel(service.name)}</div>
+                      <div className="text-xs text-muted-foreground">{getShortName(service.name)}</div>
+                    </div>
                   </div>
-                  <Space size={4}>
-                    {!isActive && (
-                      <Button
-                        size="small" loading={loading[name]}
-                        style={{ background: 'rgba(255,255,255,0.2)', color: 'white', borderColor: 'rgba(255,255,255,0.3)', fontSize: 11 }}
-                        onClick={() => handleControl(name, 'start')}
-                      >
-                        启动
-                      </Button>
-                    )}
-                    {isActive && (
-                      <Button
-                        size="small" danger loading={loading[name]}
-                        icon={<PoweroffOutlined />}
-                        style={{ fontSize: 11 }}
-                        onClick={() => handleControl(name, 'stop')}
-                      >
-                        停止
-                      </Button>
-                    )}
-                  </Space>
+                  <span className={cn('rounded-full px-2 py-1 text-[11px] font-medium', stateInfo.tone)}>
+                    {stateInfo.text}
+                  </span>
                 </div>
-              );
-            })}
-          </Space>
+                <Button
+                  className="w-full"
+                  size="sm"
+                  variant={isActive ? 'secondary' : 'default'}
+                  onClick={() => void handleControl(service.name, isActive ? 'stop' : 'start')}
+                  disabled={Boolean(loading[service.name])}
+                >
+                  {isActive ? '停止' : '启动'}
+                </Button>
+              </div>
+            );
+          })}
         </div>
-      </Space>
-    </div>
+      </CardContent>
+    </Card>
   );
-};
+}

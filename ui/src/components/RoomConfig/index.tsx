@@ -1,16 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, message, Modal, Input, InputNumber, Tag, Tooltip, Empty } from 'antd';
 import {
-  ArrowLeftOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  AimOutlined,
-  EditOutlined,
-  CheckCircleFilled,
-  EnvironmentOutlined,
-  HomeOutlined,
-} from '@ant-design/icons';
+  Badge,
+  Button as UIButton,
+  Card as UICard,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  cn,
+} from '@astribot/ui';
+import { ArrowLeft, CheckCircle2, Crosshair, Edit3, Home, MapPin, Plus, Trash2 } from 'lucide-react';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -18,7 +24,6 @@ import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, RoomConfig as RoomConfigType, RoomPatrolConfig } from '@/types';
 
-// 点位颜色映射
 const WAYPOINT_COLORS: Record<string, string> = {
   door_outside: '#1890ff',
   door_inside: '#52c41a',
@@ -34,19 +39,19 @@ export const RoomConfig: React.FC = () => {
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
-  // 新建区域 Modal
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newRoomId, setNewRoomId] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
+  const [deleteRoomId, setDeleteRoomId] = useState<string | null>(null);
 
-  // 编辑点位 Modal
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<{ roomId: string; waypointType: string; label: string } | null>(null);
   const [editX, setEditX] = useState<number>(0);
   const [editY, setEditY] = useState<number>(0);
   const [editTheta, setEditTheta] = useState<number>(0);
-  // 加载配置（仅在连接时）
+
   const loadConfig = useCallback(async () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
@@ -61,7 +66,6 @@ export const RoomConfig: React.FC = () => {
     loadConfig();
   }, [loadConfig]);
 
-  // 订阅机器人位置
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     const unsubscribe = apiService.subscribeTopic<any>(
@@ -80,13 +84,11 @@ export const RoomConfig: React.FC = () => {
     return () => unsubscribe();
   }, [connectionStatus]);
 
-  // 订阅地图
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     const unsubscribe = apiService.subscribeMap((mapData) => {
       setCurrentMap(mapData);
     });
-    // 主动加载当前地图，不等 /map 话题推送
     apiService.getCurrentMapName().then(async (name) => {
       if (name) {
         try {
@@ -100,10 +102,9 @@ export const RoomConfig: React.FC = () => {
     return () => unsubscribe();
   }, [connectionStatus]);
 
-  // 新建区域
   const handleAddRoom = async () => {
     if (!newRoomId.trim()) {
-      message.error('请输入区域号');
+      setNotice({ tone: 'error', text: '请输入区域号' });
       return;
     }
     const result = await apiService.addRoom(
@@ -111,37 +112,30 @@ export const RoomConfig: React.FC = () => {
       newRoomName.trim() || `${newRoomId.trim()}室`,
     );
     if (result.success) {
-      message.success(`已添加区域 ${newRoomId}`);
+      setNotice({ tone: 'success', text: `已添加区域 ${newRoomId}` });
       setAddModalVisible(false);
       setNewRoomId('');
       setNewRoomName('');
       loadConfig();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
-  // 删除区域
-  const handleDeleteRoom = (roomId: string) => {
-    Modal.confirm({
-      title: `删除区域 ${roomId}？`,
-      content: '删除后该区域的所有点位数据将丢失',
-      onOk: async () => {
-        const result = await apiService.deleteRoom(roomId);
-        if (result.success) {
-          message.success(`已删除区域 ${roomId}`);
-          loadConfig();
-        } else {
-          message.error(result.message);
-        }
-      },
-    });
+  const handleDeleteRoom = async (roomId: string) => {
+    const result = await apiService.deleteRoom(roomId);
+    if (result.success) {
+      setNotice({ tone: 'success', text: `已删除区域 ${roomId}` });
+      loadConfig();
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+    setDeleteRoomId(null);
   };
 
-  // 录制点位
   const handleRecord = async (roomId: string, waypointType: string) => {
     if (!robotPose) {
-      message.error('无法获取机器人位置');
+      setNotice({ tone: 'error', text: '无法获取机器人位置' });
       return;
     }
     setLoading(true);
@@ -149,20 +143,19 @@ export const RoomConfig: React.FC = () => {
       const result = await apiService.recordRoomWaypoint(roomId, waypointType);
       if (result.success) {
         const p = result.pose;
-        message.success(`已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
+        setNotice({ tone: 'success', text: `已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)` });
         loadConfig();
       } else {
-        message.error(result.message);
+        setNotice({ tone: 'error', text: result.message });
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // 录制起始点位（专用端点）
   const handleRecordStart = async () => {
     if (!robotPose) {
-      message.error('无法获取机器人位置');
+      setNotice({ tone: 'error', text: '无法获取机器人位置' });
       return;
     }
     setLoading(true);
@@ -170,17 +163,16 @@ export const RoomConfig: React.FC = () => {
       const result = await apiService.recordStartPosition();
       if (result.success) {
         const p = result.pose;
-        message.success(`起始点位已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
+        setNotice({ tone: 'success', text: `起始点位已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)` });
         loadConfig();
       } else {
-        message.error(result.message);
+        setNotice({ tone: 'error', text: result.message });
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // 打开编辑点位 Modal
   const openEditModal = (roomId: string, waypointType: string, label: string, currentPose: Pose | null) => {
     setEditTarget({ roomId, waypointType, label });
     setEditX(currentPose?.x ?? 0);
@@ -189,7 +181,6 @@ export const RoomConfig: React.FC = () => {
     setEditModalVisible(true);
   };
 
-  // 保存手动编辑的点位
   const handleSaveEdit = async () => {
     if (!editTarget || !config) return;
     const thetaRad = editTheta * Math.PI / 180;
@@ -199,7 +190,7 @@ export const RoomConfig: React.FC = () => {
     if (editTarget.waypointType === 'start_position') {
       updated.start_position = newPose;
     } else {
-      updated.rooms = updated.rooms.map(r =>
+      updated.rooms = updated.rooms.map((r) =>
         r.room_id === editTarget.roomId
           ? { ...r, [editTarget.waypointType]: newPose }
           : r,
@@ -208,15 +199,14 @@ export const RoomConfig: React.FC = () => {
 
     const result = await apiService.saveRoomConfig(updated);
     if (result.success) {
-      message.success(`${editTarget.label} 已更新`);
+      setNotice({ tone: 'success', text: `${editTarget.label} 已更新` });
       setEditModalVisible(false);
       loadConfig();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
-  // 收集所有已录制的点位用于地图显示
   const allWaypoints: Pose[] = [];
   if (config) {
     if (config.start_position) allWaypoints.push(config.start_position);
@@ -227,47 +217,34 @@ export const RoomConfig: React.FC = () => {
     }
   }
 
-  // 判断区域是否就绪
   const isRoomReady = (room: RoomConfigType) => {
     const wps = room.waypoints || [];
-    return wps.length > 0 && wps.some(wp => wp.pose !== null);
+    return wps.length > 0 && wps.some((wp) => wp.pose !== null);
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶部工具栏 */}
-      <div
-        style={{
-          padding: '16px 24px',
-          background: '#fff',
-          borderBottom: '1px solid #f0f0f0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-        }}
-      >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>
+    <div className="flex h-screen flex-col bg-background">
+      <div className="flex items-center gap-4 border-b border-border/70 bg-card/90 px-6 py-4">
+        <UIButton type="button" variant="outline" onClick={() => navigate('/')}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
           返回
-        </Button>
-        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          <HomeOutlined /> 点位录制
+        </UIButton>
+        <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <Home className="h-5 w-5" />
+          点位录制
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="ml-auto flex items-center gap-2">
           {config?.updated_at && (
-            <span style={{ fontSize: '12px', color: '#999' }}>
-              上次保存: {config.updated_at}
-            </span>
+            <span className="text-xs text-muted-foreground">上次保存: {config.updated_at}</span>
           )}
-          <Tag color={connectionStatus === ConnectionStatus.CONNECTED ? 'green' : 'red'}>
+          <Badge className={connectionStatus === ConnectionStatus.CONNECTED ? 'bg-emerald-500/15 text-emerald-300' : 'bg-destructive/15 text-destructive'}>
             {connectionStatus === ConnectionStatus.CONNECTED ? '已连接' : '未连接'}
-          </Tag>
+          </Badge>
         </div>
       </div>
 
-      {/* 主内容区 */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* 左侧：地图 */}
-        <div style={{ flex: 1, position: 'relative' }}>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-w-0 flex-1">
           {currentMap ? (
             <MapCanvas
               mapData={currentMap}
@@ -277,260 +254,208 @@ export const RoomConfig: React.FC = () => {
               showRobotTrail={false}
             />
           ) : (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
             </div>
           )}
 
-          {/* 机器人位置信息 */}
           {robotPose && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '16px',
-                left: '16px',
-                background: 'rgba(0,0,0,0.75)',
-                color: '#fff',
-                padding: '8px 12px',
-                borderRadius: '4px',
-                fontSize: '12px',
-                fontFamily: 'monospace',
-              }}
-            >
-              <AimOutlined /> x={robotPose.x.toFixed(3)} y={robotPose.y.toFixed(3)} θ={((robotPose.theta * 180) / Math.PI).toFixed(1)}°
+            <div className="absolute bottom-4 left-4 rounded-md bg-black/75 px-3 py-2 font-mono text-xs text-white">
+              <Crosshair className="mr-2 inline h-4 w-4" />
+              x={robotPose.x.toFixed(3)} y={robotPose.y.toFixed(3)} θ={((robotPose.theta * 180) / Math.PI).toFixed(1)}°
             </div>
           )}
         </div>
 
-        {/* 右侧：配置面板 */}
-        <div
-          style={{
-            width: '360px',
-            borderLeft: '1px solid #f0f0f0',
-            background: '#fafafa',
-            overflowY: 'auto',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}
-        >
-          {/* 起始点位 */}
-          <Card size="small" title={<><EnvironmentOutlined /> 起始/返回点位</>}>
-            {config?.start_position ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                  <CheckCircleFilled style={{ color: '#52c41a', marginRight: 4 }} />
-                  ({config.start_position.x.toFixed(2)}, {config.start_position.y.toFixed(2)}, {((config.start_position.theta * 180) / Math.PI).toFixed(1)}°)
-                </span>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <Button
-                    size="small"
-                    type="link"
-                    icon={<EditOutlined />}
-                    style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => openEditModal('', 'start_position', '起始点位', config.start_position)}
-                  />
-                  <Button size="small" onClick={handleRecordStart} loading={loading}>
-                    重录
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                type="dashed"
-                block
-                icon={<AimOutlined />}
-                onClick={handleRecordStart}
-                loading={loading}
-                disabled={!robotPose}
-              >
-                录制当前位置
-              </Button>
-            )}
-          </Card>
+        <div className="flex w-[360px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/70 bg-card/70 p-4">
+          {notice && (
+            <div
+              className={cn(
+                'rounded-lg border px-3 py-2 text-sm',
+                notice.tone === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  : 'border-destructive/40 bg-destructive/10 text-destructive'
+              )}
+            >
+              {notice.text}
+            </div>
+          )}
 
-          {/* 区域列表 */}
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#333' }}>
+          <UICard className="border-border/70 bg-card/90">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <MapPin className="h-4 w-4" />
+                起始/返回点位
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {config?.start_position ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-xs text-foreground">
+                    <CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-300" />
+                    ({config.start_position.x.toFixed(2)}, {config.start_position.y.toFixed(2)}, {((config.start_position.theta * 180) / Math.PI).toFixed(1)}°)
+                  </span>
+                  <div className="flex gap-2">
+                    <UIButton type="button" size="sm" variant="outline" onClick={() => openEditModal('', 'start_position', '起始点位', config.start_position)}>
+                      <Edit3 className="mr-1 h-4 w-4" />
+                      编辑
+                    </UIButton>
+                    <UIButton type="button" size="sm" onClick={handleRecordStart} disabled={loading}>
+                      重录
+                    </UIButton>
+                  </div>
+                </div>
+              ) : (
+                <UIButton type="button" className="w-full" onClick={handleRecordStart} disabled={loading || !robotPose}>
+                  <Crosshair className="mr-2 h-4 w-4" />
+                  录制当前位置
+                </UIButton>
+              )}
+            </CardContent>
+          </UICard>
+
+          <div className="text-sm font-semibold text-foreground">
             区域列表 ({config?.rooms.length ?? 0})
           </div>
 
           {config?.rooms.length === 0 && (
-            <Empty description="暂无区域，点击下方按钮添加" style={{ padding: '20px 0' }} />
+            <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+              暂无区域，点击下方按钮添加
+            </div>
           )}
 
           {config?.rooms.map((room) => (
-            <Card
-              key={room.room_id}
-              size="small"
-              title={
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    {room.room_name || room.room_id}
-                    {isRoomReady(room) ? (
-                      <Tag color="green" style={{ marginLeft: 8, fontSize: '11px' }}>就绪</Tag>
-                    ) : (
-                      <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
-                    )}
-                  </span>
-                  <Tooltip title="删除区域">
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteRoom(room.room_id)}
-                    />
-                  </Tooltip>
-                </div>
-              }
-            >
-              {(room.waypoints || []).map((wp: any) => {
-                const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
-                return (
-                  <div
-                    key={wp.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '4px 0',
-                      borderBottom: '1px solid #f5f5f5',
-                    }}
-                  >
-                    <span style={{ fontSize: '13px' }}>
-                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
-                      {wp.name}
-                    </span>
-                    {wp.pose ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                          ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
-                        </span>
-                        <Button
-                          size="small"
-                          type="link"
-                          icon={<EditOutlined />}
-                          style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => openEditModal(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)}
-                        />
-                        <Button
-                          size="small"
-                          type="link"
-                          style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => handleRecord(room.room_id, wp.id)}
-                          loading={loading}
-                        >
-                          重录
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        size="small"
-                        type="primary"
-                        ghost
-                        icon={<AimOutlined />}
-                        onClick={() => handleRecord(room.room_id, wp.id)}
-                        loading={loading}
-                        disabled={!robotPose}
-                      >
-                        录制
-                      </Button>
-                    )}
+            <UICard key={room.room_id} className="border-border/70 bg-card/90">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-sm">{room.room_name || room.room_id}</CardTitle>
+                    <Badge className={isRoomReady(room) ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}>
+                      {isRoomReady(room) ? '就绪' : '未完成'}
+                    </Badge>
                   </div>
-                );
-              })}
-            </Card>
+                  <UIButton type="button" variant="ghost" size="icon" onClick={() => setDeleteRoomId(room.room_id)} title="删除区域">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </UIButton>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(room.waypoints || []).map((wp: any) => {
+                  const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
+                  return (
+                    <div key={wp.id} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-b-0 last:pb-0">
+                      <div className="min-w-0 text-sm">
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+                        {wp.name}
+                      </div>
+                      {wp.pose ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
+                          </span>
+                          <UIButton type="button" variant="ghost" size="icon" onClick={() => openEditModal(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)}>
+                            <Edit3 className="h-4 w-4" />
+                          </UIButton>
+                          <UIButton type="button" size="sm" variant="outline" onClick={() => handleRecord(room.room_id, wp.id)} disabled={loading}>
+                            重录
+                          </UIButton>
+                        </div>
+                      ) : (
+                        <UIButton type="button" size="sm" onClick={() => handleRecord(room.room_id, wp.id)} disabled={loading || !robotPose}>
+                          <Crosshair className="mr-1 h-4 w-4" />
+                          录制
+                        </UIButton>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </UICard>
           ))}
 
-          {/* 新建区域按钮 */}
-          <Button
-            type="dashed"
-            block
-            icon={<PlusOutlined />}
-            onClick={() => setAddModalVisible(true)}
-            style={{ marginTop: '4px' }}
-          >
+          <UIButton type="button" variant="outline" className="mt-1 w-full" onClick={() => setAddModalVisible(true)}>
+            <Plus className="mr-2 h-4 w-4" />
             新建区域
-          </Button>
+          </UIButton>
         </div>
       </div>
 
-      {/* 新建区域 Modal */}
-      <Modal
-        title="新建区域"
-        open={addModalVisible}
-        onOk={handleAddRoom}
-        onCancel={() => { setAddModalVisible(false); setNewRoomId(''); setNewRoomName(''); }}
-        okText="添加"
-        cancelText="取消"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域号 *</div>
-            <Input
-              placeholder="如: 101"
-              value={newRoomId}
-              onChange={(e) => setNewRoomId(e.target.value)}
-              onPressEnter={handleAddRoom}
-            />
+      <Dialog open={addModalVisible} onOpenChange={setAddModalVisible}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新建区域</DialogTitle>
+            <DialogDescription>创建新的区域配置，名称可留空自动生成。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div>
+              <div className="mb-1 text-sm text-muted-foreground">区域号 *</div>
+              <Input
+                placeholder="如: 101"
+                value={newRoomId}
+                onChange={(e) => setNewRoomId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddRoom();
+                }}
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-sm text-muted-foreground">区域名称（可选）</div>
+              <Input
+                placeholder="如: 101室（留空则自动生成）"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddRoom();
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域名称（可选）</div>
-            <Input
-              placeholder="如: 101室（留空则自动生成）"
-              value={newRoomName}
-              onChange={(e) => setNewRoomName(e.target.value)}
-              onPressEnter={handleAddRoom}
-            />
-          </div>
-        </div>
-      </Modal>
+          <DialogFooter>
+            <UIButton type="button" variant="outline" onClick={() => { setAddModalVisible(false); setNewRoomId(''); setNewRoomName(''); }}>取消</UIButton>
+            <UIButton type="button" onClick={handleAddRoom}>添加</UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* 编辑点位 Modal */}
-      <Modal
-        title={`编辑点位 — ${editTarget?.label ?? ''}`}
-        open={editModalVisible}
-        onOk={handleSaveEdit}
-        onCancel={() => setEditModalVisible(false)}
-        okText="保存"
-        cancelText="取消"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>X (米)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editX}
-              onChange={(v) => setEditX(v ?? 0)}
-              step={0.01}
-              precision={4}
-            />
+      <Dialog open={deleteRoomId !== null} onOpenChange={(open) => !open && setDeleteRoomId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除区域</DialogTitle>
+            <DialogDescription>{`删除区域 ${deleteRoomId ?? ''} 后，该区域的所有点位数据将丢失。`}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <UIButton type="button" variant="outline" onClick={() => setDeleteRoomId(null)}>取消</UIButton>
+            <UIButton type="button" variant="destructive" onClick={() => deleteRoomId && handleDeleteRoom(deleteRoomId)}>删除</UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editModalVisible} onOpenChange={setEditModalVisible}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{`编辑点位 — ${editTarget?.label ?? ''}`}</DialogTitle>
+            <DialogDescription>手动修改点位坐标和朝向。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div>
+              <div className="mb-1 text-sm text-muted-foreground">X (米)</div>
+              <Input type="number" value={String(editX)} onChange={(e) => setEditX(Number(e.target.value) || 0)} />
+            </div>
+            <div>
+              <div className="mb-1 text-sm text-muted-foreground">Y (米)</div>
+              <Input type="number" value={String(editY)} onChange={(e) => setEditY(Number(e.target.value) || 0)} />
+            </div>
+            <div>
+              <div className="mb-1 text-sm text-muted-foreground">角度 (度)</div>
+              <Input type="number" value={String(editTheta)} onChange={(e) => setEditTheta(Number(e.target.value) || 0)} />
+            </div>
           </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>Y (米)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editY}
-              onChange={(v) => setEditY(v ?? 0)}
-              step={0.01}
-              precision={4}
-            />
-          </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>角度 (度)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editTheta}
-              onChange={(v) => setEditTheta(v ?? 0)}
-              step={1}
-              precision={1}
-              min={-180}
-              max={180}
-            />
-          </div>
-        </div>
-      </Modal>
+          <DialogFooter>
+            <UIButton type="button" variant="outline" onClick={() => setEditModalVisible(false)}>取消</UIButton>
+            <UIButton type="button" onClick={handleSaveEdit}>保存</UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, InputNumber, Input, Button } from 'antd';
-import { SoundOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
-
-const { TextArea } = Input;
+import { Input } from '@astribot/ui';
+import { Volume2 } from 'lucide-react';
+import { TaskNodeShell } from './TaskNodeShell';
 
 export const SoundTaskNode: React.FC<NodeProps> = ({ data }) => {
   const [text, setText] = useState(data.text || '');
@@ -15,77 +14,54 @@ export const SoundTaskNode: React.FC<NodeProps> = ({ data }) => {
     <div className="custom-task-node">
       <Handle type="target" position={Position.Top} />
 
-      <Card
-        size="small"
-        style={{
-          minWidth: 180,
-          backgroundColor: '#fff3e0',
-          border: '2px solid #e65100',
+      <TaskNodeShell
+        icon={<Volume2 className="h-5 w-5" />}
+        iconColor="#e65100"
+        borderColor="#e65100"
+        backgroundColor="#fff3e0"
+        label={label}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        onLabelChange={(value) => {
+          setLabel(value);
+          data.label = value;
         }}
+        collapsedSummary={`${text.slice(0, 20)}${text.length > 20 ? '...' : ''} · ${volume}%`}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <SoundOutlined style={{ fontSize: 20, color: '#e65100' }} />
-            <Input
-              size="small"
-              value={label}
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">语音文本</div>
+            <textarea
+              rows={2}
+              value={text}
               onChange={(e) => {
-                setLabel(e.target.value);
-                data.label = e.target.value;
+                setText(e.target.value);
+                data.text = e.target.value;
               }}
-              style={{ fontWeight: 'bold', flex: 1 }}
-              bordered={false}
-            />
-            <Button
-              type="text"
-              size="small"
-              icon={collapsed ? <DownOutlined /> : <UpOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ padding: '0 4px' }}
+              placeholder="要播放的语音文本"
+              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
-
-          {!collapsed && (
-            <>
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>语音文本</div>
-                <TextArea
-                  size="small"
-                  rows={2}
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    data.text = e.target.value;
-                  }}
-                  placeholder="要播放的语音文本"
-                />
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>音量</div>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={100}
-                  value={volume}
-                  onChange={(value) => {
-                    setVolume(value || 70);
-                    data.volume = value || 70;
-                  }}
-                  addonAfter="%"
-                  style={{ width: '100%' }}
-                />
-              </div>
-            </>
-          )}
-
-          {collapsed && (
-            <div style={{ fontSize: 11, color: '#666' }}>
-              {text.slice(0, 20)}{text.length > 20 ? '...' : ''} · {volume}%
+          <div>
+            <div className="mb-1 text-[11px] text-muted-foreground">音量</div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={String(volume)}
+                onChange={(e) => {
+                  const value = Number(e.target.value) || 70;
+                  setVolume(value);
+                  data.volume = value;
+                }}
+                className="h-8"
+              />
+              <span className="text-[11px] text-muted-foreground">%</span>
             </div>
-          )}
+          </div>
         </div>
-      </Card>
+      </TaskNodeShell>
 
       <Handle type="source" position={Position.Bottom} />
     </div>

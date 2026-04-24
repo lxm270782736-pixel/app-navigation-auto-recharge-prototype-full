@@ -1,14 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Button, Card, message, Modal, Input, InputNumber, Tag, Tooltip, Empty, Switch } from 'antd';
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  AimOutlined,
-  EditOutlined,
-  CheckCircleFilled,
-  EnvironmentOutlined,
-  DragOutlined,
-} from '@ant-design/icons';
 import {
   DndContext,
   PointerSensor,
@@ -23,6 +13,33 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Separator,
+  Switch,
+  cn,
+} from '@astribot/ui';
+import {
+  CheckCircle2,
+  Crosshair,
+  GripVertical,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -50,6 +67,11 @@ interface SortableRoomCardProps {
   robotPose: any;
 }
 
+type NoticeState = {
+  tone: 'success' | 'error';
+  text: string;
+} | null;
+
 const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
   room, roomIdx, isRoomReady, onDelete, onRecord, onEdit, onAddWaypoint, onDeleteWaypoint, robotPose,
 }) => {
@@ -62,64 +84,115 @@ const SortableRoomCard: React.FC<SortableRoomCardProps> = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <Card
-        size="small"
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {/* 区域拖拽 handle — 始终显示 */}
-              <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', display: 'flex', alignItems: 'center' }}>
-                <DragOutlined />
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#1890ff', color: '#fff', fontSize: 11, fontWeight: 'bold', flexShrink: 0 }}>{roomIdx + 1}</span>
-              {room.room_name || room.room_id}
-              {isRoomReady(room) ? (
-                <Tag color="green" style={{ marginLeft: 8, fontSize: '11px' }}>就绪</Tag>
-              ) : (
-                <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
-              )}
-            </span>
-            <Tooltip title="删除区域">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => onDelete(room.room_id)} />
-            </Tooltip>
-          </div>
-        }
-      >
-        {(room.waypoints || []).map((wp: any) => {
-          const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
-          return (
-            <div key={wp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
-              <span style={{ fontSize: '13px' }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
-                {wp.name}
-              </span>
-              {wp.pose ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                    ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
-                  </span>
-                  <Button size="small" type="link" icon={<EditOutlined />} style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onEdit(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)} />
-                  <Button size="small" type="link" style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onRecord(room.room_id, wp.id)}>重录</Button>
-                  <Button size="small" type="link" danger style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>删除</Button>
+      <Card className="border-border/70 bg-card/90 shadow-sm">
+        <CardHeader className="gap-3 pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                {...attributes}
+                {...listeners}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-muted/30 text-muted-foreground transition hover:bg-muted"
+              >
+                <GripVertical className="h-4 w-4" />
+              </button>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                  {roomIdx + 1}
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {room.room_name || room.room_id}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{room.room_id}</div>
                 </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Button size="small" type="primary" ghost icon={<AimOutlined />}
-                    onClick={() => onRecord(room.room_id, wp.id)} disabled={!robotPose}>录制</Button>
-                  <Button size="small" type="link" danger style={{ fontSize: '11px', padding: 0 }}
-                    onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>删除</Button>
-                </div>
-              )}
+                <Badge className={cn(
+                  'border-0',
+                  isRoomReady(room)
+                    ? 'bg-emerald-500/15 text-emerald-200'
+                    : 'bg-amber-500/15 text-amber-200'
+                )}>
+                  {isRoomReady(room) ? '就绪' : '未完成'}
+                </Badge>
+              </div>
             </div>
-          );
-        })}
-        <Button size="small" type="dashed" icon={<PlusOutlined />} block style={{ marginTop: 4 }}
-          onClick={() => onAddWaypoint(room.room_id)}>
-          添加自定义点位
-        </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => onDelete(room.room_id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {(room.waypoints || []).map((wp: any) => {
+            const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
+            return (
+              <div
+                key={wp.id}
+                className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3"
+              >
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                      <span
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: color }}
+                      />
+                      <span className="truncate">{wp.name}</span>
+                    </div>
+                    <Badge variant="secondary" className="text-[11px]">
+                      {wp.id}
+                    </Badge>
+                  </div>
+                  {wp.pose ? (
+                    <>
+                      <div className="rounded-md border border-border/50 bg-background/60 px-2.5 py-2 font-mono text-[11px] text-muted-foreground">
+                        ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onEdit(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          编辑
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onRecord(room.room_id, wp.id)}>
+                          <Crosshair className="mr-2 h-4 w-4" />
+                          重录
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>
+                          <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                          删除
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => onRecord(room.room_id, wp.id)}
+                        disabled={!robotPose}
+                      >
+                        <Crosshair className="mr-2 h-4 w-4" />
+                        录制
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => onDeleteWaypoint(room.room_id, wp.id)}>
+                        <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                        删除
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <Button type="button" variant="outline" className="w-full" onClick={() => onAddWaypoint(room.room_id)}>
+            <Plus className="mr-2 h-4 w-4" />
+            添加自定义点位
+          </Button>
+        </CardContent>
       </Card>
     </div>
   );
@@ -132,6 +205,7 @@ export const WaypointRecordTab: React.FC = () => {
   const [robotPose, setRobotPose] = useState<Pose | undefined>();
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<NoticeState>(null);
 
   // 新建区域 Modal
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -150,6 +224,8 @@ export const WaypointRecordTab: React.FC = () => {
   const [editX, setEditX] = useState<number>(0);
   const [editY, setEditY] = useState<number>(0);
   const [editTheta, setEditTheta] = useState<number>(0);
+  const [deleteRoomTarget, setDeleteRoomTarget] = useState<string | null>(null);
+  const [deleteWaypointTarget, setDeleteWaypointTarget] = useState<{ roomId: string; waypointId: string } | null>(null);
 
   // 拖拽开关 (默认关闭)
   const [dragEnabled, setDragEnabled] = useState(false);
@@ -283,7 +359,7 @@ export const WaypointRecordTab: React.FC = () => {
   // 新建区域
   const handleAddRoom = async () => {
     if (!newRoomId.trim()) {
-      message.error('请输入区域号');
+      setNotice({ tone: 'error', text: '请输入区域号' });
       return;
     }
     const result = await apiService.addRoom(
@@ -291,31 +367,19 @@ export const WaypointRecordTab: React.FC = () => {
       newRoomName.trim() || `${newRoomId.trim()}室`,
     );
     if (result.success) {
-      message.success(`已添加区域 ${newRoomId}`);
+      setNotice({ tone: 'success', text: `已添加区域 ${newRoomId}` });
       setAddModalVisible(false);
       setNewRoomId('');
       setNewRoomName('');
       loadConfig();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   // 删除区域
   const handleDeleteRoom = (roomId: string) => {
-    Modal.confirm({
-      title: `删除区域 ${roomId}？`,
-      content: '删除后该区域的所有点位数据将丢失',
-      onOk: async () => {
-        const result = await apiService.deleteRoom(roomId);
-        if (result.success) {
-          message.success(`已删除区域 ${roomId}`);
-          loadConfig();
-        } else {
-          message.error(result.message);
-        }
-      },
-    });
+    setDeleteRoomTarget(roomId);
   };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -329,24 +393,27 @@ export const WaypointRecordTab: React.FC = () => {
     const newRooms = arrayMove(config.rooms, oldIdx, newIdx);
     const updated = { ...config, rooms: newRooms };
     setConfig(updated);
-    apiService.saveRoomConfig(updated).catch(() => message.error('保存顺序失败'));
+    apiService.saveRoomConfig(updated).catch(() => setNotice({ tone: 'error', text: '保存顺序失败' }));
   };
 
   // 录制点位
   const handleRecord = async (roomId: string, waypointType: string) => {
     if (!robotPose) {
-      message.error('无法获取机器人位置');
+      setNotice({ tone: 'error', text: '无法获取机器人位置' });
       return;
     }
     setLoading(true);
     try {
-      const result = await apiService.recordRoomWaypoint(roomId, waypointType);
+        const result = await apiService.recordRoomWaypoint(roomId, waypointType);
       if (result.success) {
         const p = result.pose;
-        message.success(`已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
+        setNotice({
+          tone: 'success',
+          text: `已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`,
+        });
         loadConfig();
       } else {
-        message.error(result.message);
+        setNotice({ tone: 'error', text: result.message });
       }
     } finally {
       setLoading(false);
@@ -362,42 +429,27 @@ export const WaypointRecordTab: React.FC = () => {
 
   const handleAddWaypointConfirm = async () => {
     if (!newWpId.trim()) {
-      message.error('请输入点位 ID');
+      setNotice({ tone: 'error', text: '请输入点位 ID' });
       return;
     }
     const result = await apiService.addRoomWaypoint(addWpRoomId, newWpId.trim(), newWpName.trim() || newWpId.trim());
     if (result.success) {
-      message.success('点位已添加');
+      setNotice({ tone: 'success', text: '点位已添加' });
       setAddWpModalVisible(false);
       loadConfig();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
   const handleDeleteWaypoint = async (roomId: string, waypointId: string) => {
-    Modal.confirm({
-      title: '删除点位',
-      content: `确定删除点位「${waypointId}」？已引用该点位的任务步骤将无法执行。`,
-      okText: '删除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
-        const result = await apiService.deleteRoomWaypoint(roomId, waypointId);
-        if (result.success) {
-          message.success('点位已删除');
-          loadConfig();
-        } else {
-          message.error(result.message);
-        }
-      },
-    });
+    setDeleteWaypointTarget({ roomId, waypointId });
   };
 
   // 录制起始点位（专用端点）
   const handleRecordStart = async () => {
     if (!robotPose) {
-      message.error('无法获取机器人位置');
+      setNotice({ tone: 'error', text: '无法获取机器人位置' });
       return;
     }
     setLoading(true);
@@ -405,10 +457,13 @@ export const WaypointRecordTab: React.FC = () => {
       const result = await apiService.recordStartPosition();
       if (result.success) {
         const p = result.pose;
-        message.success(`起始点位已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`);
+        setNotice({
+          tone: 'success',
+          text: `起始点位已录制: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${(p.theta * 180 / Math.PI).toFixed(1)}°)`,
+        });
         loadConfig();
       } else {
-        message.error(result.message);
+        setNotice({ tone: 'error', text: result.message });
       }
     } finally {
       setLoading(false);
@@ -448,11 +503,11 @@ export const WaypointRecordTab: React.FC = () => {
 
     const result = await apiService.saveRoomConfig(updated);
     if (result.success) {
-      message.success(`${editTarget.label} 已更新`);
+      setNotice({ tone: 'success', text: `${editTarget.label} 已更新` });
       setEditModalVisible(false);
       loadConfig();
     } else {
-      message.error(result.message);
+      setNotice({ tone: 'error', text: result.message });
     }
   };
 
@@ -515,12 +570,36 @@ export const WaypointRecordTab: React.FC = () => {
     if (!cur) return;
     const result = await apiService.saveRoomConfig(cur);
     if (result.success) {
-      message.success('点位已保存');
+      setNotice({ tone: 'success', text: '点位已保存' });
     } else {
-      message.error('保存失败');
+      setNotice({ tone: 'error', text: '保存失败' });
       loadConfig();
     }
   }, [loadConfig]);
+
+  const confirmDeleteRoom = async () => {
+    if (!deleteRoomTarget) return;
+    const result = await apiService.deleteRoom(deleteRoomTarget);
+    if (result.success) {
+      setNotice({ tone: 'success', text: `已删除区域 ${deleteRoomTarget}` });
+      loadConfig();
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+    setDeleteRoomTarget(null);
+  };
+
+  const confirmDeleteWaypoint = async () => {
+    if (!deleteWaypointTarget) return;
+    const result = await apiService.deleteRoomWaypoint(deleteWaypointTarget.roomId, deleteWaypointTarget.waypointId);
+    if (result.success) {
+      setNotice({ tone: 'success', text: '点位已删除' });
+      loadConfig();
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+    setDeleteWaypointTarget(null);
+  };
 
   // 判断区域是否就绪
   const isRoomReady = (room: RoomConfigType) => {
@@ -529,9 +608,9 @@ export const WaypointRecordTab: React.FC = () => {
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+    <div className="flex h-full overflow-hidden bg-background">
       {/* 左侧：地图 */}
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', height: '100%' }}>
+      <div className="relative h-full min-w-0 flex-1">
           {currentMap ? (
             <MapCanvas
               mapData={currentMap}
@@ -545,7 +624,7 @@ export const WaypointRecordTab: React.FC = () => {
               showRobotTrail={false}
             />
           ) : (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
             </div>
           )}
@@ -553,19 +632,12 @@ export const WaypointRecordTab: React.FC = () => {
           {/* 机器人位置信息 */}
           {robotPose && (
             <div
-              style={{
-                position: 'absolute',
-                bottom: '16px',
-                left: '16px',
-                background: 'rgba(0,0,0,0.75)',
-                color: '#fff',
-                padding: '8px 12px',
-                borderRadius: '4px',
-                fontSize: '12px',
-                fontFamily: 'monospace',
-              }}
+              className="absolute bottom-4 left-4 rounded-md border border-border/60 bg-background/85 px-3 py-2 font-mono text-xs text-foreground shadow-sm backdrop-blur"
             >
-              <AimOutlined /> x={robotPose.x.toFixed(3)} y={robotPose.y.toFixed(3)} θ={((robotPose.theta * 180) / Math.PI).toFixed(1)}°
+              <div className="flex items-center gap-2">
+                <Crosshair className="h-4 w-4 text-primary" />
+                <span>x={robotPose.x.toFixed(3)} y={robotPose.y.toFixed(3)} θ={((robotPose.theta * 180) / Math.PI).toFixed(1)}°</span>
+              </div>
             </div>
           )}
 
@@ -578,36 +650,46 @@ export const WaypointRecordTab: React.FC = () => {
               onKeyUp={handleJoystickKeyUp}
               onFocus={() => setKeyboardFocused(true)}
               onBlur={handleJoystickBlur}
-              style={{
-                position: 'absolute',
-                bottom: '16px',
-                right: '16px',
-                background: keyboardFocused ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)',
-                color: '#fff',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                minWidth: 140,
-                textAlign: 'center',
-                cursor: 'pointer',
-                outline: keyboardFocused ? '2px solid #52c41a' : '2px solid transparent',
-                transition: 'outline 0.2s, background 0.2s',
-              }}
+              className={cn(
+                'absolute bottom-4 right-4 min-w-[160px] cursor-pointer rounded-xl border px-4 py-3 text-center font-mono text-xs text-foreground shadow-sm backdrop-blur transition',
+                keyboardFocused
+                  ? 'border-emerald-500/60 bg-background/90 ring-2 ring-emerald-500/40'
+                  : 'border-border/60 bg-background/80'
+              )}
               onClick={() => joystickRef.current?.focus()}
             >
-              <div style={{ marginBottom: 6, fontWeight: 'bold', color: keyboardFocused ? '#52c41a' : '#999' }}>
+              <div className={cn('mb-2 font-semibold', keyboardFocused ? 'text-emerald-300' : 'text-muted-foreground')}>
                 {keyboardFocused ? '遥控中 — 方向键控制' : '点击此处开始遥控'}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
-                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.linear > 0 ? '#52c41a' : '#555', borderRadius: 3 }}>↑</span>
+              <div className="mb-1 flex justify-center">
+                <span className={cn(
+                  'rounded border px-2 py-0.5',
+                  velocity.linear > 0 ? 'border-emerald-500 text-emerald-300' : 'border-border/70 text-muted-foreground'
+                )}>
+                  ↑
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
-                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.angular > 0 ? '#52c41a' : '#555', borderRadius: 3 }}>←</span>
-                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.linear < 0 ? '#52c41a' : '#555', borderRadius: 3 }}>↓</span>
-                <span style={{ padding: '2px 8px', border: '1px solid', borderColor: velocity.angular < 0 ? '#52c41a' : '#555', borderRadius: 3 }}>→</span>
+              <div className="flex justify-center gap-1">
+                <span className={cn(
+                  'rounded border px-2 py-0.5',
+                  velocity.angular > 0 ? 'border-emerald-500 text-emerald-300' : 'border-border/70 text-muted-foreground'
+                )}>
+                  ←
+                </span>
+                <span className={cn(
+                  'rounded border px-2 py-0.5',
+                  velocity.linear < 0 ? 'border-emerald-500 text-emerald-300' : 'border-border/70 text-muted-foreground'
+                )}>
+                  ↓
+                </span>
+                <span className={cn(
+                  'rounded border px-2 py-0.5',
+                  velocity.angular < 0 ? 'border-emerald-500 text-emerald-300' : 'border-border/70 text-muted-foreground'
+                )}>
+                  →
+                </span>
               </div>
-              <div style={{ marginTop: 6, fontSize: 11, color: '#aaa' }}>
+              <div className="mt-2 text-[11px] text-muted-foreground">
                 v={velocity.linear.toFixed(2)} ω={velocity.angular.toFixed(2)}
               </div>
             </div>
@@ -616,79 +698,117 @@ export const WaypointRecordTab: React.FC = () => {
 
         {/* 右侧：配置面板 */}
         <div
-          style={{
-            width: 320,
-            minWidth: 280,
-            flexShrink: 0,
-            borderLeft: '1px solid #f0f0f0',
-            background: '#fafafa',
-            overflowY: 'auto',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}
+          className="flex w-80 min-w-[280px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/70 bg-card/60 p-4"
         >
+          {notice && (
+            <div
+              className={cn(
+                'rounded-xl border px-3 py-3 text-sm',
+                notice.tone === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  : 'border-destructive/40 bg-destructive/10 text-destructive'
+              )}
+            >
+              {notice.text}
+            </div>
+          )}
+
           {/* 工具开关 */}
-          <Card size="small">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 13 }}><DragOutlined /> 拖拽点位</span>
-              <Switch size="small" checked={dragEnabled} onChange={setDragEnabled} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13 }}>⌨️ 键盘遥控</span>
-              <Switch size="small" checked={keyboardEnabled} onChange={setKeyboardEnabled}
-                disabled={connectionStatus !== ConnectionStatus.CONNECTED} />
-            </div>
+          <Card className="border-border/70 bg-card/90">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">工具开关</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-foreground">拖拽点位</div>
+                  <div className="text-xs text-muted-foreground">在地图上直接调整已录制的位姿。</div>
+                </div>
+                <Switch checked={dragEnabled} onCheckedChange={setDragEnabled} />
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-foreground">键盘遥控</div>
+                  <div className="text-xs text-muted-foreground">点击地图右下角控制器后使用方向键。</div>
+                </div>
+                <Switch
+                  checked={keyboardEnabled}
+                  onCheckedChange={setKeyboardEnabled}
+                  disabled={connectionStatus !== ConnectionStatus.CONNECTED}
+                />
+              </div>
+            </CardContent>
           </Card>
 
           {/* 起始点位 */}
-          <Card size="small" title={
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#722ed1', color: '#fff', fontSize: 11, fontWeight: 'bold' }}>0</span>
-              <EnvironmentOutlined /> 起始/返回点位
-            </span>
-          }>
+          <Card className="border-border/70 bg-card/90">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">0</span>
+                <MapPin className="h-4 w-4 text-primary" />
+                起始/返回点位
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
             {config?.start_position ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                  <CheckCircleFilled style={{ color: '#52c41a', marginRight: 4 }} />
+              <div className="flex flex-col gap-3">
+                <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 font-mono text-xs text-muted-foreground">
+                  <span className="mr-2 inline-flex items-center gap-1 text-emerald-300">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </span>
                   ({config.start_position.x.toFixed(2)}, {config.start_position.y.toFixed(2)}, {((config.start_position.theta * 180) / Math.PI).toFixed(1)}°)
-                </span>
-                <div style={{ display: 'flex', gap: '4px' }}>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button
-                    size="small"
-                    type="link"
-                    icon={<EditOutlined />}
-                    style={{ fontSize: '11px', padding: 0 }}
+                    type="button"
+                    size="sm"
+                    variant="outline"
                     onClick={() => openEditModal('', 'start_position', '起始点位', config.start_position)}
-                  />
-                  <Button size="small" onClick={handleRecordStart} loading={loading}>
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    编辑
+                  </Button>
+                  <Button type="button" size="sm" onClick={handleRecordStart} disabled={loading}>
+                    <Crosshair className="mr-2 h-4 w-4" />
                     重录
                   </Button>
                 </div>
               </div>
             ) : (
               <Button
-                type="dashed"
-                block
-                icon={<AimOutlined />}
+                type="button"
+                variant="outline"
+                className="w-full"
                 onClick={handleRecordStart}
-                loading={loading}
-                disabled={!robotPose}
+                disabled={loading || !robotPose}
               >
+                <Crosshair className="mr-2 h-4 w-4" />
                 录制当前位置
               </Button>
             )}
+            </CardContent>
           </Card>
 
-          {/* 区域列表 */}
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#333' }}>
-            区域列表 ({config?.rooms.length ?? 0})
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-foreground">
+              区域列表 ({config?.rooms.length ?? 0})
+            </div>
+            <Badge variant="secondary">拖拽排序</Badge>
           </div>
 
           {config?.rooms.length === 0 && (
-            <Empty description="暂无区域，点击下方按钮添加" style={{ padding: '20px 0' }} />
+            <Card className="border-dashed border-border bg-card/60">
+              <CardContent className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                  <Plus className="h-5 w-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">暂无区域</div>
+                  <div className="text-xs text-muted-foreground">先创建房间，再为每个区域录制关键点位。</div>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           <DndContext sensors={sensors} onDragEnd={handleRoomDragEnd}>
@@ -701,13 +821,7 @@ export const WaypointRecordTab: React.FC = () => {
                   isRoomReady={isRoomReady}
                   onDelete={handleDeleteRoom}
                   onRecord={handleRecord}
-                  onEdit={(roomId, wpId, label, pose) => {
-                    setEditTarget({ roomId, waypointType: wpId, label });
-                    setEditX(pose?.x ?? 0);
-                    setEditY(pose?.y ?? 0);
-                    setEditTheta(pose?.theta ?? 0);
-                    setEditModalVisible(true);
-                  }}
+                  onEdit={openEditModal}
                   onAddWaypoint={handleAddWaypoint}
                   onDeleteWaypoint={handleDeleteWaypoint}
                   robotPose={robotPose}
@@ -716,124 +830,176 @@ export const WaypointRecordTab: React.FC = () => {
             </SortableContext>
           </DndContext>
 
-          {/* 新建区域按钮 */}
           <Button
-            type="dashed"
-            block
-            icon={<PlusOutlined />}
+            type="button"
+            variant="outline"
+            className="w-full"
             onClick={() => setAddModalVisible(true)}
-            style={{ marginTop: '4px' }}
           >
+            <Plus className="mr-2 h-4 w-4" />
             新建区域
           </Button>
         </div>
 
-      {/* 新建区域 Modal */}
-      <Modal
-        title="新建区域"
-        open={addModalVisible}
-        onOk={handleAddRoom}
-        onCancel={() => { setAddModalVisible(false); setNewRoomId(''); setNewRoomName(''); }}
-        okText="添加"
-        cancelText="取消"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域号 *</div>
-            <Input
-              placeholder="如: 101"
-              value={newRoomId}
-              onChange={(e) => setNewRoomId(e.target.value)}
-              onPressEnter={handleAddRoom}
-            />
+      <Dialog open={addModalVisible} onOpenChange={(open) => {
+        setAddModalVisible(open);
+        if (!open) {
+          setNewRoomId('');
+          setNewRoomName('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新建区域</DialogTitle>
+            <DialogDescription>为巡检房间创建唯一标识和显示名称。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>区域号 *</span>
+              <Input
+                placeholder="如: 101"
+                value={newRoomId}
+                onChange={(e) => setNewRoomId(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleAddRoom();
+                }}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>区域名称（可选）</span>
+              <Input
+                placeholder="如: 101室（留空则自动生成）"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleAddRoom();
+                }}
+              />
+            </label>
           </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域名称（可选）</div>
-            <Input
-              placeholder="如: 101室（留空则自动生成）"
-              value={newRoomName}
-              onChange={(e) => setNewRoomName(e.target.value)}
-              onPressEnter={handleAddRoom}
-            />
-          </div>
-        </div>
-      </Modal>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setAddModalVisible(false)}>取消</Button>
+            <Button type="button" onClick={() => void handleAddRoom()}>添加</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* 新建点位 Modal */}
-      <Modal
-        title="新建自定义点位"
-        open={addWpModalVisible}
-        onOk={handleAddWaypointConfirm}
-        onCancel={() => { setAddWpModalVisible(false); setNewWpId(''); setNewWpName(''); }}
-        okText="添加"
-        cancelText="取消"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>点位 ID *</div>
-            <Input
-              placeholder="英文字母开头，字母数字下划线（如: window_left）"
-              value={newWpId}
-              onChange={(e) => setNewWpId(e.target.value)}
-              onPressEnter={handleAddWaypointConfirm}
-            />
+      <Dialog open={addWpModalVisible} onOpenChange={(open) => {
+        setAddWpModalVisible(open);
+        if (!open) {
+          setNewWpId('');
+          setNewWpName('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新建自定义点位</DialogTitle>
+            <DialogDescription>为当前区域添加一个额外的自定义巡检点。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>点位 ID *</span>
+              <Input
+                placeholder="英文字母开头，字母数字下划线"
+                value={newWpId}
+                onChange={(e) => setNewWpId(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleAddWaypointConfirm();
+                }}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>显示名称（可选）</span>
+              <Input
+                placeholder="如: 窗边左（留空则使用 ID）"
+                value={newWpName}
+                onChange={(e) => setNewWpName(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleAddWaypointConfirm();
+                }}
+              />
+            </label>
           </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>显示名称（可选）</div>
-            <Input
-              placeholder="如: 窗边左（留空则使用 ID）"
-              value={newWpName}
-              onChange={(e) => setNewWpName(e.target.value)}
-              onPressEnter={handleAddWaypointConfirm}
-            />
-          </div>
-        </div>
-      </Modal>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setAddWpModalVisible(false)}>取消</Button>
+            <Button type="button" onClick={() => void handleAddWaypointConfirm()}>添加</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* 编辑点位 Modal */}
-      <Modal
-        title={`编辑点位 — ${editTarget?.label ?? ''}`}
-        open={editModalVisible}
-        onOk={handleSaveEdit}
-        onCancel={() => setEditModalVisible(false)}
-        okText="保存"
-        cancelText="取消"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>X (米)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editX}
-              onChange={(v) => setEditX(v ?? 0)}
-              step={0.01}
-              precision={4}
-            />
+      <Dialog open={editModalVisible} onOpenChange={setEditModalVisible}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>编辑点位 — {editTarget?.label ?? ''}</DialogTitle>
+            <DialogDescription>直接输入坐标和角度，保存后会写回当前巡检配置。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>X (米)</span>
+              <Input
+                type="number"
+                step="0.01"
+                value={String(editX)}
+                onChange={(event) => setEditX(Number(event.target.value) || 0)}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>Y (米)</span>
+              <Input
+                type="number"
+                step="0.01"
+                value={String(editY)}
+                onChange={(event) => setEditY(Number(event.target.value) || 0)}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm text-muted-foreground">
+              <span>角度 (度)</span>
+              <Input
+                type="number"
+                step="1"
+                min="-180"
+                max="180"
+                value={String(editTheta)}
+                onChange={(event) => setEditTheta(Number(event.target.value) || 0)}
+              />
+            </label>
           </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>Y (米)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editY}
-              onChange={(v) => setEditY(v ?? 0)}
-              step={0.01}
-              precision={4}
-            />
-          </div>
-          <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>角度 (度)</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={editTheta}
-              onChange={(v) => setEditTheta(v ?? 0)}
-              step={1}
-              precision={1}
-              min={-180}
-              max={180}
-            />
-          </div>
-        </div>
-      </Modal>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setEditModalVisible(false)}>取消</Button>
+            <Button type="button" onClick={() => void handleSaveEdit()}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteRoomTarget !== null} onOpenChange={(open) => !open && setDeleteRoomTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除区域</DialogTitle>
+            <DialogDescription>
+              确定删除区域 {deleteRoomTarget}？删除后该区域的所有点位数据都会丢失。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setDeleteRoomTarget(null)}>取消</Button>
+            <Button type="button" variant="destructive" onClick={() => void confirmDeleteRoom()}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteWaypointTarget !== null} onOpenChange={(open) => !open && setDeleteWaypointTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除点位</DialogTitle>
+            <DialogDescription>
+              确定删除点位「{deleteWaypointTarget?.waypointId}」？已引用该点位的任务步骤将无法执行。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setDeleteWaypointTarget(null)}>取消</Button>
+            <Button type="button" variant="destructive" onClick={() => void confirmDeleteWaypoint()}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

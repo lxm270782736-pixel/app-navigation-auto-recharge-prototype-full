@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Card, Input } from 'antd';
-import { BranchesOutlined } from '@ant-design/icons';
+import { Input } from '@astribot/ui';
+import { GitBranch } from 'lucide-react';
+import { TaskNodeShell } from './TaskNodeShell';
 
 export const ConditionalNode: React.FC<NodeProps> = ({ data }) => {
   const [condition, setCondition] = useState(data.condition || '');
@@ -10,36 +11,30 @@ export const ConditionalNode: React.FC<NodeProps> = ({ data }) => {
     <div className="custom-task-node">
       <Handle type="target" position={Position.Top} />
 
-      <Card
-        size="small"
-        style={{
-          minWidth: 200,
-          backgroundColor: '#fbe9e7',
-          border: '2px solid #d84315',
-        }}
+      <TaskNodeShell
+        icon={<GitBranch className="h-6 w-6" />}
+        iconColor="#d84315"
+        borderColor="#d84315"
+        backgroundColor="#fbe9e7"
+        label="条件分支"
+        collapsed={false}
+        onToggle={() => {}}
+        minWidth={200}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ textAlign: 'center' }}>
-            <BranchesOutlined style={{ fontSize: 24, color: '#d84315' }} />
-            <div style={{ fontWeight: 'bold', marginTop: 4 }}>条件分支</div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 11, marginBottom: 4, color: '#666' }}>条件表达式</div>
-            <Input
-              size="small"
-              value={condition}
-              onChange={(e) => {
-                setCondition(e.target.value);
-                data.condition = e.target.value;
-              }}
-              placeholder="例如: battery > 20"
-            />
-          </div>
+        <div>
+          <div className="mb-1 text-[11px] text-muted-foreground">条件表达式</div>
+          <Input
+            value={condition}
+            onChange={(e) => {
+              setCondition(e.target.value);
+              data.condition = e.target.value;
+            }}
+            placeholder="例如: battery > 20"
+            className="h-8"
+          />
         </div>
-      </Card>
+      </TaskNodeShell>
 
-      {/* True和False两个输出端口 */}
       <Handle
         type="source"
         position={Position.Bottom}
@@ -53,27 +48,10 @@ export const ConditionalNode: React.FC<NodeProps> = ({ data }) => {
         style={{ left: '66%', backgroundColor: '#f44336' }}
       />
 
-      {/* 标签 */}
-      <div style={{
-        position: 'absolute',
-        bottom: -20,
-        left: '33%',
-        transform: 'translateX(-50%)',
-        fontSize: 10,
-        color: '#4caf50',
-        fontWeight: 'bold'
-      }}>
+      <div className="absolute -bottom-5 left-[33%] -translate-x-1/2 text-[10px] font-bold text-[#4caf50]">
         True
       </div>
-      <div style={{
-        position: 'absolute',
-        bottom: -20,
-        left: '66%',
-        transform: 'translateX(-50%)',
-        fontSize: 10,
-        color: '#f44336',
-        fontWeight: 'bold'
-      }}>
+      <div className="absolute -bottom-5 left-[66%] -translate-x-1/2 text-[10px] font-bold text-[#f44336]">
         False
       </div>
     </div>

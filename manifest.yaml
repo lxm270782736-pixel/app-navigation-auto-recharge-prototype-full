@@ -1,6 +1,6 @@
 id: "com.astribot.app.navigation"
 name: "Navigation"
-version: "1.1.0"
+version: "0.0.2"
 description: "机器人SLAM建图和自主导航应用"
 
 dependencies:
