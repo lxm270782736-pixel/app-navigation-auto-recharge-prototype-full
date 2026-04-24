@@ -24,6 +24,9 @@ class _Stub(MetaBridgeMixin, CustomStepsMixin, RoomPatrolMixin):
 
     def __init__(self):
         self._lock = threading.Lock()
+        self._room_patrol_active = True
+        self._pause_reason = None
+        self._skip_step_requested = False
         self._init_meta()
 
 

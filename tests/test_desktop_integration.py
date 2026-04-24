@@ -42,7 +42,7 @@ class TestManifest:
         assert 1024 < self.manifest["port"] < 65536
 
     def test_ui_type_valid(self):
-        assert self.manifest["uiType"] in ("iframe", "web-component", "micro-frontend")
+        assert self.manifest["uiType"] in ("iframe", "web-component", "micro-frontend", "tsx")
 
     def test_modes_defined(self):
         assert "modes" in self.manifest

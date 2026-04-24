@@ -15,6 +15,19 @@ class _Stub(MetaBridgeMixin, AlertMixin, RoomPatrolMixin):
 
     def __init__(self):
         self._lock = threading.Lock()
+        self._patrol_state_lock = threading.Lock()
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._step_advance_event = threading.Event()
+        self._step_advance_event.set()
+        self._pause_reason = None
+        self._paused_step_type = ""
+        self._alert_interrupted = False
+        self._replay_paused_by = None
+        self._paused_replay_id = ""
+        self._skip_step_requested = False
+        self._fall_monitor_enabled = True
+        self._stuck_event = None
         self._init_meta()
         self._storage = MagicMock()  # Mock storage for alerts
 
@@ -163,7 +176,7 @@ class TestFallMonitorLoop:
         """Monitor should set _fall_event when is_fall=True."""
         call_count = [0]
 
-        def mock_call(service, method, **kwargs):
+        def mock_call(method, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
                 return {"is_fall": True, "location": "101", "confidence": 0.9}
@@ -187,8 +200,8 @@ class TestFallMonitorLoop:
         assert stub._fall_event is not None
         assert stub._fall_event["location"] == "101"
 
-    def test_monitor_clears_event_on_ack(self, stub):
-        """Monitor should clear _fall_event when acknowledged=True."""
+    def test_monitor_keeps_event_until_ack(self, stub):
+        """Monitor should keep existing fall event until explicit acknowledge."""
         stub._fall_event = {"timestamp": time.time(), "location": "101", "confidence": 0.9}
 
         stub._detection_call = MagicMock(return_value={"is_fall": False, "acknowledged": True})
@@ -204,8 +217,8 @@ class TestFallMonitorLoop:
         stub._room_patrol_active = False
         thread.join(timeout=1.0)
 
-        # Should have cleared event
-        assert stub._fall_event is None
+        # Existing event is cleared by acknowledge_fall(), not by monitor loop.
+        assert stub._fall_event is not None
 
 
 if __name__ == "__main__":
