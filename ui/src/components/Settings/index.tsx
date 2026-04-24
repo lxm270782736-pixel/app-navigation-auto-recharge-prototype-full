@@ -7,14 +7,16 @@ import {
   SettingOutlined,
   SafetyCertificateOutlined,
   InfoCircleOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { settingsService } from '@/services/settings';
 import { RobotShapeType, RobotShapeConfig } from '@/types';
+import { MetaServicesPanel } from './MetaServicesPanel';
 
 const { Sider, Content } = Layout;
 
 // 设置菜单项
-type SettingsMenuKey = 'robot-shape' | 'about';
+type SettingsMenuKey = 'robot-shape' | 'meta-services' | 'about';
 
 export const Settings: React.FC = () => {
   const navigate = useNavigate();
@@ -223,6 +225,9 @@ export const Settings: React.FC = () => {
           </Card>
         );
 
+      case 'meta-services':
+        return <MetaServicesPanel />;
+
       case 'about':
         return (
           <Card title="关于" style={{ maxWidth: 600 }}>
@@ -282,6 +287,11 @@ export const Settings: React.FC = () => {
               key: 'robot-shape',
               icon: <RobotOutlined />,
               label: '机器人碰撞形状',
+            },
+            {
+              key: 'meta-services',
+              icon: <ApiOutlined />,
+              label: 'Meta 服务配置',
             },
             {
               key: 'about',

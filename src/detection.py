@@ -1,53 +1,71 @@
-"""Visual detection — interface for VLM-based anomaly detection.
+"""Visual detection — delegates entirely to meta.detection service.
 
-Currently returns mock results. Replace method internals when VLM service is available.
+No local simulation fallback. If meta.detection is unavailable, returns safe defaults.
 """
-import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DetectionMixin:
-    """Visual detection methods — bed occupancy, floor clutter, water stains."""
 
     def detect_bed_occupancy(self, room_id: str) -> dict:
-        """Detect whether an elderly person is in bed.
-
-        Returns: {detection_type, is_abnormal, confidence, description, timestamp, room_id}
-        """
-        # TODO: Replace with VLM API call when service is available
+        """在床检测 — 调用 meta.detection.detect_bed()。"""
+        result = self._detection_call("detect_bed", room_id=room_id)
+        if isinstance(result, dict) and "is_abnormal" in result:
+            logger.info("[detection] detect_bed room=%s is_abnormal=%s in_bed=%s person_detected=%s confidence=%s description=%s",
+                        room_id, result.get("is_abnormal"), result.get("in_bed"),
+                        result.get("person_detected"), result.get("confidence"),
+                        result.get("description", ""))
+            return result
+        logger.warning("[detection] detect_bed unavailable for room %s", room_id)
         return {
-            "detection_type": "bed",
             "is_abnormal": False,
-            "confidence": 0.95,
-            "description": "老人在床（mock）",
-            "timestamp": time.time(),
+            "in_bed": True,
+            "person_detected": False,
+            "confidence": 0.0,
+            "description": "检测不可用",
+            "photos": [],
             "room_id": room_id,
         }
 
     def detect_floor_clutter(self, room_id: str) -> dict:
-        """Detect floor clutter/obstacles in the corridor."""
-        return {
-            "detection_type": "clutter",
-            "is_abnormal": False,
-            "confidence": 0.90,
-            "description": "通道无杂物（mock）",
-            "timestamp": time.time(),
-            "room_id": room_id,
-        }
+        """杂物检测 — 调用 meta.detection.detect_floor()。"""
+        return self._detect_floor_full(room_id).get("clutter") or \
+            {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
 
     def detect_floor_water(self, room_id: str) -> dict:
-        """Detect water stains on the floor."""
-        return {
-            "detection_type": "water",
-            "is_abnormal": False,
-            "confidence": 0.88,
-            "description": "地面无水渍（mock）",
-            "timestamp": time.time(),
+        """水渍检测 — 调用 meta.detection.detect_floor()。"""
+        return self._detect_floor_full(room_id).get("water") or \
+            {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
+
+    def _detect_floor_full(self, room_id: str) -> dict:
+        """调用 meta.detection.detect_floor()，同一房间同一步骤只调用一次。"""
+        cache_key = f"_floor_cache_{room_id}"
+        cached = getattr(self, cache_key, None)
+        if cached:
+            return cached
+        result = self._detection_call("detect_floor", room_id=room_id)
+        if isinstance(result, dict) and "clutter" in result:
+            clutter = result.get("clutter") or {}
+            water = result.get("water") or {}
+            logger.info("[detection] detect_floor room=%s clutter={is_abnormal:%s, confidence:%s} water=%s any_abnormal=%s",
+                        room_id,
+                        clutter.get("is_abnormal"), clutter.get("confidence"),
+                        "{is_abnormal:%s, confidence:%s}" % (water.get("is_abnormal"), water.get("confidence")) if water else "N/A",
+                        result.get("any_abnormal"))
+            setattr(self, cache_key, result)
+            return result
+        logger.warning("[detection] detect_floor unavailable for room %s", room_id)
+        fallback = {
+            "clutter": {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},
+            "water":   {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},
             "room_id": room_id,
+            "any_abnormal": False,
         }
+        setattr(self, cache_key, fallback)
+        return fallback
 
-    def capture_image(self) -> bytes | None:
-        """Capture current frame from ROS camera topic.
-
-        TODO: Implement when camera topic is available.
-        """
+    def capture_image(self) -> str | None:
+        """拍照，返回 base64。真机替换为摄像头数据。"""
         return None

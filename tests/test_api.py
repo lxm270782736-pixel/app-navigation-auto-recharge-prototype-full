@@ -267,7 +267,7 @@ class TestRoomConfigEndpoints:
         mock.add_room.return_value = {"success": True}
         resp = tc.post("/api/room-config/rooms", json={"room_id": "r1", "room_name": "Room 1"})
         assert resp.status_code == 200
-        mock.add_room.assert_called_once_with("r1", "Room 1")
+        mock.add_room.assert_called_once_with("r1", "Room 1", None)
 
     def test_delete_room(self, client):
         tc, mock = client

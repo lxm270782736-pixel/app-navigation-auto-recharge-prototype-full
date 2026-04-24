@@ -39,34 +39,36 @@ import { CustomStepManager } from './CustomStepManager';
 // Available step types
 const STEP_OPTIONS = [
   { value: 'navigate', label: '导航', desc: '导航到指定点位' },
-  { value: 'open_door', label: '开门', desc: '打开房间门' },
-  { value: 'close_door', label: '关门', desc: '关闭房间门' },
+  { value: 'open_door', label: '开门', desc: '打开区域门' },
+  { value: 'close_door', label: '关门', desc: '关闭区域门' },
   { value: 'detect_bed', label: '在床检测', desc: '检测老人是否在床' },
   { value: 'detect_floor', label: '地面检测', desc: '检测杂物和水渍' },
   { value: 'photo', label: '拍照', desc: '拍摄照片' },
   { value: 'wait', label: '等待', desc: '停留等待' },
 ];
 
-const NAV_TARGETS = [
-  { value: 'door_outside', label: '门外' },
-  { value: 'door_inside', label: '门内' },
-  { value: 'bed_check', label: '床位' },
-];
-
-// Default inspection steps for a room
 const DEFAULT_STEPS: RoomTaskStep[] = [
-  { type: 'navigate', target: 'door_outside' },
+  { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'open_door' },
-  { type: 'navigate', target: 'door_inside' },
+  { type: 'navigate', target: 'door_inside', retry_limit: 30 },
   { type: 'detect_floor' },
   { type: 'photo', label: '通道' },
-  { type: 'navigate', target: 'bed_check' },
+  { type: 'navigate', target: 'bed_check', retry_limit: 30 },
   { type: 'detect_bed' },
   { type: 'photo', label: '床位' },
-  { type: 'navigate', target: 'door_inside' },
-  { type: 'navigate', target: 'door_outside' },
+  { type: 'navigate', target: 'door_inside', retry_limit: 30 },
+  { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'close_door' },
 ];
+
+const buildNavTargetOptions = (roomConfig?: RoomConfig | null) => {
+  const options = (roomConfig?.waypoints || []).map((wp) => ({
+    value: wp.id,
+    label: wp.name,
+  }));
+  options.push({ value: 'start_position', label: '起点' });
+  return options;
+};
 
 const STEP_COLORS: Record<string, string> = {
   navigate: '#1890ff',
@@ -76,6 +78,13 @@ const STEP_COLORS: Record<string, string> = {
   detect_floor: '#faad14',
   photo: '#722ed1',
   wait: '#999',
+};
+
+// 内置步骤对应的 meta 服务名（用于停用开关）
+const BUILTIN_META_SERVICE: Record<string, string> = {
+  navigate: 'meta.astribot_navigation',
+  detect_bed: 'meta.detection',
+  detect_floor: 'meta.detection',
 };
 
 // Draggable resize handle between columns
@@ -284,9 +293,15 @@ export const TaskConfigTab: React.FC = () => {
       const existingIds = new Set(preset.rooms.map(r => r.room_id));
       const merged = [...preset.rooms];
       for (const r of roomConfigs) {
-        if (!existingIds.has(r.room_id) && r.door_outside && r.door_inside && r.bed_check) {
+        if (!existingIds.has(r.room_id) && (r.waypoints || []).some(wp => wp.pose !== null)) {
           merged.push({ room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS] });
         }
+      }
+      // 为旧数据的 navigate 步骤补默认 retry_limit
+      for (const room of merged) {
+        room.steps = room.steps.map(s =>
+          s.type === 'navigate' && s.retry_limit === undefined ? { ...s, retry_limit: 30 } : s
+        );
       }
       setEditingPreset({ ...preset, rooms: merged });
       setIsDirty(false);
@@ -317,7 +332,7 @@ export const TaskConfigTab: React.FC = () => {
 
   const addStep = () => {
     if (!selectedRoom) return;
-    updateSteps([...selectedRoom.steps, { type: 'wait', duration: 1 }]);
+    updateSteps([...selectedRoom.steps, { type: 'wait', duration: 1000 }]);
   };
 
   const removeStep = (idx: number) => {
@@ -327,18 +342,39 @@ export const TaskConfigTab: React.FC = () => {
 
   const updateStep = (idx: number, patch: Partial<RoomTaskStep>) => {
     if (!selectedRoom) return;
-    if (patch.type && patch.type.startsWith('custom:') && patch.type !== selectedRoom.steps[idx].type) {
-      const customId = patch.type.split(':', 2)[1];
-      const def = customStepTypes.find(d => d.id === customId);
-      if (def) {
-        const defaultParams: Record<string, any> = {};
-        for (const p of def.parameters) {
-          if (p.default_value !== undefined) defaultParams[p.key] = p.default_value;
+    const oldStep = selectedRoom.steps[idx];
+    // 类型切换时清理旧类型的专属字段
+    if (patch.type && patch.type !== oldStep.type) {
+      if (patch.type === 'navigate') {
+        // 切换到 navigate：设置默认 target + retry_limit，清理其他字段
+        if (!patch.target) {
+          const rc = roomConfigs.find(r => r.room_id === selectedRoomId);
+          const firstWp = (rc?.waypoints || [])[0];
+          patch.target = firstWp?.id || 'start_position';
         }
-        patch.params = defaultParams;
+        if (oldStep.retry_limit === undefined) patch.retry_limit = 30;
+        patch.params = undefined as any;
+      } else {
+        // 切换离开 navigate：清理 target + retry_limit
+        (patch as any).target = undefined;
+        (patch as any).retry_limit = undefined;
+      }
+      if (patch.type.startsWith('custom:')) {
+        const customId = patch.type.split(':', 2)[1];
+        const def = customStepTypes.find(d => d.id === customId);
+        if (def) {
+          const defaultParams: Record<string, any> = {};
+          for (const p of def.parameters) {
+            if (p.default_value !== undefined) defaultParams[p.key] = p.default_value;
+          }
+          patch.params = defaultParams;
+        }
       }
     }
-    updateSteps(selectedRoom.steps.map((s, i) => i === idx ? { ...s, ...patch } : s));
+    // 合并时过滤掉 undefined 字段
+    const merged = { ...oldStep, ...patch };
+    if ((merged as any).target === undefined) delete (merged as any).target;
+    updateSteps(selectedRoom.steps.map((s, i) => i === idx ? merged : s));
   };
 
   const applyDefault = () => {
@@ -368,10 +404,11 @@ export const TaskConfigTab: React.FC = () => {
       name: newPresetName.trim(),
       description: '',
       is_default: presets.length === 0,
-      rooms: roomConfigs.filter(r => r.door_outside && r.door_inside && r.bed_check).map(r => ({
+      rooms: roomConfigs.filter(r => (r.waypoints || []).some(wp => wp.pose !== null)).map(r => ({
         room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS],
       })),
       retry_limit: 3,
+      fall_detection_enabled: true,
     };
     const result = await apiService.saveTaskPreset(preset);
     if (result.success) {
@@ -548,21 +585,34 @@ export const TaskConfigTab: React.FC = () => {
 
       {/* Col 2: Room list */}
       <div style={{ width: col2Width, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>导览顺序</span>
+          {editingPreset && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666' }}>
+              跌倒检测
+              <Switch
+                size="small"
+                checked={editingPreset.fall_detection_enabled ?? true}
+                onChange={v => setEditingPreset({ ...editingPreset, fall_detection_enabled: v })}
+              />
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>巡房顺序</span>
           <Checkbox checked={allEnabled} onChange={toggleAll} style={{ fontSize: 12 }}>全选</Checkbox>
         </div>
-        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与巡房的房间</div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>拖拽调整顺序，勾选参与导览的区域</div>
 
         {!editingPreset ? (
           <Empty description="选择左侧任务" style={{ marginTop: 40 }} />
         ) : editingPreset.rooms.length === 0 ? (
-          <Empty description="请先在「点位录制」录制房间" style={{ marginTop: 40 }} />
+          <Empty description="请先在「点位录制」录制区域" style={{ marginTop: 40 }} />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRoomDragEnd}>
             <SortableContext items={editingPreset.rooms.map(r => r.room_id)} strategy={verticalListSortingStrategy}>
               {editingPreset.rooms.map((room, idx) => {
-                const isReady = !!roomConfigs.find(r => r.room_id === room.room_id && r.door_outside && r.door_inside && r.bed_check);
+                const rc = roomConfigs.find(r => r.room_id === room.room_id);
+                const isReady = rc ? (rc.waypoints || []).some(wp => wp.pose !== null) : false;
                 return (
                   <SortableRoomItem
                     key={room.room_id}
@@ -585,7 +635,7 @@ export const TaskConfigTab: React.FC = () => {
       {/* Col 3: Step editor */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择房间'}</span>
+          <span style={{ fontWeight: 600 }}>{selectedRoom?.room_name || '选择区域'}</span>
           <div style={{ flex: 1 }} />
           <Button size="small" icon={<SettingOutlined />} onClick={() => setShowManager(true)}>自定义步骤</Button>
           <Button size="small" onClick={applyDefault} disabled={!selectedRoom}>默认模板</Button>
@@ -597,7 +647,7 @@ export const TaskConfigTab: React.FC = () => {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
           {!selectedRoom ? (
-            <Empty description={editingPreset ? '选择房间编辑步骤' : '选择左侧任务'} />
+            <Empty description={editingPreset ? '选择区域编辑步骤' : '选择左侧任务'} />
           ) : selectedRoom.steps.length === 0 ? (
             <Empty description="暂无步骤，点击「默认模板」或「添加步骤」" />
           ) : (
@@ -609,15 +659,44 @@ export const TaskConfigTab: React.FC = () => {
                   return (
                     <SortableStepItem key={stepIds[idx]} id={stepIds[idx]} borderColor={stepColors[step.type] || '#999'}>
                       <span style={{ fontWeight: 600, width: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>{idx + 1}</span>
+                      <Switch size="small" checked={step.enabled !== false} onChange={(v) => updateStep(idx, { enabled: v })} />
                       <Select
                         size="small"
                         value={step.type}
                         onChange={(v) => updateStep(idx, { type: v as any })}
-                        style={{ width: 140 }}
+                        style={{ width: 140, opacity: step.enabled === false ? 0.45 : 1 }}
+                        disabled={step.enabled === false}
                         options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
                       />
                       {step.type === 'navigate' && (
-                        <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }} options={NAV_TARGETS} />
+                        <>
+                          <Select size="small" value={step.target} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
+                            options={buildNavTargetOptions(roomConfigs.find(r => r.room_id === selectedRoomId))} />
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>重试:</span>
+                            <InputNumber
+                              size="small"
+                              min={1}
+                              max={100}
+                              value={step.retry_limit ?? 30}
+                              onChange={(v) => updateStep(idx, { retry_limit: v ?? 30 })}
+                              style={{ width: 70 }}
+                            />
+                          </span>
+                        </>
+                      )}
+                      {step.type === 'wait' && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <InputNumber
+                            size="small"
+                            min={100}
+                            step={500}
+                            value={step.duration ?? 1000}
+                            onChange={(v) => updateStep(idx, { duration: v ?? 1000 })}
+                            style={{ width: 80 }}
+                          />
+                          <span style={{ fontSize: 11, color: '#999' }}>ms</span>
+                        </span>
                       )}
                       {step.type === 'photo' && (
                         <input placeholder="标签" value={step.label || ''} onChange={(e) => updateStep(idx, { label: e.target.value })}
@@ -632,6 +711,30 @@ export const TaskConfigTab: React.FC = () => {
                           {p.type === 'select' && <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 80 }} options={p.options || []} />}
                         </span>
                       ))}
+                      {isCustom && customDef?.action?.type === 'meta' && (
+                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
+                            <Switch
+                              size="small"
+                              checked={step.deactivate_after ?? customDef.action.deactivate_after ?? false}
+                              onChange={v => updateStep(idx, { deactivate_after: v })}
+                            />
+                          </span>
+                        </Tooltip>
+                      )}
+                      {!isCustom && BUILTIN_META_SERVICE[step.type] && (
+                        <Tooltip title="步骤完成后停用对应服务（释放资源，下次使用需重新激活）">
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#999' }}>结束后停用:</span>
+                            <Switch
+                              size="small"
+                              checked={step.deactivate_after ?? false}
+                              onChange={v => updateStep(idx, { deactivate_after: v })}
+                            />
+                          </span>
+                        </Tooltip>
+                      )}
                       <div style={{ flex: 1 }} />
                       <Tooltip title="删除"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeStep(idx)} /></Tooltip>
                     </SortableStepItem>

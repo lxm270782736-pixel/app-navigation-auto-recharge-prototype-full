@@ -202,13 +202,20 @@ export interface LaserScan {
   intensities?: number[]; // 强度数组（可选）
 }
 
+// 房间点位
+export interface RoomWaypoint {
+  id: string;
+  name: string;
+  type: string;
+  pose: Pose | null;
+  builtin?: boolean;
+}
+
 // 房间点位配置
 export interface RoomConfig {
   room_id: string;
   room_name: string;
-  door_outside: Pose | null;
-  door_inside: Pose | null;
-  bed_check: Pose | null;
+  waypoints: RoomWaypoint[];
   door_type: string;
   enabled: boolean;
 }
@@ -228,6 +235,9 @@ export interface RoomTaskStep {
   label?: string;
   duration?: number;
   params?: Record<string, any>;  // 自定义步骤参数
+  enabled?: boolean;  // 步骤使能开关，默认 true
+  retry_limit?: number;  // 失败重试次数，仅 navigate 步骤使用，未设置时用任务级 retry_limit
+  deactivate_after?: boolean;  // 步骤完成后是否 deactivate 对应 meta 服务（覆盖步骤定义默认值）
 }
 
 // 自定义步骤参数定义
@@ -240,9 +250,19 @@ export interface CustomStepParamDef {
   options?: { value: string; label: string }[];
 }
 
+// Meta 轮询配置（用于 replay 等异步操作）
+export interface CustomStepMetaPoll {
+  method: string;
+  done_key: string;
+  done_value: boolean | number | string;
+  result_key?: string;
+  interval?: number;
+  timeout?: number;
+}
+
 // 自定义步骤动作配置
 export interface CustomStepAction {
-  type: 'service' | 'topic' | 'wait';
+  type: 'service' | 'topic' | 'wait' | 'meta';
   service_name?: string;
   service_type?: string;
   request?: Record<string, any>;
@@ -250,6 +270,11 @@ export interface CustomStepAction {
   msg_type?: string;
   message?: Record<string, any>;
   duration?: number;
+  meta_service?: string;
+  meta_method?: string;
+  meta_kwargs?: Record<string, any>;
+  meta_poll?: CustomStepMetaPoll;
+  deactivate_after?: boolean;  // 类型级默认值：步骤完成后是否 deactivate 对应 meta 服务
 }
 
 // 自定义步骤类型定义
@@ -287,6 +312,8 @@ export interface TaskPreset {
   is_default: boolean;
   rooms: RoomTaskConfig[];
   retry_limit: number;
+  fall_detection_enabled?: boolean;
+  waypoint_template?: RoomWaypoint[];
   created_at?: string;
   updated_at?: string;
 }
@@ -323,6 +350,7 @@ export interface RoomPatrolState {
   active: boolean;
   status: string;
   patrol_id: string;
+  task_name?: string;
   current_room: string;
   current_step: string;
   current_step_index: number;
@@ -331,4 +359,20 @@ export interface RoomPatrolState {
   rooms_total: number;
   progress: number;
   error: string;
+  rooms?: Array<{ room_id: string; room_name: string; steps: any[] }>;
+  fall_event?: {
+    timestamp: number;
+    location: string;
+    confidence: number;
+    photo?: string | null;
+  } | null;
+  stuck_event?: {
+    timestamp: number;
+    room_id: string;
+  } | null;
+  new_alerts?: Alert[];
+  advance_mode?: 'auto' | 'manual';
+  awaiting_advance?: boolean;
+  last_step_failed?: boolean;
+  nav_fail_reason?: string | null;
 }

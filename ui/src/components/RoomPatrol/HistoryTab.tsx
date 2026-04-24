@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Tag, Button, Empty, Space, message, Modal } from 'antd';
-import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
+import { Card, Tag, Button, Empty, Space, message, Modal, Image, Descriptions, Table, Popconfirm } from 'antd';
+import { ReloadOutlined, CheckOutlined, CloseOutlined, CheckCircleFilled, CloseCircleFilled, PictureOutlined, DeleteOutlined } from '@ant-design/icons';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
@@ -29,28 +29,35 @@ const TARGET_LABELS: Record<string, string> = {
   door_outside: '门外',
   door_inside: '门内',
   bed_check: '床位',
+  start_position: '起点',
 };
 
 const ALERT_TYPES: Record<string, string> = {
   bed_absence: '老人离床',
   floor_clutter: '地面杂物',
   floor_water: '地面水渍',
+  fall_detected: '老人跌倒',
+  robot_stuck: '机器人卡住',
   task_failed: '任务失败',
 };
 
 const ALERT_STATUS: Record<string, { color: string; text: string }> = {
   new: { color: 'red', text: '新告警' },
   processing: { color: 'orange', text: '处理中' },
-  closed: { color: 'green', text: '已关闭' },
+  closed: { color: 'green', text: '已处置' },
 };
 
 export const HistoryTab: React.FC = () => {
   const { connectionStatus } = useRobot();
   const [records, setRecords] = useState<PatrolRecord[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PatrolRecord | null>(null);
+  const [recordAlerts, setRecordAlerts] = useState<Alert[]>([]);
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [customStepTypes, setCustomStepTypes] = useState<CustomStepDefinition[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Dynamic step labels
   const stepLabels = useMemo(() => {
@@ -63,13 +70,11 @@ export const HistoryTab: React.FC = () => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     setLoading(true);
     try {
-      const [recordsData, alertsData, customData] = await Promise.all([
+      const [recordsData, customData] = await Promise.all([
         apiService.getPatrolRecords(),
-        apiService.getAlerts(),
         apiService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
       setRecords(Array.isArray(recordsData) ? recordsData : []);
-      setAlerts(Array.isArray(alertsData) ? alertsData : []);
       setCustomStepTypes(customData.custom_step_types || []);
     } catch (e) {
       console.warn('Failed to load history:', e);
@@ -80,46 +85,107 @@ export const HistoryTab: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // 点击任务时加载该任务的告警
+  const handleSelectRecord = useCallback(async (record: PatrolRecord) => {
+    setSelectedRecord(record);
+    setRecordAlerts([]);
+    try {
+      const filtered = await apiService.getAlerts({ patrol_id: record.id });
+      setRecordAlerts(Array.isArray(filtered) ? filtered : []);
+    } catch (e) {
+      console.warn('Failed to load alerts for record:', e);
+    }
+  }, []);
+
   const handleConfirmAlert = async (alert: Alert) => {
-    const date = alert.created_at.slice(0, 10);
+    setActionLoading(alert.id);
+    const date = alert.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0];
     const result = await apiService.confirmAlert(date, alert.id);
+    setActionLoading(null);
     if (result.success) {
       message.success('告警已确认');
-      loadData();
+      if (selectedRecord) handleSelectRecord(selectedRecord);
     } else {
-      message.error(result.message);
+      message.error(result.message || '操作失败，请重试');
     }
   };
 
   const handleCloseAlert = async (alert: Alert) => {
-    const date = alert.created_at.slice(0, 10);
+    setActionLoading(alert.id);
+    const date = alert.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0];
     const result = await apiService.closeAlert(date, alert.id);
+    setActionLoading(null);
     if (result.success) {
-      message.success('告警已关闭');
-      loadData();
+      message.success('已处置');
+      if (selectedAlert?.id === alert.id) setSelectedAlert(null);
+      if (selectedRecord) handleSelectRecord(selectedRecord);
     } else {
-      message.error(result.message);
+      message.error(result.message || '操作失败，请重试');
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (!selectedRowKeys.length) return;
+    setDeleteLoading(true);
+    const toDelete = records
+      .filter(r => selectedRowKeys.includes(r.id))
+      .map(r => ({ id: r.id, date: r.started_at?.split('T')[0] ?? '' }));
+    try {
+      const result = await apiService.deletePatrolRecords(toDelete);
+      if (result.success) {
+        message.success(`已删除 ${result.deleted} 条记录`);
+        setSelectedRowKeys([]);
+        if (selectedRecord && selectedRowKeys.includes(selectedRecord.id)) {
+          setSelectedRecord(null);
+          setRecordAlerts([]);
+        }
+        loadData();
+      } else {
+        message.error('删除失败');
+      }
+    } catch (e) {
+      message.error('删除失败');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const tableExtra = (
+    <Space>
+      {selectedRowKeys.length > 0 && (
+        <Popconfirm
+          title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`}
+          onConfirm={handleDeleteSelected}
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+        >
+          <Button size="small" danger icon={<DeleteOutlined />} loading={deleteLoading}>
+            删除 ({selectedRowKeys.length})
+          </Button>
+        </Popconfirm>
+      )}
+      <Button size="small" icon={<ReloadOutlined />} onClick={loadData} loading={loading}>刷新</Button>
+    </Space>
+  );
+
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Patrol records */}
-      <Card
-        size="small"
-        title="巡房记录"
-        extra={<Button size="small" icon={<ReloadOutlined />} onClick={loadData} loading={loading}>刷新</Button>}
-      >
+      <Card size="small" title="导览记录" extra={tableExtra}>
         {records.length === 0 ? (
-          <Empty description="暂无巡房记录" />
+          <Empty description="暂无导览记录" />
         ) : (
           <Table
             dataSource={records}
             rowKey="id"
             size="small"
             pagination={{ pageSize: 10 }}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+            }}
             onRow={(record) => ({
-              onClick: () => setSelectedRecord(record),
+              onClick: () => handleSelectRecord(record),
               style: { cursor: 'pointer', background: selectedRecord?.id === record.id ? '#e6f7ff' : undefined },
             })}
             columns={[
@@ -138,7 +204,7 @@ export const HistoryTab: React.FC = () => {
                   return <Tag color={t.color}>{t.text}</Tag>;
                 },
               },
-              { title: '房间数', dataIndex: 'rooms_total', width: 70 },
+              { title: '区域数', dataIndex: 'rooms_total', width: 70 },
               {
                 title: '完成', dataIndex: 'rooms_completed', width: 60,
                 render: (v: number) => <span style={{ color: '#52c41a' }}>{v}</span>,
@@ -156,7 +222,41 @@ export const HistoryTab: React.FC = () => {
       {selectedRecord && selectedRecord.room_results && (
         <Card size="small" title={`详情 — ${selectedRecord.id}`}>
           <Space direction="vertical" style={{ width: '100%' }} size={8}>
-            {selectedRecord.room_results.map((room: any, idx: number) => (
+            {/* 任务级别：跌倒告警 */}
+            {(() => {
+              const fallAlerts = recordAlerts.filter(a => a.alert_type === 'fall_detected');
+              if (fallAlerts.length === 0) return null;
+              return (
+                <Card size="small" style={{ borderLeft: '3px solid #ff4d4f', background: '#fff2f0' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6, color: '#ff4d4f' }}>跌倒告警（全任务）</div>
+                  <Space direction="vertical" style={{ width: '100%' }} size={4}>
+                    {fallAlerts.map(alert => {
+                      const st = ALERT_STATUS[alert.status] || { color: 'default', text: alert.status };
+                      return (
+                        <div key={alert.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fff', borderRadius: 4, cursor: 'pointer' }} onClick={() => setSelectedAlert(alert)}>
+                          {alert.photo
+                            ? <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                            : <div style={{ width: 32, height: 32, background: '#f5f5f5', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><PictureOutlined style={{ color: '#ccc', fontSize: 14 }} /></div>
+                          }
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12 }}><Tag color={st.color} style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>{st.text}</Tag>{alert.room_id} — 置信度 {alert.confidence ? `${(alert.confidence * 100).toFixed(0)}%` : '—'}</div>
+                            <div style={{ fontSize: 11, color: '#999' }}>{alert.created_at?.replace('T', ' ')}</div>
+                          </div>
+                          <Space size={4} onClick={e => e.stopPropagation()}>
+                            {alert.status === 'new' && <Button size="small" type="primary" danger icon={<CheckOutlined />} loading={actionLoading === alert.id} onClick={() => handleConfirmAlert(alert)}>确认</Button>}
+                            {alert.status === 'processing' && <Button size="small" icon={<CloseOutlined />} loading={actionLoading === alert.id} onClick={() => handleCloseAlert(alert)}>已处置</Button>}
+                          </Space>
+                        </div>
+                      );
+                    })}
+                  </Space>
+                </Card>
+              );
+            })()}
+            {selectedRecord.room_results.map((room: any, idx: number) => {
+              // 该区域关联的告警（排除跌倒，跌倒是全任务级别的）
+              const roomAlerts = recordAlerts.filter(a => a.room_id === room.room_id && a.alert_type !== 'fall_detected');
+              return (
               <Card key={idx} size="small" style={{ borderLeft: `3px solid ${room.status === 'success' ? '#52c41a' : '#ff4d4f'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ fontWeight: 600 }}>{room.room_name || room.room_id}</span>
@@ -195,46 +295,103 @@ export const HistoryTab: React.FC = () => {
                     })}
                   </div>
                 )}
+                {/* 该区域的告警 */}
+                {roomAlerts.length > 0 && (
+                  <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6, marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>告警</div>
+                    <Space direction="vertical" style={{ width: '100%' }} size={4}>
+                      {roomAlerts.map(alert => {
+                        const st = ALERT_STATUS[alert.status] || { color: 'default', text: alert.status };
+                        const borderColor = st.color === 'red' ? '#ff4d4f' : st.color === 'orange' ? '#faad14' : '#52c41a';
+                        return (
+                          <div
+                            key={alert.id}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fafafa', borderRadius: 4, borderLeft: `3px solid ${borderColor}`, cursor: 'pointer' }}
+                            onClick={() => setSelectedAlert(alert)}
+                          >
+                            {alert.photo
+                              ? <img src={`data:image/png;base64,${alert.photo}`} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                              : <div style={{ width: 32, height: 32, background: '#f5f5f5', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><PictureOutlined style={{ color: '#ccc', fontSize: 14 }} /></div>
+                            }
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12 }}>
+                                <Tag color={st.color} style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>{st.text}</Tag>
+                                {ALERT_TYPES[alert.alert_type] || alert.alert_type}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#999' }}>{alert.created_at?.replace('T', ' ')}</div>
+                            </div>
+                            <Space size={4} onClick={e => e.stopPropagation()}>
+                              {alert.status === 'new' && (
+                                <Button size="small" type="primary" icon={<CheckOutlined />} loading={actionLoading === alert.id} onClick={() => handleConfirmAlert(alert)}>确认</Button>
+                              )}
+                              {alert.status === 'processing' && (
+                                <Button size="small" icon={<CloseOutlined />} loading={actionLoading === alert.id} onClick={() => handleCloseAlert(alert)}>已处置</Button>
+                              )}
+                            </Space>
+                          </div>
+                        );
+                      })}
+                    </Space>
+                  </div>
+                )}
               </Card>
-            ))}
+              );
+            })}
           </Space>
         </Card>
       )}
 
-      {/* Alerts */}
-      <Card size="small" title="告警记录">
-        {alerts.length === 0 ? (
-          <Empty description="暂无告警" />
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }} size={8}>
-            {alerts.map(alert => {
-              const st = ALERT_STATUS[alert.status] || { color: 'default', text: alert.status };
-              return (
-                <Card key={alert.id} size="small" style={{ borderLeft: `3px solid ${st.color === 'red' ? '#ff4d4f' : st.color === 'orange' ? '#faad14' : '#52c41a'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <Tag color={st.color}>{st.text}</Tag>
-                      <span style={{ fontWeight: 600, marginRight: 8 }}>{alert.room_id}</span>
-                      <span style={{ color: '#666' }}>{ALERT_TYPES[alert.alert_type] || alert.alert_type}</span>
-                    </div>
-                    <Space size={4}>
-                      {alert.status === 'new' && (
-                        <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => handleConfirmAlert(alert)}>确认</Button>
-                      )}
-                      {alert.status === 'processing' && (
-                        <Button size="small" icon={<CloseOutlined />} onClick={() => handleCloseAlert(alert)}>已处置</Button>
-                      )}
-                    </Space>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                    {alert.message} | {alert.created_at?.replace('T', ' ')}
-                  </div>
-                </Card>
-              );
-            })}
+      {/* 未关联任务的告警（patrol_id 为空或找不到对应任务） */}
+      {/* 告警详情 Modal */}
+      <Modal
+        open={!!selectedAlert}
+        onCancel={() => setSelectedAlert(null)}
+        footer={selectedAlert ? (
+          <Space>
+            {selectedAlert.status === 'new' && (
+              <Button type="primary" icon={<CheckOutlined />} loading={actionLoading === selectedAlert.id} onClick={() => handleConfirmAlert(selectedAlert)}>确认告警</Button>
+            )}
+            {selectedAlert.status === 'processing' && (
+              <Button icon={<CloseOutlined />} loading={actionLoading === selectedAlert.id} onClick={() => handleCloseAlert(selectedAlert)}>标记已处置</Button>
+            )}
+            <Button onClick={() => setSelectedAlert(null)}>关闭</Button>
           </Space>
+        ) : null}
+        title={selectedAlert ? `${ALERT_TYPES[selectedAlert.alert_type] || selectedAlert.alert_type} — ${selectedAlert.room_id}` : ''}
+        width={520}
+      >
+        {selectedAlert && (
+          <div>
+            {selectedAlert.photo ? (
+              <Image
+                src={`data:image/png;base64,${selectedAlert.photo}`}
+                style={{ width: '100%', borderRadius: 8, marginBottom: 16 }}
+              />
+            ) : (
+              <div style={{ width: '100%', height: 160, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                <PictureOutlined style={{ fontSize: 32, color: '#bbb' }} />
+                <span style={{ color: '#bbb', marginLeft: 8 }}>暂无图片</span>
+              </div>
+            )}
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item label="状态">
+                <Tag color={ALERT_STATUS[selectedAlert.status]?.color}>{ALERT_STATUS[selectedAlert.status]?.text || selectedAlert.status}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="区域">{selectedAlert.room_id}</Descriptions.Item>
+              <Descriptions.Item label="类型">{ALERT_TYPES[selectedAlert.alert_type] || selectedAlert.alert_type}</Descriptions.Item>
+              <Descriptions.Item label="置信度">{selectedAlert.confidence ? `${(selectedAlert.confidence * 100).toFixed(0)}%` : '—'}</Descriptions.Item>
+              <Descriptions.Item label="告警内容">{selectedAlert.message}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{selectedAlert.created_at?.replace('T', ' ')}</Descriptions.Item>
+              {selectedAlert.confirmed_at && (
+                <Descriptions.Item label="确认时间">{selectedAlert.confirmed_at?.replace('T', ' ')}</Descriptions.Item>
+              )}
+              {selectedAlert.closed_at && (
+                <Descriptions.Item label="处置时间">{selectedAlert.closed_at?.replace('T', ' ')}</Descriptions.Item>
+              )}
+            </Descriptions>
+          </div>
         )}
-      </Card>
+      </Modal>
     </div>
   );
 };

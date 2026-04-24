@@ -34,13 +34,15 @@ function normalizeMapData(raw: any): MapData {
   };
 }
 
-// Backend base URL — injected from .env via vite.config.ts define
-const API_BASE = window.location.port === String(__BACKEND_PORT__)
-  ? ''  // same origin, no prefix needed
-  : `http://${window.location.hostname}:${__BACKEND_PORT__}`;
+import { getBaseUrl } from '@/config';
+
+// Backend base URL — supports both standalone and Stardust Desktop embedded modes.
+const API_BASE = getBaseUrl();
 
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
+  // Cache latest state for late-subscribing components
+  private _latestRoomPatrolState: any = null;
   private topicCallbacks: Map<string, Set<(data: any) => void>> = new Map();
   private eventSource: EventSource | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,6 +114,7 @@ class ApiService {
               success: state.nav_status === 'succeeded',
               resultData: result,
               errorMessage: result.result_text || result.message || '',
+              failReason: state.nav_fail_reason || null,
             });
           }
         }
@@ -127,6 +130,8 @@ class ApiService {
 
         // Dispatch room patrol state
         if (state.room_patrol) {
+          state.room_patrol.nav_fail_reason = state.nav_fail_reason || null;
+          this._latestRoomPatrolState = state.room_patrol;
           this.emit('room-patrol-state', state.room_patrol);
         }
       } catch (e) {
@@ -175,7 +180,7 @@ class ApiService {
   }
 
   // Heavy topics polled via REST instead of SSE (too large for SSE)
-  private static HEAVY_TOPICS = new Set(['/map', '/scan', '/visualizer/mincoPath']);
+  private static HEAVY_TOPICS = new Set(['/scan', '/visualizer/mincoPath']);
   private pollingTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
 
   // ------ Topic Subscribe ------
@@ -275,6 +280,10 @@ class ApiService {
     this._post('/api/navigation/cancel', {}).catch(console.error);
   }
 
+  async getNavigationPath(): Promise<Array<{ x: number; y: number; yaw?: number }>> {
+    return this._get('/api/navigation/path');
+  }
+
   sendLocalNavigationGoal(pose: Pose): void {
     this._post('/api/navigation/local-go', {
       x: pose.x,
@@ -348,6 +357,18 @@ class ApiService {
     return this._post('/api/room-config/record-start', {});
   }
 
+  async addRoomWaypoint(roomId: string, waypointId: string, name: string, type: string = 'custom'): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints`, { waypoint_id: waypointId, name, type });
+  }
+
+  async deleteRoomWaypoint(roomId: string, waypointId: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}/delete`, {});
+  }
+
+  async renameRoomWaypoint(roomId: string, waypointId: string, name: string): Promise<{ success: boolean; message: string }> {
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}/rename`, { name });
+  }
+
   // ------ Room Patrol (巡房任务) ------
 
   async startRoomPatrol(taskConfig?: any): Promise<{ success: boolean; message: string }> {
@@ -356,6 +377,22 @@ class ApiService {
 
   async stopRoomPatrol(): Promise<{ success: boolean; message: string }> {
     return this._post('/api/room-patrol/stop', {});
+  }
+
+  async pauseRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/pause', {});
+  }
+
+  async resumeRoomPatrol(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/resume', {});
+  }
+
+  async advanceRoomPatrolStep(targetStepIndex: number = -1): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/advance', { target_step_index: targetStepIndex });
+  }
+
+  async skipRoomPatrolStep(stepIndex: number): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/skip-step', { step_index: stepIndex });
   }
 
   async getRoomPatrolStatus(): Promise<any> {
@@ -372,10 +409,19 @@ class ApiService {
 
   // ------ Alerts (告警) ------
 
-  async getAlerts(filter?: { status?: string; date?: string }): Promise<any[]> {
+  async acknowledgeFall(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/fall/ack', {});
+  }
+
+  async acknowledgeStuck(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/stuck/ack', {});
+  }
+
+  async getAlerts(filter?: { status?: string; date?: string; patrol_id?: string }): Promise<any[]> {
     const params = new URLSearchParams();
     if (filter?.status) params.set('status', filter.status);
     if (filter?.date) params.set('date', filter.date);
+    if (filter?.patrol_id) params.set('patrol_id', filter.patrol_id);
     const query = params.toString() ? `?${params}` : '';
     return this._get(`/api/alerts${query}`);
   }
@@ -396,6 +442,10 @@ class ApiService {
 
   async getPatrolRecord(date: string, recordId: string): Promise<any> {
     return this._get(`/api/patrol-records/${date}/${recordId}`);
+  }
+
+  async deletePatrolRecords(records: { id: string; date: string }[]): Promise<{ success: boolean; deleted: number; failed: number }> {
+    return this._post('/api/patrol-records/delete', { records });
   }
 
   // ------ Task Presets (任务预设) ------
@@ -440,8 +490,20 @@ class ApiService {
     return this._post('/api/meta/deactivate', {});
   }
 
-  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string }> {
+  async metaControl(service: 'loc' | 'nav' | 'detection', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
+    return this._post('/api/meta/control', { service, action });
+  }
+
+  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; fall_state: string }> {
     return this._get('/api/meta/status');
+  }
+
+  async getMetaServicesConfig(): Promise<{ services: Array<{ name: string; startup: boolean; config: Record<string, any> }> }> {
+    return this._get('/api/meta/services-config');
+  }
+
+  async updateMetaServicesConfig(services: Array<{ name: string; startup: boolean; config: Record<string, any> }>): Promise<{ success: boolean; message?: string }> {
+    return this._post('/api/meta/services-config', { services });
   }
 
   // ------ Custom Step Types (自定义步骤类型) ------
@@ -498,8 +560,8 @@ class ApiService {
     return this._post('/api/localization/shutdown', {});
   }
 
-  async stopMapping(): Promise<void> {
-    await this.stopLocalization();
+  async stopMapping(): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/localization/stop-mapping', {});
   }
 
   subscribeLocalizationStatus(callback: (status: any) => void): () => void {
@@ -656,6 +718,10 @@ class ApiService {
       this.listeners.set(event, new Set());
     }
     this.listeners.get(event)!.add(callback);
+    // Replay latest cached state for late-subscribing components
+    if (event === 'room-patrol-state' && this._latestRoomPatrolState) {
+      callback(this._latestRoomPatrolState);
+    }
   }
 
   off(event: string, callback: (data: any) => void) {

@@ -20,12 +20,13 @@ import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { MapData, Pose, RoomConfig as RoomConfigType, RoomPatrolConfig } from '@/types';
 
-// 点位类型定义
-const WAYPOINT_TYPES = [
-  { key: 'door_outside', label: '门外', color: '#1890ff' },
-  { key: 'door_inside', label: '门内', color: '#52c41a' },
-  { key: 'bed_check', label: '床位', color: '#ff4d4f' },
-] as const;
+// 点位颜色映射
+const WAYPOINT_COLORS: Record<string, string> = {
+  door_outside: '#1890ff',
+  door_inside: '#52c41a',
+  bed_check: '#ff4d4f',
+  custom: '#722ed1',
+};
 
 export const RoomConfig: React.FC = () => {
   const navigate = useNavigate();
@@ -36,7 +37,7 @@ export const RoomConfig: React.FC = () => {
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 新建房间 Modal
+  // 新建区域 Modal
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newRoomId, setNewRoomId] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
@@ -94,17 +95,17 @@ export const RoomConfig: React.FC = () => {
           const mapData = await apiService.loadMap(name);
           if (mapData) setCurrentMap(mapData);
         } catch (e) {
-          console.warn('[房间配置] 加载地图失败:', e);
+          console.warn('[区域配置] 加载地图失败:', e);
         }
       }
     });
     return () => unsubscribe();
   }, [connectionStatus]);
 
-  // 新建房间
+  // 新建区域
   const handleAddRoom = async () => {
     if (!newRoomId.trim()) {
-      message.error('请输入房间号');
+      message.error('请输入区域号');
       return;
     }
     const result = await apiService.addRoom(
@@ -112,7 +113,7 @@ export const RoomConfig: React.FC = () => {
       newRoomName.trim() || `${newRoomId.trim()}室`,
     );
     if (result.success) {
-      message.success(`已添加房间 ${newRoomId}`);
+      message.success(`已添加区域 ${newRoomId}`);
       setAddModalVisible(false);
       setNewRoomId('');
       setNewRoomName('');
@@ -122,15 +123,15 @@ export const RoomConfig: React.FC = () => {
     }
   };
 
-  // 删除房间
+  // 删除区域
   const handleDeleteRoom = (roomId: string) => {
     Modal.confirm({
-      title: `删除房间 ${roomId}？`,
-      content: '删除后该房间的所有点位数据将丢失',
+      title: `删除区域 ${roomId}？`,
+      content: '删除后该区域的所有点位数据将丢失',
       onOk: async () => {
         const result = await apiService.deleteRoom(roomId);
         if (result.success) {
-          message.success(`已删除房间 ${roomId}`);
+          message.success(`已删除区域 ${roomId}`);
           loadConfig();
         } else {
           message.error(result.message);
@@ -222,15 +223,17 @@ export const RoomConfig: React.FC = () => {
   if (config) {
     if (config.start_position) allWaypoints.push(config.start_position);
     for (const room of config.rooms) {
-      if (room.door_outside) allWaypoints.push(room.door_outside);
-      if (room.door_inside) allWaypoints.push(room.door_inside);
-      if (room.bed_check) allWaypoints.push(room.bed_check);
+      for (const wp of (room.waypoints || [])) {
+        if (wp.pose) allWaypoints.push(wp.pose);
+      }
     }
   }
 
-  // 判断房间是否就绪
-  const isRoomReady = (room: RoomConfigType) =>
-    room.door_outside && room.door_inside && room.bed_check;
+  // 判断区域是否就绪
+  const isRoomReady = (room: RoomConfigType) => {
+    const wps = room.waypoints || [];
+    return wps.length > 0 && wps.some(wp => wp.pose !== null);
+  };
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -349,13 +352,13 @@ export const RoomConfig: React.FC = () => {
             )}
           </Card>
 
-          {/* 房间列表 */}
+          {/* 区域列表 */}
           <div style={{ fontSize: '14px', fontWeight: 600, color: '#333' }}>
-            房间列表 ({config?.rooms.length ?? 0})
+            区域列表 ({config?.rooms.length ?? 0})
           </div>
 
           {config?.rooms.length === 0 && (
-            <Empty description="暂无房间，点击下方按钮添加" style={{ padding: '20px 0' }} />
+            <Empty description="暂无区域，点击下方按钮添加" style={{ padding: '20px 0' }} />
           )}
 
           {config?.rooms.map((room) => (
@@ -372,7 +375,7 @@ export const RoomConfig: React.FC = () => {
                       <Tag color="orange" style={{ marginLeft: 8, fontSize: '11px' }}>未完成</Tag>
                     )}
                   </span>
-                  <Tooltip title="删除房间">
+                  <Tooltip title="删除区域">
                     <Button
                       type="text"
                       size="small"
@@ -384,11 +387,11 @@ export const RoomConfig: React.FC = () => {
                 </div>
               }
             >
-              {WAYPOINT_TYPES.map(({ key, label, color }) => {
-                const pose = room[key as keyof RoomConfigType] as Pose | null;
+              {(room.waypoints || []).map((wp: any) => {
+                const color = WAYPOINT_COLORS[wp.type] || WAYPOINT_COLORS.custom;
                 return (
                   <div
-                    key={key}
+                    key={wp.id}
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -399,25 +402,25 @@ export const RoomConfig: React.FC = () => {
                   >
                     <span style={{ fontSize: '13px' }}>
                       <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6 }} />
-                      {label}
+                      {wp.name}
                     </span>
-                    {pose ? (
+                    {wp.pose ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                          ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}, {(pose.theta * 180 / Math.PI).toFixed(1)}°)
+                          ({wp.pose.x.toFixed(2)}, {wp.pose.y.toFixed(2)}, {(wp.pose.theta * 180 / Math.PI).toFixed(1)}°)
                         </span>
                         <Button
                           size="small"
                           type="link"
                           icon={<EditOutlined />}
                           style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => openEditModal(room.room_id, key, `${room.room_name} ${label}`, pose)}
+                          onClick={() => openEditModal(room.room_id, wp.id, `${room.room_name} ${wp.name}`, wp.pose)}
                         />
                         <Button
                           size="small"
                           type="link"
                           style={{ fontSize: '11px', padding: 0 }}
-                          onClick={() => handleRecord(room.room_id, key)}
+                          onClick={() => handleRecord(room.room_id, wp.id)}
                           loading={loading}
                         >
                           重录
@@ -429,7 +432,7 @@ export const RoomConfig: React.FC = () => {
                         type="primary"
                         ghost
                         icon={<AimOutlined />}
-                        onClick={() => handleRecord(room.room_id, key)}
+                        onClick={() => handleRecord(room.room_id, wp.id)}
                         loading={loading}
                         disabled={!robotPose}
                       >
@@ -442,7 +445,7 @@ export const RoomConfig: React.FC = () => {
             </Card>
           ))}
 
-          {/* 新建房间按钮 */}
+          {/* 新建区域按钮 */}
           <Button
             type="dashed"
             block
@@ -450,14 +453,14 @@ export const RoomConfig: React.FC = () => {
             onClick={() => setAddModalVisible(true)}
             style={{ marginTop: '4px' }}
           >
-            新建房间
+            新建区域
           </Button>
         </div>
       </div>
 
-      {/* 新建房间 Modal */}
+      {/* 新建区域 Modal */}
       <Modal
-        title="新建房间"
+        title="新建区域"
         open={addModalVisible}
         onOk={handleAddRoom}
         onCancel={() => { setAddModalVisible(false); setNewRoomId(''); setNewRoomName(''); }}
@@ -466,7 +469,7 @@ export const RoomConfig: React.FC = () => {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>房间号 *</div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域号 *</div>
             <Input
               placeholder="如: 101"
               value={newRoomId}
@@ -475,7 +478,7 @@ export const RoomConfig: React.FC = () => {
             />
           </div>
           <div>
-            <div style={{ marginBottom: 4, fontSize: '13px' }}>房间名称（可选）</div>
+            <div style={{ marginBottom: 4, fontSize: '13px' }}>区域名称（可选）</div>
             <Input
               placeholder="如: 101室（留空则自动生成）"
               value={newRoomName}

@@ -9,9 +9,10 @@ const { TextArea } = Input;
 const PRESET_COLORS = ['#1890ff', '#52c41a', '#ff4d4f', '#faad14', '#722ed1', '#eb2f96', '#13c2c2', '#fa8c16'];
 
 const ACTION_TYPE_OPTIONS = [
-  { value: 'ros_service', label: 'ROS Service' },
-  { value: 'ros_topic', label: 'ROS Topic' },
+  { value: 'service', label: 'ROS Service' },
+  { value: 'topic', label: 'ROS Topic' },
   { value: 'wait', label: '等待' },
+  { value: 'meta', label: 'Meta 服务' },
 ];
 
 const PARAM_TYPE_OPTIONS = [
@@ -56,7 +57,7 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
   const handleEdit = (def: CustomStepDefinition) => {
     setEditing({ ...def, parameters: def.parameters.map(p => ({ ...p })) });
     setIsNew(false);
-    const json = def.action.request || def.action.message || {};
+    const json = def.action.request || def.action.message || def.action.meta_kwargs || {};
     setRequestJson(JSON.stringify(json, null, 2));
   };
 
@@ -90,6 +91,8 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
       def.action = { ...def.action, request: parsedJson };
     } else if (def.action.type === 'topic') {
       def.action = { ...def.action, message: parsedJson };
+    } else if (def.action.type === 'meta') {
+      def.action = { ...def.action, meta_kwargs: parsedJson };
     }
 
     const result = await apiService.saveCustomStepType(def);
@@ -277,6 +280,41 @@ export const CustomStepManager: React.FC<Props> = ({ open, onClose }) => {
                   <div style={{ fontSize: 12, marginBottom: 4 }}>默认等待时长 (秒)</div>
                   <InputNumber value={editing.action.duration ?? 1} onChange={v => updateAction({ duration: v ?? 1 })} min={0} style={{ width: '100%' }} />
                 </div>
+              )}
+
+              {editing.action.type === 'meta' && (
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>Meta 服务 *</div>
+                      <Input
+                        value={editing.action.meta_service || ''}
+                        onChange={e => updateAction({ meta_service: e.target.value })}
+                        placeholder="localization / navigation / ..."
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>方法名 *</div>
+                      <Input
+                        value={editing.action.meta_method || ''}
+                        onChange={e => updateAction({ meta_method: e.target.value })}
+                        placeholder="get_status / start_mapping / ..."
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Kwargs JSON（支持 {'{{param}}'} 占位符）</div>
+                    <TextArea rows={3} value={requestJson} onChange={e => setRequestJson(e.target.value)} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Switch
+                      size="small"
+                      checked={editing.action.deactivate_after === true}
+                      onChange={v => updateAction({ deactivate_after: v })}
+                    />
+                    <span style={{ fontSize: 12 }}>完成后停用此服务（默认值，可在任务编排中覆盖）</span>
+                  </div>
+                </>
               )}
             </Card>
 

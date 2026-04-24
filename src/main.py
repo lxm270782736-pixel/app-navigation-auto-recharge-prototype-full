@@ -8,6 +8,7 @@ Serves the built frontend SPA from ui/dist/ when available.
 import json
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -26,11 +27,15 @@ from sse_starlette.sse import EventSourceResponse
 
 from .logic import BusinessLogic
 
-app = FastAPI(title="Navigation App")
+# Support reverse-proxy path prefix for Stardust Desktop embedding.
+# Set APP_ROOT_PATH="/apps/navigation" when running behind a gateway.
+root_path = os.environ.get("APP_ROOT_PATH", "")
+app = FastAPI(title="Navigation App", root_path=root_path)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,13 +48,21 @@ logic = BusinessLogic()
 
 @app.get("/api/state")
 async def state_stream():
-    """Push full state every 500ms — includes raw ROS topic data."""
+    """Push full state at adaptive interval (500ms active, 2s idle)."""
+    seen_alert_ids: set = set()
+
     async def generate():
         loop = asyncio.get_running_loop()
         while True:
-            state = await loop.run_in_executor(None, logic.get_state)
+            state = await loop.run_in_executor(None, lambda: logic.get_state(seen_alert_ids))
             yield {"data": json.dumps(state)}
-            await asyncio.sleep(0.5)
+            # Adaptive interval: 500ms when active, 2s when idle
+            active = (
+                state.get("nav_status") not in (None, "idle")
+                or state.get("patrol", {}).get("active")
+                or state.get("room_patrol", {}).get("active")
+            )
+            await asyncio.sleep(0.5 if active else 2.0)
     return EventSourceResponse(generate())
 
 
@@ -185,6 +198,11 @@ def navigate_to(req: NavigateRequest):
     return logic.navigate_to(req.x, req.y, req.theta, req.config, req.tasks)
 
 
+@app.get("/api/navigation/path")
+def get_navigation_path():
+    return logic.get_navigation_path()
+
+
 @app.post("/api/navigation/cancel")
 def cancel_navigation():
     return logic.cancel_navigation()
@@ -262,11 +280,12 @@ def save_room_config(req: SaveRoomConfigRequest):
 class AddRoomRequest(BaseModel):
     room_id: str
     room_name: str
+    waypoint_template: Optional[list] = None
 
 
 @app.post("/api/room-config/rooms")
 def add_room(req: AddRoomRequest):
-    return logic.add_room(req.room_id, req.room_name)
+    return logic.add_room(req.room_id, req.room_name, req.waypoint_template)
 
 
 @app.delete("/api/room-config/rooms/{room_id}")
@@ -288,6 +307,31 @@ def record_start_position():
     return logic.record_room_waypoint("", "start_position")
 
 
+class AddWaypointRequest(BaseModel):
+    waypoint_id: str
+    name: str
+    type: str = "custom"
+
+
+@app.post("/api/room-config/rooms/{room_id}/waypoints")
+def add_room_waypoint(room_id: str, req: AddWaypointRequest):
+    return logic.add_room_waypoint(room_id, req.waypoint_id, req.name, req.type)
+
+
+@app.post("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}/delete")
+def delete_room_waypoint(room_id: str, waypoint_id: str):
+    return logic.delete_room_waypoint(room_id, waypoint_id)
+
+
+class RenameWaypointRequest(BaseModel):
+    name: str
+
+
+@app.post("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}/rename")
+def rename_room_waypoint(room_id: str, waypoint_id: str, req: RenameWaypointRequest):
+    return logic.rename_room_waypoint(room_id, waypoint_id, req.name)
+
+
 # ==================== 巡房任务 ====================
 
 
@@ -303,6 +347,34 @@ def start_room_patrol(req: StartRoomPatrolRequest):
 @app.post("/api/room-patrol/stop")
 def stop_room_patrol():
     return logic.stop_room_patrol()
+
+
+@app.post("/api/room-patrol/pause")
+def pause_room_patrol():
+    return logic.pause_room_patrol()
+
+
+@app.post("/api/room-patrol/resume")
+def resume_room_patrol():
+    return logic.resume_room_patrol()
+
+
+class AdvanceStepRequest(BaseModel):
+    target_step_index: int = -1
+
+
+@app.post("/api/room-patrol/advance")
+def advance_room_patrol_step(req: AdvanceStepRequest):
+    return logic.advance_room_patrol_step(req.target_step_index)
+
+
+class SkipStepRequest(BaseModel):
+    step_index: int = -1
+
+
+@app.post("/api/room-patrol/skip-step")
+def skip_room_patrol_step(req: SkipStepRequest):
+    return logic.skip_room_patrol_step(req.step_index)
 
 
 @app.get("/api/room-patrol/status")
@@ -324,12 +396,30 @@ def save_task_config(req: SaveTaskConfigRequest):
     return logic.save_task_config(req.config)
 
 
+# ==================== 跌倒检测 API ====================
+
+
+@app.post("/api/fall/ack")
+def acknowledge_fall():
+    """护工点击「已处理」，清除跌倒事件"""
+    return logic.acknowledge_fall()
+
+
+@app.post("/api/stuck/ack")
+def acknowledge_stuck():
+    """护工点击「已处理」，清除机器人卡住事件"""
+    return logic.acknowledge_stuck()
+
+
 # ==================== 告警 ====================
 
 
 @app.get("/api/alerts")
-def get_alerts(status: Optional[str] = None, date: Optional[str] = None):
-    return logic.get_alerts(status=status, date=date)
+def get_alerts(status: Optional[str] = None, date: Optional[str] = None, patrol_id: Optional[str] = None):
+    alerts = logic.get_alerts(status=status, date=date)
+    if patrol_id:
+        alerts = [a for a in alerts if a.get("patrol_id") == patrol_id]
+    return alerts
 
 
 @app.post("/api/alerts/{date}/{alert_id}/confirm")
@@ -353,6 +443,14 @@ def get_patrol_records():
 @app.get("/api/patrol-records/{date}/{record_id}")
 def get_patrol_record(date: str, record_id: str):
     return logic.get_patrol_record(record_id, date)
+
+
+class DeletePatrolRecordsRequest(BaseModel):
+    records: list[dict]  # [{"id": str, "date": str}, ...]
+
+@app.post("/api/patrol-records/delete")
+def delete_patrol_records(req: DeletePatrolRecordsRequest):
+    return logic.delete_patrol_records(req.records)
 
 
 # ==================== 底盘控制 ====================
@@ -482,7 +580,7 @@ def delete_custom_step_type(step_id: str):
 
 @app.post("/api/meta/start")
 def start_meta():
-    """一键启动：connect → configure → activate"""
+    """一键启动：connect → configure → activate all"""
     return logic.start_meta()
 
 
@@ -501,9 +599,46 @@ def deactivate_meta():
     return logic.deactivate_meta()
 
 
+class MetaControlRequest(BaseModel):
+    service: str  # loc | nav | detection
+    action: str   # start | stop
+
+
+@app.post("/api/meta/control")
+def meta_control(req: MetaControlRequest):
+    """单服务控制。service: loc|nav|detection, action: start|stop"""
+    _MAP = {
+        ("loc",       "start"): logic.start_localization,
+        ("loc",       "stop"):  logic.stop_localization,
+        ("nav",       "start"): logic.start_navigation,
+        ("nav",       "stop"):  logic.stop_navigation,
+        ("detection", "start"): logic.start_detection,
+        ("detection", "stop"):  logic.stop_detection,
+    }
+    fn = _MAP.get((req.service, req.action))
+    if fn is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Unknown service/action: {req.service}/{req.action}")
+    return fn()
+
+
 @app.get("/api/meta/status")
 def meta_status():
     return logic.get_meta_status()
+
+
+@app.get("/api/meta/services-config")
+def get_meta_services_config():
+    return logic.get_services_config()
+
+
+class ServicesConfigRequest(BaseModel):
+    services: list
+
+
+@app.post("/api/meta/services-config")
+def update_meta_services_config(req: ServicesConfigRequest):
+    return logic.update_services_config(req.services)
 
 
 # ==================== 前端静态文件 ====================
@@ -515,6 +650,9 @@ if _UI_DIR.exists():
     _ASSETS_DIR = _UI_DIR / "assets"
     if _ASSETS_DIR.exists():
         app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+
+    # Expose lib build (component.js / style.css) for Stardust Desktop embed (uiType: tsx)
+    app.mount("/ui/dist", StaticFiles(directory=str(_UI_DIR)), name="ui-dist")
 
     # SPA catch-all: non-API routes serve index.html
     @app.get("/{path:path}")
@@ -541,4 +679,9 @@ if _UI_DIR.exists():
 if __name__ == "__main__":
     import uvicorn
     from src.config import BACKEND_PORT
-    uvicorn.run("src.main:app", host="0.0.0.0", port=BACKEND_PORT)
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["formatters"]["access"]["fmt"] = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    uvicorn.run("src.main:app", host="0.0.0.0", port=BACKEND_PORT, log_config=log_config)

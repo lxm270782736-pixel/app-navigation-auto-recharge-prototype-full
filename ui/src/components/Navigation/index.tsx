@@ -220,27 +220,36 @@ export const Navigation: React.FC = () => {
     };
   }, [connectionStatus]);
 
-  // 订阅导航规划路径
+  // 轮询导航规划路径（通过后端 meta.astribot_navigation.get_navigation_path）
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       setNavigationPath([]);
       return;
     }
 
-    const unsubscribe = apiService.subscribeTopic<any>(
-      '/visualizer/mincoPath',
-      MESSAGE_TYPES.PATH,
-      (pathMsg) => {
-        const points: PathPoint[] = pathMsg.poses.map((ps: any) => ({
-          x: ps.pose.position.x,
-          y: ps.pose.position.y,
-        }));
+    let cancelled = false;
+
+    const pollPath = async () => {
+      try {
+        const path = await apiService.getNavigationPath();
+        if (cancelled) return;
+        const points: PathPoint[] = Array.isArray(path)
+          ? path
+              .filter((p: any) => typeof p?.x === 'number' && typeof p?.y === 'number')
+              .map((p: any) => ({ x: p.x, y: p.y }))
+          : [];
         setNavigationPath(points);
+      } catch {
+        if (!cancelled) setNavigationPath([]);
       }
-    );
+    };
+
+    pollPath();
+    const timer = window.setInterval(pollPath, 500);
 
     return () => {
-      unsubscribe();
+      cancelled = true;
+      window.clearInterval(timer);
     };
   }, [connectionStatus]);
 

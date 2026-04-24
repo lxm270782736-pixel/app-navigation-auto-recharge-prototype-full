@@ -81,6 +81,12 @@ class MockROSBridge:
         self.localization_result = None  # 重定位结果
 
         self.control_type = "twist"
+        # 跌倒检测模拟状态
+        self._fall_detected = False
+        self._fall_location = None
+        self._fall_confidence = 0.0
+        self._fall_acknowledged = False
+        self._fall_simulation_enabled = True
         # 从文件加载已保存的地图
         self.load_maps_from_disk()
 
@@ -902,6 +908,59 @@ class MockROSBridge:
                 }
                 print(f"✓ 定位服务: 查询当前地图 - 未设置")
 
+
+        # ========== Meta 服务模拟 ==========
+        elif service == "/meta.fall_detection/get_fall_status":
+            """Meta fall_detection 服务：获取全局跌倒状态（全任务周期监测）"""
+
+            # 如果已确认，清除跌倒
+            if self._fall_acknowledged:
+                if self._fall_detected:
+                    print(f"[FallDetection] Fall acknowledged at {self._fall_location}")
+                self._fall_detected = False
+                self._fall_acknowledged = False
+
+            # 模拟跌倒检测 (10% 概率)
+            if self._fall_simulation_enabled and not self._fall_detected:
+                if random.random() < 0.1:
+                    self._fall_detected = True
+                    # 位置由服务自行检测（模拟 VLM 识别到的位置）
+                    self._fall_location = f"room_{random.randint(100, 109)}"
+                    self._fall_confidence = random.uniform(0.85, 0.98)
+                    print(f"[FallDetection] FALL DETECTED at {self._fall_location}")
+
+            response["values"] = {
+                "success": True,
+                "is_fall": self._fall_detected,
+                "location": self._fall_location,
+                "confidence": self._fall_confidence,
+                "acknowledged": self._fall_acknowledged,
+            }
+
+        elif service == "/meta.fall_detection/ack_fall":
+            """Meta fall_detection 服务：确认跌倒已处理"""
+            if self._fall_detected:
+                print(f"[FallDetection] Fall acknowledged at {self._fall_location}")
+            self._fall_acknowledged = True
+            response["values"] = {"success": True, "message": "Fall acknowledged"}
+
+        elif service == "/meta.fall_detection/trigger_fall":
+            """Meta fall_detection 服务：手动触发跌倒（测试用）"""
+            location = args.get("location", "room_101")
+            confidence = args.get("confidence", 0.9)
+            self._fall_detected = True
+            self._fall_location = location
+            self._fall_confidence = confidence
+            print(f"[FallDetection] Manual fall triggered at {location}")
+            response["values"] = {"success": True, "location": location}
+
+        elif service == "/meta.fall_detection/set_simulation_mode":
+            """Meta fall_detection 服务：设置模拟模式"""
+            enabled = args.get("enabled", True)
+            self._fall_simulation_enabled = enabled
+            mode = "enabled" if enabled else "disabled"
+            print(f"[FallDetection] Simulation mode: {mode}")
+            response["values"] = {"success": True, "mode": mode}
         await websocket.send(json.dumps(response))
 
     async def publish_map(self, websocket):

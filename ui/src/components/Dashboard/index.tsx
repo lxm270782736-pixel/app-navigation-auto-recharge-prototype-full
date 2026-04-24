@@ -283,7 +283,7 @@ export const Dashboard: React.FC = () => {
           </Card>
         </Col>
 
-        {/* 巡房任务 */}
+        {/* 导览任务 */}
         <Col xs={24} md={12} lg={8}>
           <Card
             hoverable
@@ -292,9 +292,9 @@ export const Dashboard: React.FC = () => {
           >
             <div style={{ textAlign: 'center', paddingTop: '20px' }}>
               <EnvironmentOutlined style={{ fontSize: '48px', color: '#eb2f96' }} />
-              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>巡房任务</h3>
+              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>导览任务</h3>
               <p style={{ color: '#999', marginTop: '8px' }}>
-                点位录制、任务编排、巡房下发
+                点位录制、任务编排、任务下发
               </p>
             </div>
           </Card>

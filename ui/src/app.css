@@ -27,7 +27,7 @@ body {
   overflow: auto;
 }
 
-/* CSS variables for mock mode (prod provided by host) */
+/* CSS variables for mock mode (prod provided by host)
 :root {
   --background: 0 0% 100%;
   --foreground: 240 10% 3.9%;
@@ -47,4 +47,4 @@ body {
   --input: 240 5.9% 90%;
   --ring: 262 80% 50%;
   --radius: 0.5rem;
-}
+} */

@@ -139,8 +139,14 @@ export const MapManager: React.FC = () => {
   };
 
   const handleEditMap = (map: MapData) => {
-    // 传递完整的地图数据，避免在编辑器中重复加载
-    navigate(`/map-editor/${map.id}`, { state: { mapData: map } });
+    // 从当前 maps 状态取最新数据（loadFullMapData 可能已更新）
+    const latestMap = maps.find(m => m.id === map.id) ?? map;
+    if (!latestMap.data?.length) {
+      // 数据还没加载完，直接让编辑器自己从后端加载
+      navigate(`/map-editor/${map.id}`);
+      return;
+    }
+    navigate(`/map-editor/${map.id}`, { state: { mapData: latestMap } });
   };
 
   const handleApplyMap = async (map: MapData) => {
