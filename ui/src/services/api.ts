@@ -358,7 +358,7 @@ class ApiService {
   }
 
   async deleteRoomWaypoint(roomId: string, waypointId: string): Promise<{ success: boolean; message: string }> {
-    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}`, {});
+    return this._post(`/api/room-config/rooms/${roomId}/waypoints/${waypointId}/delete`, {});
   }
 
   async renameRoomWaypoint(roomId: string, waypointId: string, name: string): Promise<{ success: boolean; message: string }> {

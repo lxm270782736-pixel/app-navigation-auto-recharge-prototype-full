@@ -313,7 +313,7 @@ def add_room_waypoint(room_id: str, req: AddWaypointRequest):
     return logic.add_room_waypoint(room_id, req.waypoint_id, req.name, req.type)
 
 
-@app.delete("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}")
+@app.post("/api/room-config/rooms/{room_id}/waypoints/{waypoint_id}/delete")
 def delete_room_waypoint(room_id: str, waypoint_id: str):
     return logic.delete_room_waypoint(room_id, waypoint_id)
 
