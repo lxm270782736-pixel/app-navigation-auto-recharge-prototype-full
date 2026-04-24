@@ -63,6 +63,10 @@ class BusinessLogic(
         self._step_advance_event.set()
         # Skip current step signal
         self._skip_step_requested = False
+        # Jump-to-step target: when set, patrol loop jumps step_idx to this value
+        self._step_jump_target: int = -1
+        # Whether the last step failed (for manual advance UI)
+        self._last_step_failed: bool = False
 
         # Shared storage (AlertMixin uses this; initialized here to avoid lazy-init race)
         self._storage = JsonDayStorage()
@@ -247,12 +251,14 @@ class BusinessLogic(
                     pass
         return {"success": True, "message": "机器人卡住事件已确认"}
 
-    def advance_room_patrol_step(self) -> dict:
-        """手动模式下推进到下一步。"""
+    def advance_room_patrol_step(self, target_step_index: int = -1) -> dict:
+        """手动模式下推进。target_step_index >= 0 时跳转到指定步骤。"""
         if not self._room_patrol_active:
             return {"success": False, "message": "No active patrol"}
         if self._step_advance_mode != "manual":
             return {"success": False, "message": "Not in manual mode"}
+        if target_step_index >= 0:
+            self._step_jump_target = target_step_index
         self._step_advance_event.set()
         return {"success": True, "message": "Step advanced"}
 

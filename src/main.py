@@ -354,9 +354,13 @@ def resume_room_patrol():
     return logic.resume_room_patrol()
 
 
+class AdvanceStepRequest(BaseModel):
+    target_step_index: int = -1
+
+
 @app.post("/api/room-patrol/advance")
-def advance_room_patrol_step():
-    return logic.advance_room_patrol_step()
+def advance_room_patrol_step(req: AdvanceStepRequest):
+    return logic.advance_room_patrol_step(req.target_step_index)
 
 
 class SkipStepRequest(BaseModel):

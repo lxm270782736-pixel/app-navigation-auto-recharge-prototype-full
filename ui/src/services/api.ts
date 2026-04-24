@@ -383,8 +383,8 @@ class ApiService {
     return this._post('/api/room-patrol/resume', {});
   }
 
-  async advanceRoomPatrolStep(): Promise<{ success: boolean; message: string }> {
-    return this._post('/api/room-patrol/advance', {});
+  async advanceRoomPatrolStep(targetStepIndex: number = -1): Promise<{ success: boolean; message: string }> {
+    return this._post('/api/room-patrol/advance', { target_step_index: targetStepIndex });
   }
 
   async skipRoomPatrolStep(stepIndex: number): Promise<{ success: boolean; message: string }> {

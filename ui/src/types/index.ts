@@ -373,5 +373,6 @@ export interface RoomPatrolState {
   new_alerts?: Alert[];
   advance_mode?: 'auto' | 'manual';
   awaiting_advance?: boolean;
+  last_step_failed?: boolean;
   nav_fail_reason?: string | null;
 }

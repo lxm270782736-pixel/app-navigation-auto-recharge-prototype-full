@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Button, Card, Progress, Tag, message, Space, Badge, Steps, Select, Modal, notification, Segmented } from 'antd';
+import { Button, Card, Progress, Tag, message, Space, Badge, Select, Modal, notification, Segmented } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -281,10 +281,10 @@ export const TaskDispatchTab: React.FC = () => {
     }
   };
 
-  const handleAdvance = async () => {
+  const handleAdvance = async (targetStepIndex: number = -1) => {
     setAdvancing(true);
     try {
-      const result = await apiService.advanceRoomPatrolStep();
+      const result = await apiService.advanceRoomPatrolStep(targetStepIndex);
       if (!result.success) message.error(result.message);
     } finally {
       setAdvancing(false);
@@ -490,7 +490,7 @@ export const TaskDispatchTab: React.FC = () => {
                   type="primary"
                   block
                   icon={<StepForwardOutlined />}
-                  onClick={handleAdvance}
+                  onClick={() => handleAdvance()}
                   loading={advancing}
                 >
                   下一步
@@ -590,7 +590,7 @@ export const TaskDispatchTab: React.FC = () => {
         {/* Room progress list with step detail — 选中任务后即显示，执行时显示进度 */}
         {displayRoomIds.length > 0 && (
           (() => {
-            const isRunning = patrolState?.status === 'running';
+            const isRunning = patrolState?.active ?? false;
             const title = isRunning ? "区域进度" : "任务预览";
             const roomList = isRunning
               ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
@@ -631,43 +631,76 @@ export const TaskDispatchTab: React.FC = () => {
 
                     {/* Step progress — 执行中显示进度，预览时展开所有步骤 */}
                     {steps.length > 0 && (isCurrent || !isRunning) && (
-                      <Steps
-                        size="small"
-                        direction="vertical"
-                        current={isCurrent && currentStepIdx >= 0 ? currentStepIdx : -1}
-                        style={{ marginTop: 4 }}
-                        items={steps.map((step: any, si: number) => {
+                      <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {steps.map((step: any, si: number) => {
+                          const isAwaiting = isCurrent && (patrolState?.awaiting_advance ?? false);
+                          const lastStepFailed = isAwaiting && (patrolState?.last_step_failed ?? false);
                           let status: 'wait' | 'process' | 'finish' | 'error' = 'wait';
                           if (isCurrent) {
-                            if (si < currentStepIdx) status = 'finish';
-                            else if (si === currentStepIdx) status = 'process';
+                            if (isAwaiting) {
+                              if (si < currentStepIdx) status = 'finish';
+                              else if (si === currentStepIdx) status = lastStepFailed ? 'error' : 'finish';
+                            } else {
+                              if (si < currentStepIdx) status = 'finish';
+                              else if (si === currentStepIdx) status = 'process';
+                            }
                           }
 
                           const label = stepLabels[step.type] || step.type;
                           const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';
                           const isCurrentStep = isCurrent && si === currentStepIdx && status === 'process';
+                          const canJump = isAwaiting && si !== currentStepIdx + 1;
 
-                          return {
-                            title: (
-                              <span style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          const bgColor = status === 'process' ? '#e6f7ff' : status === 'error' ? '#fff2f0' : status === 'finish' ? '#f6ffed' : 'transparent';
+                          const borderColor = status === 'process' ? '#1890ff' : status === 'error' ? '#ff4d4f' : status === 'finish' ? '#b7eb8f' : '#f0f0f0';
+                          const icon = status === 'finish' ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 14 }} />
+                            : status === 'error' ? <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 14 }} />
+                            : status === 'process' ? <LoadingOutlined style={{ color: '#1890ff', fontSize: 14 }} />
+                            : <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #d9d9d9', boxSizing: 'border-box' }} />;
+
+                          return (
+                            <div
+                              key={si}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '5px 8px', borderRadius: 4,
+                                border: `1px solid ${borderColor}`,
+                                background: bgColor,
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              {icon}
+                              <span style={{
+                                fontSize: 12, flex: 1, fontWeight: isCurrentStep ? 600 : 400,
+                                color: status === 'error' ? '#ff4d4f' : status === 'wait' ? '#999' : undefined,
+                              }}>
+                                <span style={{ color: '#bbb', marginRight: 4 }}>{si + 1}.</span>
                                 {label}{suffix}
-                                {isCurrentStep && (
-                                  <Button
-                                    size="small"
-                                    type="link"
-                                    style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
-                                    loading={skipping}
-                                    onClick={(e) => { e.stopPropagation(); handleSkipStep(); }}
-                                  >
-                                    跳过
-                                  </Button>
-                                )}
                               </span>
-                            ),
-                            status,
-                          };
+                              {isCurrentStep && (
+                                <Button
+                                  size="small" type="link" danger
+                                  style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
+                                  loading={skipping}
+                                  onClick={(e) => { e.stopPropagation(); handleSkipStep(); }}
+                                >
+                                  跳过
+                                </Button>
+                              )}
+                              {canJump && (
+                                <Button
+                                  size="small" type="link"
+                                  style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
+                                  loading={advancing}
+                                  onClick={(e) => { e.stopPropagation(); handleAdvance(si); }}
+                                >
+                                  {si <= currentStepIdx ? '重新执行' : '从此执行'}
+                                </Button>
+                              )}
+                            </div>
+                          );
                         })}
-                      />
+                      </div>
                     )}
                   </div>
                 );

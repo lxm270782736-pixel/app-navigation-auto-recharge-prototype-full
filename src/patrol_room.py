@@ -561,6 +561,7 @@ class RoomPatrolMixin:
 
         self._step_advance_mode = advance_mode
         self._step_advance_event.set()
+        self._step_jump_target = -1
 
         with self._lock:
             self._room_patrol_active = True
@@ -716,6 +717,8 @@ class RoomPatrolMixin:
                 getattr(self, '_step_advance_mode', 'auto') == "manual"
                 and self._room_patrol_status == "paused_manual_advance"
             )
+            if status["awaiting_advance"]:
+                status["last_step_failed"] = getattr(self, '_last_step_failed', False)
             return status
 
     # ------ Patrol execution (background thread) ------
@@ -882,9 +885,11 @@ class RoomPatrolMixin:
                                 except Exception as e:
                                     logger.warning("[step] deactivate %s failed: %s", service, e)
 
-                # 手动推进模式：步骤成功后等待用户点击「下一步」
-                if (success and self._step_advance_mode == "manual"
-                        and self._room_patrol_active and step_idx < len(steps)):
+                # 手动推进模式：步骤完成后（成功或失败）等待用户操作
+                if (self._step_advance_mode == "manual"
+                        and self._room_patrol_active
+                        and (step_idx < len(steps) or not success)):
+                    self._last_step_failed = not success
                     with self._lock:
                         self._room_patrol_status = "paused_manual_advance"
                     self._step_advance_event.clear()
@@ -894,6 +899,17 @@ class RoomPatrolMixin:
                     with self._lock:
                         if self._room_patrol_active:
                             self._room_patrol_status = "running"
+                    # 检查跳转目标
+                    jump = getattr(self, '_step_jump_target', -1)
+                    if jump >= 0:
+                        self._step_jump_target = -1
+                        if 0 <= jump < len(steps):
+                            step_idx = jump
+                            logger.info("[room_patrol] Jump to step %d", jump)
+                            continue
+                    # 手动模式下用户已决定，跳过自动失败处理
+                    if not success:
+                        continue
 
                 # Navigate/door failure → skip room (exit nav → stuck alert + wait)
                 if not success and step_type in ("navigate", "open_door"):
@@ -1135,6 +1151,8 @@ class RoomPatrolMixin:
             self._paused_step_type = ''
         self._step_advance_mode = "auto"
         self._step_advance_event.set()
+        self._step_jump_target = -1
+        self._last_step_failed = False
 
         # Save record to disk
         storage = self._get_storage()
