@@ -628,7 +628,7 @@ export const TaskDispatchTab: React.FC = () => {
             const isRunning = patrolState?.active ?? false;
             const title = isRunning ? "区域进度" : "任务预览";
             const roomList = isRunning
-              ? (patrolState.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
+              ? (patrolState?.rooms || displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] })))
               : displayRoomIds.map((rid: string) => ({ room_id: rid, room_name: roomLookup.get(rid)?.room_name || rid, steps: taskRoomSteps[rid] || [] }));
             return (
           <Card size="small" title={title} style={{ flex: 1, overflow: 'auto' }}>
@@ -643,7 +643,7 @@ export const TaskDispatchTab: React.FC = () => {
 
                 // Use step index from backend instead of findIndex by type name
                 const currentStepIdx = isCurrent
-                  ? (patrolState.current_step_index ?? -1)
+                  ? (patrolState?.current_step_index ?? -1)
                   : -1;
 
                 return (

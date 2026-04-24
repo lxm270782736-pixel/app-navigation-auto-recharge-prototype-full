@@ -462,6 +462,9 @@ export const Mapping: React.FC = () => {
     try {
       // 加载完整的地图数据
       const mapData = await apiService.loadMap(pendingMapName);
+      if (!mapData) {
+        throw new Error('地图数据为空');
+      }
 
       // 保存到本地缓存
       mapStorageService.saveMapToLocalCache(mapData);
@@ -1031,6 +1034,9 @@ export const Mapping: React.FC = () => {
                   try {
                     // 加载地图数据
                     const mapData = await apiService.loadMap(pendingMapName);
+                    if (!mapData) {
+                      throw new Error('地图数据为空');
+                    }
                     // 应用地图
                     await apiService.setCurrentMap(mapData);
                     message.success('地图已应用');

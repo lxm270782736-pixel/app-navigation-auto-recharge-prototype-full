@@ -1,12 +1,12 @@
 import type { MapData } from '@/types';
+import { getBaseUrl } from '@/config';
 
 const MAP_STORAGE_KEY = 'astribot_maps';
 const MAP_DATA_KEY_PREFIX = 'astribot_map_data_'; // 单独存储地图数据
 const THUMBNAIL_MAX_SIZE = 200; // 缩略图最大尺寸
 const THUMBNAIL_QUALITY = 0.6; // 缩略图质量 (0.0 - 1.0)
 
-// HTTP API 基础 URL — injected from .env via vite.config.ts define
-const API_BASE_URL = `http://${window.location.hostname}:${__BACKEND_PORT__}/api`;
+const API_BASE_URL = `${getBaseUrl()}/api`;
 
 // 地图元数据（不包含大量的地图数据）
 interface MapMetadata {

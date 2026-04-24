@@ -1,12 +1,14 @@
 /**
- * Navigation App — standard App component entry point.
+ * Navigation App embedded entry point.
  *
- * Follows the standard AppComponentProps interface required by app-shell.
- * Connection is managed internally via RobotProvider + useApp() hook.
+ * The default export is loaded by the host shell from `/ui/dist/component.js`,
+ * so it must behave like an isolated component rather than taking over the
+ * browser history. Standalone bootstrapping lives in `main.tsx`.
  */
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import type { ReactNode } from 'react';
 import { RobotProvider } from '@/contexts/RobotContext';
 import { Dashboard } from '@/components/Dashboard';
 import { MapManager } from '@/components/MapManager';
@@ -17,24 +19,23 @@ import { Settings } from '@/components/Settings';
 import { RoomPatrol } from '@/components/RoomPatrol';
 import './app.css';
 
-// ---- Standard App Interface ----
-
 export type AppComponentProps = {
   appId: string;
   onExit: () => void;
 };
 
-// 需要全屏显示的路由（不需要 app-container 背景和padding）
 const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol'];
 
-function AppContent() {
-  const location = useLocation();
+type NavigationRoutesProps = {
+  chromeClassName?: string;
+};
 
-  // 检查当前路由是否需要全屏显示
+export function NavigationRoutes({ chromeClassName = 'app-shell' }: NavigationRoutesProps) {
+  const location = useLocation();
   const isFullScreen = fullScreenRoutes.some(route => location.pathname.startsWith(route));
 
   return (
-    <div className={isFullScreen ? '' : 'app-container'}>
+    <div className={isFullScreen ? 'app-shell app-shell--fullscreen' : chromeClassName}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/maps" element={<MapManager />} />
@@ -48,19 +49,35 @@ function AppContent() {
   );
 }
 
-export default function NavigationApp({ appId: _appId, onExit: _onExit }: AppComponentProps) {
+function NavigationAppProviders({ children }: { children: ReactNode }) {
   return (
     <ConfigProvider locale={zhCN}>
       <RobotProvider autoConnect={true}>
-        <BrowserRouter
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
-          <AppContent />
-        </BrowserRouter>
+        {children}
       </RobotProvider>
     </ConfigProvider>
+  );
+}
+
+export default function NavigationApp({ appId: _appId, onExit: _onExit }: AppComponentProps) {
+  return (
+    <NavigationAppProviders>
+      <MemoryRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
+        <NavigationRoutes />
+      </MemoryRouter>
+    </NavigationAppProviders>
+  );
+}
+
+export function StandaloneNavigationApp() {
+  return (
+    <NavigationAppProviders>
+      <NavigationRoutes chromeClassName="app-shell app-shell--standalone" />
+    </NavigationAppProviders>
   );
 }

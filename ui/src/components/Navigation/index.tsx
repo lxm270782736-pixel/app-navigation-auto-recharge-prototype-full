@@ -68,8 +68,6 @@ export const Navigation: React.FC = () => {
   const isPatrolActive = patrolState?.active ?? false;
   const currentWaypointIndex = isPatrolActive ? (patrolState?.current_index ?? -1) : -1;
   const completedWaypoints = isPatrolActive ? (patrolState?.completed ?? []) : [];
-  const skippedWaypoints = isPatrolActive ? (patrolState?.skipped ?? []) : [];
-
   // 路径点配置Modal
   const [waypointConfigModalVisible, setWaypointConfigModalVisible] = useState(false);
   const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);

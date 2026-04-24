@@ -4,14 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build --config vite.config.lib.ts",
     "build:lib": "vite build --config vite.config.lib.ts",
-    "dev": "vite build --watch",
+    "build:standalone": "vite build",
+    "dev": "vite build --config vite.config.lib.ts --watch",
+    "dev:standalone": "vite",
     "preview": "vite preview"
   },
   "peerDependencies": {
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0"
+    "@astribot/stores": "*",
+    "@astribot/ui": "*",
+    "react": "*",
+    "react-dom": "*"
   },
   "dependencies": {
     "react-router-dom": "^6.20.0",
@@ -25,6 +29,8 @@
     "@ant-design/icons": "^5.2.6"
   },
   "devDependencies": {
+    "@astribot/stores": "file:../../../platform_client/packages/stores",
+    "@astribot/ui": "file:../../../platform_client/packages/ui",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",

@@ -161,18 +161,18 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   // 监听导航事件（feedback、status、result），追踪action执行状态
   useEffect(() => {
     // 监听导航反馈（feedback），说明有action在执行
-    const handleNavigationFeedback = (feedback: any) => {
+    const handleNavigationFeedback = (_feedback: any) => {
       // 只要有反馈消息，说明正在有action在执行
       setHasActiveAction(true);
     };
 
     // 监听导航状态（status）
-    const handleNavigationStatus = (status: any) => {
+    const handleNavigationStatus = (_status: any) => {
       // 状态更新，可以在需要时使用
     };
 
     // 监听导航完成事件（result），清除action执行标记
-    const handleNavigationResult = (result: any) => {
+    const handleNavigationResult = (_result: any) => {
       setHasActiveAction(false);
     };
 

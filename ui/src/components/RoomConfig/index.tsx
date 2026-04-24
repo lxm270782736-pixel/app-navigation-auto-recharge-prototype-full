@@ -8,10 +8,8 @@ import {
   AimOutlined,
   EditOutlined,
   CheckCircleFilled,
-  CloseCircleFilled,
   EnvironmentOutlined,
   HomeOutlined,
-  SaveOutlined,
 } from '@ant-design/icons';
 import { MapCanvas } from '@/components/common/MapCanvas';
 import { apiService } from '@/services/api';
