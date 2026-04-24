@@ -16,9 +16,8 @@ export const DisplayTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Monitor className="h-5 w-5" />}
-        iconColor="#f57f17"
-        borderColor="#f57f17"
-        backgroundColor="#fff9c4"
+        iconClassName="text-amber-600"
+        toneClassName="border-amber-600/50 bg-amber-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

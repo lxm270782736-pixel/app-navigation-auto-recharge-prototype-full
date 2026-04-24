@@ -200,11 +200,10 @@ const SortableStepItem: React.FC<{
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    marginBottom: 8,
   };
   return (
     <div ref={setNodeRef} style={style} className="mb-2">
-      <UICard className="border-border/70 bg-card/90 shadow-sm" style={{ borderLeft: `3px solid ${borderColor}` }}>
+      <UICard className="border-l-[3px] border-border/70 bg-card/90 shadow-sm" style={{ borderLeftColor: borderColor }}>
         <CardContent className="flex items-center gap-2 p-3">
           <span {...attributes} {...listeners} className="flex cursor-grab text-muted-foreground">
             <GripVertical className="h-4 w-4" />
@@ -710,8 +709,10 @@ export const TaskConfigTab: React.FC = () => {
                       <select
                         value={step.type}
                         onChange={(e) => updateStep(idx, { type: e.target.value as any })}
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-                        style={{ width: 140, opacity: step.enabled === false ? 0.45 : 1 }}
+                        className={cn(
+                          'h-8 w-[140px] rounded-md border border-input bg-background px-2 text-xs text-foreground',
+                          step.enabled === false && 'opacity-[0.45]'
+                        )}
                         disabled={step.enabled === false}
                       >
                         {allStepOptions.map((option) => (

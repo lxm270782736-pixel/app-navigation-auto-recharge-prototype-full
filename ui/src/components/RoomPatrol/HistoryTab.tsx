@@ -319,7 +319,13 @@ export const HistoryTab: React.FC = () => {
             {selectedRecord.room_results.map((room: any, idx: number) => {
               const roomAlerts = recordAlerts.filter((a) => a.room_id === room.room_id && a.alert_type !== 'fall_detected');
               return (
-                <UICard key={idx} className="border-border/70 bg-card/80" style={{ borderLeft: `3px solid ${room.status === 'success' ? '#52c41a' : '#ff4d4f'}` }}>
+                <UICard
+                  key={idx}
+                  className={cn(
+                    'border-l-[3px] border-border/70 bg-card/80',
+                    room.status === 'success' ? 'border-l-emerald-500' : 'border-l-destructive'
+                  )}
+                >
                   <CardContent className="space-y-3 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>

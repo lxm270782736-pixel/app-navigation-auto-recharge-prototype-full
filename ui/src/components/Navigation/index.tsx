@@ -491,7 +491,7 @@ export function Navigation() {
   if (!currentMap) {
     return (
       <>
-        <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-5xl flex-col items-center justify-center gap-6 px-4 py-6">
+        <div className="mx-auto flex h-full min-h-[28rem] w-full max-w-5xl flex-col items-center justify-center gap-6 px-4 py-6">
           <Card className="w-full max-w-2xl border-dashed border-border bg-card/70">
             <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-4 p-8 text-center">
               <div className="rounded-2xl bg-primary/10 p-4 text-primary">
@@ -565,7 +565,7 @@ export function Navigation() {
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-4 border-b border-border bg-card/90 px-6 py-4 shadow-sm">
         <Button variant="secondary" onClick={() => navigate('/')}>
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -654,7 +654,7 @@ export function Navigation() {
           </InfoPanel>
         </div>
 
-        <div className="absolute right-4 top-4 z-50 flex max-h-[calc(100vh-120px)] w-80 flex-col gap-3 overflow-y-auto">
+        <div className="absolute right-4 top-4 z-50 flex max-h-[calc(100%-2rem)] w-80 flex-col gap-3 overflow-y-auto">
           <Suspense fallback={<div className="rounded-xl border border-border bg-card/90 p-4 text-sm text-muted-foreground">正在加载控制面板...</div>}>
             <SimpleLocalizationControl
               onModeChange={() => {}}

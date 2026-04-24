@@ -13,13 +13,12 @@ export const ConditionalNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<GitBranch className="h-6 w-6" />}
-        iconColor="#d84315"
-        borderColor="#d84315"
-        backgroundColor="#fbe9e7"
+        iconClassName="text-orange-600"
+        toneClassName="border-orange-600/50 bg-orange-500/10"
         label="条件分支"
         collapsed={false}
         onToggle={() => {}}
-        minWidth={200}
+        minWidthClassName="min-w-[200px]"
       >
         <div>
           <div className="mb-1 text-[11px] text-muted-foreground">条件表达式</div>
@@ -39,19 +38,19 @@ export const ConditionalNode: React.FC<NodeProps> = ({ data }) => {
         type="source"
         position={Position.Bottom}
         id="true"
-        style={{ left: '33%', backgroundColor: '#4caf50' }}
+        className="!left-[33%] !bg-emerald-500"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="false"
-        style={{ left: '66%', backgroundColor: '#f44336' }}
+        className="!left-[66%] !bg-destructive"
       />
 
-      <div className="absolute -bottom-5 left-[33%] -translate-x-1/2 text-[10px] font-bold text-[#4caf50]">
+      <div className="absolute -bottom-5 left-[33%] -translate-x-1/2 text-[10px] font-bold text-emerald-500">
         True
       </div>
-      <div className="absolute -bottom-5 left-[66%] -translate-x-1/2 text-[10px] font-bold text-[#f44336]">
+      <div className="absolute -bottom-5 left-[66%] -translate-x-1/2 text-[10px] font-bold text-destructive">
         False
       </div>
     </div>

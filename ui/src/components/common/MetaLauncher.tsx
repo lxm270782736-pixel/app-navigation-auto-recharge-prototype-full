@@ -176,25 +176,25 @@ export function MetaLauncher() {
           )}
         </Button>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {startupServices.map((service) => {
             const Icon = getServiceIcon(service.name);
             const stateInfo = STATE_LABELS[service.state] ?? STATE_LABELS.disconnected;
             const isActive = service.state === 'active';
 
             return (
-              <div key={service.name} className="rounded-lg border border-border bg-secondary/30 p-3">
+              <div key={service.name} className="min-w-0 rounded-lg border border-border bg-secondary/30 p-3">
                 <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-md bg-primary/10 p-2 text-primary">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="shrink-0 rounded-md bg-primary/10 p-2 text-primary">
                       <Icon className="h-4 w-4" />
                     </div>
-                    <div>
-                      <div className="text-sm font-medium">{getServiceLabel(service.name)}</div>
-                      <div className="text-xs text-muted-foreground">{getShortName(service.name)}</div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{getServiceLabel(service.name)}</div>
+                      <div className="truncate text-xs text-muted-foreground">{getShortName(service.name)}</div>
                     </div>
                   </div>
-                  <span className={cn('rounded-full px-2 py-1 text-[11px] font-medium', stateInfo.tone)}>
+                  <span className={cn('shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-medium', stateInfo.tone)}>
                     {stateInfo.text}
                   </span>
                 </div>

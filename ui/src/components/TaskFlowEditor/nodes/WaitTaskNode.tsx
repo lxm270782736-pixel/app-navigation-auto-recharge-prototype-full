@@ -15,9 +15,8 @@ export const WaitTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Clock3 className="h-5 w-5" />}
-        iconColor="#1976d2"
-        borderColor="#1976d2"
-        backgroundColor="#e3f2fd"
+        iconClassName="text-sky-600"
+        toneClassName="border-sky-600/50 bg-sky-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

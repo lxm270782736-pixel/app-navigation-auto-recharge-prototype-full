@@ -25,7 +25,7 @@ export const RoomPatrol: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex flex-wrap items-center gap-3 border-b border-border/70 bg-card/80 px-4 py-4">
         <Button type="button" variant="outline" onClick={() => navigate('/')}>
           <ArrowLeft className="mr-2 h-4 w-4" />

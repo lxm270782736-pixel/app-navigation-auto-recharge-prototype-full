@@ -16,9 +16,8 @@ export const PhotoTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Camera className="h-5 w-5" />}
-        iconColor="#689f38"
-        borderColor="#689f38"
-        backgroundColor="#f1f8e9"
+        iconClassName="text-emerald-600"
+        toneClassName="border-emerald-600/50 bg-emerald-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

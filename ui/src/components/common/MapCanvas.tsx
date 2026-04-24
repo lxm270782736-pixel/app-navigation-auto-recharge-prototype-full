@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Button as UIButton } from '@astribot/ui';
+import { Button as UIButton, cn } from '@astribot/ui';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -852,36 +852,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { if (draggingWaypointIndex < 0) { handleMouseUp(); setBrushPreviewPos(null); } }}
         onContextMenu={handleContextMenu}
-        className={`relative h-full w-full overflow-visible ${className ?? ''}`}
-        style={{ cursor: isDragging ? 'grabbing' : 'default' }}
+        className={cn(
+          'relative h-full w-full overflow-visible',
+          isDragging ? 'cursor-grabbing' : 'cursor-default',
+          className
+        )}
       >
         {/* Canvas 层：仅占据栅格位图 */}
         <canvas
           ref={canvasRef}
           onClick={handleClick}
+          className={cn(
+            'box-border border-2 border-black',
+            draggingWaypointIndex >= 0
+              ? 'cursor-grabbing'
+              : hoveredWaypointIndex >= 0
+                ? 'cursor-grab'
+                : onMapClick
+                  ? 'cursor-crosshair'
+                  : 'cursor-default'
+          )}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            cursor: draggingWaypointIndex >= 0 ? 'grabbing'
-                  : hoveredWaypointIndex >= 0 ? 'grab'
-                  : onMapClick ? 'crosshair' : 'default',
-            border: '2px solid #000',
-            boxSizing: 'border-box',
           }}
         />
 
         {/* SVG 覆盖层：所有矢量图形 */}
         <svg
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
             width: mapData.width,
             height: mapData.height,
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            pointerEvents: 'none',
-            overflow: 'visible',
           }}
         >
           {/* 栅格 */}

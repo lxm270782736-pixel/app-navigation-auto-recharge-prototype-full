@@ -16,9 +16,8 @@ export const SoundTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Volume2 className="h-5 w-5" />}
-        iconColor="#e65100"
-        borderColor="#e65100"
-        backgroundColor="#fff3e0"
+        iconClassName="text-orange-600"
+        toneClassName="border-orange-600/50 bg-orange-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

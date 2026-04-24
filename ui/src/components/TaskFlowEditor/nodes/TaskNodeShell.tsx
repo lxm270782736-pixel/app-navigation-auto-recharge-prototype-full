@@ -4,43 +4,36 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TaskNodeShellProps {
   icon: React.ReactNode;
-  iconColor: string;
-  borderColor: string;
-  backgroundColor: string;
+  iconClassName: string;
+  toneClassName: string;
   label: string;
   collapsed: boolean;
   onToggle: () => void;
   onLabelChange?: (value: string) => void;
   children?: React.ReactNode;
   collapsedSummary?: React.ReactNode;
-  minWidth?: number;
+  minWidthClassName?: string;
 }
 
 export const TaskNodeShell: React.FC<TaskNodeShellProps> = ({
   icon,
-  iconColor,
-  borderColor,
-  backgroundColor,
+  iconClassName,
+  toneClassName,
   label,
   collapsed,
   onToggle,
   onLabelChange,
   children,
   collapsedSummary,
-  minWidth = 180,
+  minWidthClassName = 'min-w-[180px]',
 }) => {
   return (
     <UICard
-      className="min-w-[180px] shadow-sm"
-      style={{
-        backgroundColor,
-        border: `2px solid ${borderColor}`,
-        minWidth,
-      }}
+      className={cn('border-2 shadow-sm', minWidthClassName, toneClassName)}
     >
       <CardContent className="flex flex-col gap-2 p-3">
         <div className="flex items-center gap-2">
-          <div className="shrink-0" style={{ color: iconColor }}>{icon}</div>
+          <div className={cn('shrink-0', iconClassName)}>{icon}</div>
           {onLabelChange ? (
             <Input
               value={label}

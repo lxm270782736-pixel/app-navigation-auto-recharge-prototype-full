@@ -10,14 +10,13 @@ export const ParallelNode: React.FC<NodeProps> = () => {
 
       <TaskNodeShell
         icon={<Zap className="h-6 w-6" />}
-        iconColor="#d32f2f"
-        borderColor="#d32f2f"
-        backgroundColor="#ffebee"
+        iconClassName="text-destructive"
+        toneClassName="border-destructive/50 bg-destructive/10"
         label="并行执行"
         collapsed={false}
         onToggle={() => {}}
         collapsedSummary={null}
-        minWidth={200}
+        minWidthClassName="min-w-[200px]"
       >
         <div className="text-center text-[11px] text-muted-foreground">所有分支同时执行</div>
       </TaskNodeShell>
@@ -26,13 +25,13 @@ export const ParallelNode: React.FC<NodeProps> = () => {
         type="source"
         position={Position.Bottom}
         id="branch-1"
-        style={{ left: '33%' }}
+        className="!left-[33%]"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="branch-2"
-        style={{ left: '66%' }}
+        className="!left-[66%]"
       />
     </div>
   );

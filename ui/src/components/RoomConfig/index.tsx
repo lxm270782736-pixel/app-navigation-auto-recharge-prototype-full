@@ -223,7 +223,7 @@ export const RoomConfig: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex items-center gap-4 border-b border-border/70 bg-card/90 px-6 py-4">
         <UIButton type="button" variant="outline" onClick={() => navigate('/')}>
           <ArrowLeft className="mr-2 h-4 w-4" />

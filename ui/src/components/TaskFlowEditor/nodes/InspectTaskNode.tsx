@@ -16,9 +16,8 @@ export const InspectTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Eye className="h-5 w-5" />}
-        iconColor="#c2185b"
-        borderColor="#c2185b"
-        backgroundColor="#fce4ec"
+        iconClassName="text-rose-600"
+        toneClassName="border-rose-600/50 bg-rose-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

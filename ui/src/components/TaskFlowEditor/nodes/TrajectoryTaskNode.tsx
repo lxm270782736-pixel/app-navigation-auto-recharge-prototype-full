@@ -15,9 +15,8 @@ export const TrajectoryTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<RefreshCw className="h-5 w-5" />}
-        iconColor="#7b1fa2"
-        borderColor="#7b1fa2"
-        backgroundColor="#f3e5f5"
+        iconClassName="text-primary"
+        toneClassName="border-primary/50 bg-primary/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

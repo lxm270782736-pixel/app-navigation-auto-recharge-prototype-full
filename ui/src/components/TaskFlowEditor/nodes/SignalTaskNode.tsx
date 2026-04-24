@@ -19,9 +19,8 @@ export const SignalTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Lightbulb className="h-5 w-5" />}
-        iconColor="#f9a825"
-        borderColor="#f9a825"
-        backgroundColor="#fffde7"
+        iconClassName="text-yellow-600"
+        toneClassName="border-yellow-600/50 bg-yellow-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

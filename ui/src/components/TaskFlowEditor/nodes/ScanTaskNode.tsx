@@ -16,9 +16,8 @@ export const ScanTaskNode: React.FC<NodeProps> = ({ data }) => {
 
       <TaskNodeShell
         icon={<Search className="h-5 w-5" />}
-        iconColor="#00838f"
-        borderColor="#00838f"
-        backgroundColor="#e0f7fa"
+        iconClassName="text-cyan-600"
+        toneClassName="border-cyan-600/50 bg-cyan-500/10"
         label={label}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}
