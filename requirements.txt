@@ -1,9 +1,7 @@
---extra-index-url http://10.11.106.120:3141/astribot/prod/+simple/
---trusted-host 10.11.106.120
 astribot_link
-fastapi>=0.100.0
-sse-starlette>=1.6.0
-uvicorn>=0.23.0
-pyyaml>=6.0
-pydantic>=2.0.0
-httpx>=0.24.0
+fastapi
+sse-starlette
+uvicorn
+pyyaml
+pydantic
+httpx
