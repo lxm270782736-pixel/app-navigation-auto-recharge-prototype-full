@@ -293,7 +293,7 @@ export const TaskConfigTab: React.FC = () => {
       const existingIds = new Set(preset.rooms.map(r => r.room_id));
       const merged = [...preset.rooms];
       for (const r of roomConfigs) {
-        if (!existingIds.has(r.room_id) && r.door_outside && r.door_inside && r.bed_check) {
+        if (!existingIds.has(r.room_id) && (r.waypoints || []).some(wp => wp.pose !== null)) {
           merged.push({ room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS] });
         }
       }
@@ -347,7 +347,11 @@ export const TaskConfigTab: React.FC = () => {
     if (patch.type && patch.type !== oldStep.type) {
       if (patch.type === 'navigate') {
         // 切换到 navigate：设置默认 target + retry_limit，清理其他字段
-        if (!patch.target) patch.target = 'door_outside';
+        if (!patch.target) {
+          const rc = roomConfigs.find(r => r.room_id === selectedRoomId);
+          const firstWp = (rc?.waypoints || [])[0];
+          patch.target = firstWp?.id || 'start_position';
+        }
         if (oldStep.retry_limit === undefined) patch.retry_limit = 30;
         patch.params = undefined as any;
       } else {
@@ -400,7 +404,7 @@ export const TaskConfigTab: React.FC = () => {
       name: newPresetName.trim(),
       description: '',
       is_default: presets.length === 0,
-      rooms: roomConfigs.filter(r => r.door_outside && r.door_inside && r.bed_check).map(r => ({
+      rooms: roomConfigs.filter(r => (r.waypoints || []).some(wp => wp.pose !== null)).map(r => ({
         room_id: r.room_id, room_name: r.room_name, enabled: true, steps: [...DEFAULT_STEPS],
       })),
       retry_limit: 3,
@@ -666,7 +670,7 @@ export const TaskConfigTab: React.FC = () => {
                       />
                       {step.type === 'navigate' && (
                         <>
-                          <Select size="small" value={step.target || 'door_outside'} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
+                          <Select size="small" value={step.target} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
                             options={buildNavTargetOptions(roomConfigs.find(r => r.room_id === selectedRoomId))} />
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ fontSize: 11, color: '#999' }}>重试:</span>

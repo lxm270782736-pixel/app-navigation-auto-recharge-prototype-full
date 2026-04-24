@@ -31,7 +31,7 @@ export const RoomPatrol: React.FC = () => {
           返回
         </Button>
         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-          巡房任务
+          导览任务
         </div>
         <div style={{ marginLeft: 'auto' }}>
           <Tag color={connectionStatus === ConnectionStatus.CONNECTED ? 'green' : 'red'}>
