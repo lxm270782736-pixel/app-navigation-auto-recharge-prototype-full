@@ -11,6 +11,7 @@ import {
   ToolOutlined,
   ApiOutlined,
   SendOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -295,6 +296,23 @@ export const Dashboard: React.FC = () => {
               <h3 style={{ marginTop: '16px', fontSize: '18px' }}>导览任务</h3>
               <p style={{ color: '#999', marginTop: '8px' }}>
                 点位录制、任务编排、任务下发
+              </p>
+            </div>
+          </Card>
+        </Col>
+
+        {/* 素材管理 */}
+        <Col xs={24} md={12} lg={8}>
+          <Card
+            hoverable
+            onClick={() => navigate('/asset-manager')}
+            style={{ height: '180px', cursor: 'pointer' }}
+          >
+            <div style={{ textAlign: 'center', paddingTop: '20px' }}>
+              <AppstoreOutlined style={{ fontSize: '48px', color: '#13c2c2' }} />
+              <h3 style={{ marginTop: '16px', fontSize: '18px' }}>素材管理</h3>
+              <p style={{ color: '#999', marginTop: '8px' }}>
+                管理图片、音频、视频等素材资源
               </p>
             </div>
           </Card>

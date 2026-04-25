@@ -15,6 +15,7 @@ import { Mapping } from '@/components/Mapping';
 import { Navigation } from '@/components/Navigation';
 import { Settings } from '@/components/Settings';
 import { RoomPatrol } from '@/components/RoomPatrol';
+import { AssetManager } from '@/components/AssetManager';
 import './app.css';
 
 // ---- Standard App Interface ----
@@ -25,7 +26,7 @@ export type AppComponentProps = {
 };
 
 // 需要全屏显示的路由（不需要 app-container 背景和padding）
-const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol'];
+const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol', '/asset-manager'];
 
 function AppContent() {
   const location = useLocation();
@@ -42,6 +43,7 @@ function AppContent() {
         <Route path="/mapping" element={<Mapping />} />
         <Route path="/navigation" element={<Navigation />} />
         <Route path="/room-patrol" element={<RoomPatrol />} />
+        <Route path="/asset-manager" element={<AssetManager />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </div>

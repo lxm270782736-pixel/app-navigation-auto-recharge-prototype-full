@@ -641,6 +641,72 @@ def update_meta_services_config(req: ServicesConfigRequest):
     return logic.update_services_config(req.services)
 
 
+# ==================== 素材管理 ====================
+
+from fastapi import File, UploadFile, Form
+from .asset_manager import ASSET_CATEGORIES
+
+
+@app.get("/api/assets/categories")
+def get_asset_categories():
+    return {"success": True, "categories": ASSET_CATEGORIES}
+
+
+@app.get("/api/assets/{category}/list")
+def list_assets(category: str):
+    return logic.list_assets(category)
+
+
+@app.post("/api/assets/{category}/upload")
+async def upload_asset_pair(
+    category: str,
+    hdf5_file: UploadFile = File(None),
+    mp3_file: UploadFile = File(None),
+):
+    hdf5_data = await hdf5_file.read() if hdf5_file else None
+    mp3_data = await mp3_file.read() if mp3_file else None
+    return logic.upload_asset_pair(category, hdf5_data, mp3_data)
+
+
+class DeleteAssetRequest(BaseModel):
+    pair_index: int
+
+
+@app.post("/api/assets/{category}/delete")
+def delete_asset_pair(category: str, req: DeleteAssetRequest):
+    return logic.delete_asset_pair(category, req.pair_index)
+
+
+class PreviewRequest(BaseModel):
+    category: str
+    pair_index: int
+
+
+@app.post("/api/assets/preview-audio")
+def preview_audio(req: PreviewRequest):
+    return logic.preview_audio(req.category, req.pair_index)
+
+
+@app.post("/api/assets/stop-audio")
+def stop_audio():
+    return logic.stop_audio()
+
+
+@app.post("/api/assets/preview-action")
+def preview_action(req: PreviewRequest):
+    return logic.preview_action(req.category, req.pair_index)
+
+
+@app.post("/api/assets/stop-action")
+def stop_action():
+    return logic.stop_replay()
+
+
+@app.get("/api/assets/replay-status")
+def get_replay_status():
+    return logic.get_replay_status()
+
+
 # ==================== 前端静态文件 ====================
 
 _UI_DIR = Path(__file__).parent.parent / "ui" / "dist"

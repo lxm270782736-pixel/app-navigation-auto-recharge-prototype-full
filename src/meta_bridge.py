@@ -51,6 +51,7 @@ _DEFAULT_SERVICES = [
     {"name": "meta.astribot_navigation", "startup": True,  "config": _DEFAULT_NAV_CONFIG},
     {"name": "meta.detection",           "startup": True,  "config": {"simulated": True}},
     {"name": "meta.sales_replay",        "startup": False, "config": {}},
+    {"name": "meta.sales_audio",         "startup": False, "config": {}},
     {"name": "meta.camera",              "startup": False, "config": {}},
 ]
 

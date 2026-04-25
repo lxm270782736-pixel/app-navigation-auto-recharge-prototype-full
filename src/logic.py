@@ -31,6 +31,7 @@ from .detection import DetectionMixin
 from .alert import AlertMixin
 from .patrol_room import RoomPatrolMixin
 from .custom_steps import CustomStepsMixin
+from .asset_manager import AssetManagerMixin
 
 
 class BusinessLogic(
@@ -45,6 +46,7 @@ class BusinessLogic(
     AlertMixin,
     RoomPatrolMixin,
     CustomStepsMixin,
+    AssetManagerMixin,
 ):
     def __init__(self) -> None:
         """Initialize BusinessLogic and all Meta service connections.
@@ -76,6 +78,9 @@ class BusinessLogic(
 
         # Meta link proxies
         self._init_meta()
+
+        # Asset directories
+        self.init_asset_dirs()
 
         # Processed state
         self._nav_status = "idle"
