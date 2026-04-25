@@ -15,6 +15,7 @@ const STATE_LABELS: Record<string, { text: string; tone: string }> = {
 const SHORT_LABELS: Record<string, string> = {
   localization: '定位',
   astribot_navigation: '导航',
+  lidar: '雷达',
   detection: '检测',
   sales_replay: '轨迹回放',
   camera: '相机',
@@ -23,6 +24,7 @@ const SHORT_LABELS: Record<string, string> = {
 const SERVICE_ICONS: Record<string, typeof Bot> = {
   localization: Radar,
   astribot_navigation: Bot,
+  lidar: Radar,
   detection: Activity,
 };
 
@@ -56,10 +58,15 @@ export function MetaLauncher() {
 
   useEffect(() => {
     const handler = (state: Record<string, unknown>) => {
+      const stateKeysByName: Record<string, string> = {
+        'meta.localization': 'loc_state',
+        'meta.astribot_navigation': 'nav_state',
+        'meta.lidar': 'lidar_state',
+        'meta.detection': 'fall_state',
+      };
       setServices((prev) =>
         prev.map((service) => {
-          const short = getShortName(service.name);
-          const key = short === 'detection' ? 'fall_state' : `${short}_state`;
+          const key = stateKeysByName[service.name] ?? `${getShortName(service.name)}_state`;
           const nextState = state[key];
           return typeof nextState === 'string' ? { ...service, state: nextState } : service;
         }),
@@ -76,10 +83,19 @@ export function MetaLauncher() {
     try {
       const metaConfig = await apiService.getMetaServicesConfig();
       const metaStatus = (await apiService.getMetaStatus()) as Record<string, unknown>;
+      const servicesStatus = Array.isArray(metaStatus.services)
+        ? (metaStatus.services as Array<{ name?: unknown; state?: unknown }>)
+        : [];
+      const statesFromServices = Object.fromEntries(
+        servicesStatus
+          .filter((service) => typeof service.name === 'string' && typeof service.state === 'string')
+          .map((service) => [service.name as string, service.state as string]),
+      );
       const statesByName: Record<string, string> = {
-        'meta.localization': String(metaStatus.loc_state ?? 'disconnected'),
-        'meta.astribot_navigation': String(metaStatus.nav_state ?? 'disconnected'),
-        'meta.detection': String(metaStatus.fall_state ?? 'disconnected'),
+        'meta.localization': statesFromServices['meta.localization'] ?? String(metaStatus.loc_state ?? 'disconnected'),
+        'meta.astribot_navigation': statesFromServices['meta.astribot_navigation'] ?? String(metaStatus.nav_state ?? 'disconnected'),
+        'meta.lidar': statesFromServices['meta.lidar'] ?? String(metaStatus.lidar_state ?? 'disconnected'),
+        'meta.detection': statesFromServices['meta.detection'] ?? String(metaStatus.fall_state ?? 'disconnected'),
       };
 
       setServices(
@@ -117,9 +133,10 @@ export function MetaLauncher() {
   const handleControl = useCallback(
     async (name: string, action: 'start' | 'stop') => {
       const short = getShortName(name);
-      const keyMap: Record<string, 'loc' | 'nav' | 'detection'> = {
+      const keyMap: Record<string, 'loc' | 'nav' | 'lidar' | 'detection'> = {
         localization: 'loc',
         astribot_navigation: 'nav',
+        lidar: 'lidar',
         detection: 'detection',
       };
       const controlKey = keyMap[short];
