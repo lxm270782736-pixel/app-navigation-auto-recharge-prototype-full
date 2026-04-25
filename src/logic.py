@@ -168,6 +168,7 @@ class BusinessLogic(
                 "meta_connected": self.meta_connected,
                 "loc_state": self._loc_state,
                 "nav_state": self._nav_state,
+                "lidar_state": self._lidar_state,
                 "fall_state": self._detection_state,
                 "nav_status": self._nav_status,
                 "nav_fail_reason": getattr(self, '_nav_fail_reason', None),

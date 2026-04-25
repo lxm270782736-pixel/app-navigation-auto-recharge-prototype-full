@@ -1,5 +1,5 @@
 id: "com.astribot.app.navigation"
-name: "Navigation"
+name: "导航"
 version: "1.0.0"
 description: "机器人SLAM建图和自主导航应用"
 

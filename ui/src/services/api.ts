@@ -490,11 +490,11 @@ class ApiService {
     return this._post('/api/meta/deactivate', {});
   }
 
-  async metaControl(service: 'loc' | 'nav' | 'detection', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
+  async metaControl(service: 'loc' | 'nav' | 'lidar' | 'detection', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
     return this._post('/api/meta/control', { service, action });
   }
 
-  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; fall_state: string }> {
+  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; lidar_state: string; fall_state: string }> {
     return this._get('/api/meta/status');
   }
 

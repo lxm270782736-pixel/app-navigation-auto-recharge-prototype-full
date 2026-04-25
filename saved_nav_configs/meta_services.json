@@ -28,6 +28,20 @@
       }
     },
     {
+      "name": "meta.lidar",
+      "startup": true,
+      "deactivate_after_step": false,
+      "config": {
+        "user_config_path": "",
+        "publish_freq": 10.0,
+        "xfer_format": 0,
+        "multi_topic": 1,
+        "data_src": 0,
+        "output_data_type": 0,
+        "frame_id": "livox_frame"
+      }
+    },
+    {
       "name": "meta.detection",
       "startup": false,
       "deactivate_after_step": false,

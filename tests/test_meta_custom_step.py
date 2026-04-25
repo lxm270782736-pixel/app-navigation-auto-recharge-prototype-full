@@ -47,6 +47,16 @@ def active_stub():
     return s
 
 
+def test_meta_status_legacy_aliases_match_service_states(active_stub):
+    """UI legacy keys should report the same state as the registered services."""
+    status = active_stub.get_meta_status()
+
+    assert status["localization_state"] == META_ACTIVE
+    assert status["astribot_navigation_state"] == META_ACTIVE
+    assert status["loc_state"] == META_ACTIVE
+    assert status["nav_state"] == META_ACTIVE
+
+
 # ---------------------------------------------------------------------------
 # _call_service: routing tests
 # ---------------------------------------------------------------------------

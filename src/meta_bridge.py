@@ -46,9 +46,19 @@ _DEFAULT_NAV_CONFIG = {
     "planning_frequency": 5,
     "control_frequency": 10,
 }
+_DEFAULT_LIDAR_CONFIG = {
+    "user_config_path": "",
+    "publish_freq": 10.0,
+    "xfer_format": 0,
+    "multi_topic": 1,
+    "data_src": 0,
+    "output_data_type": 0,
+    "frame_id": "livox_frame",
+}
 _DEFAULT_SERVICES = [
     {"name": "meta.localization",        "startup": True,  "config": _DEFAULT_LOC_CONFIG},
     {"name": "meta.astribot_navigation", "startup": True,  "config": _DEFAULT_NAV_CONFIG},
+    {"name": "meta.lidar",               "startup": True,  "config": _DEFAULT_LIDAR_CONFIG},
     {"name": "meta.detection",           "startup": True,  "config": {"simulated": True}},
     {"name": "meta.sales_replay",        "startup": False, "config": {}},
     {"name": "meta.camera",              "startup": False, "config": {}},
@@ -432,6 +442,11 @@ class MetaBridgeMixin:
 
     def get_meta_status(self) -> dict:
         """Return state of all registered services."""
+        alias_by_name = {
+            "meta.localization": "loc_state",
+            "meta.astribot_navigation": "nav_state",
+            "meta.detection": "fall_state",
+        }
         status = {
             "meta_connected": self.meta_connected,
             "services": [
@@ -442,9 +457,13 @@ class MetaBridgeMixin:
         for name, entry in self._services.items():
             short = name.split(".")[-1]
             status[f"{short}_state"] = entry.state
+            alias = alias_by_name.get(name)
+            if alias:
+                status[alias] = entry.state
         # Ensure backward-compat keys always present
         status.setdefault("loc_state", META_DISCONNECTED)
         status.setdefault("nav_state", META_DISCONNECTED)
+        status.setdefault("lidar_state", META_DISCONNECTED)
         status.setdefault("fall_state", META_DISCONNECTED)
         return status
 
@@ -484,6 +503,12 @@ class MetaBridgeMixin:
 
     def stop_detection(self) -> dict:
         return self._ctrl_service("meta.detection", "stop")
+
+    def start_lidar(self) -> dict:
+        return self._ctrl_service("meta.lidar", "start")
+
+    def stop_lidar(self) -> dict:
+        return self._ctrl_service("meta.lidar", "stop")
 
     # =================== Backward-compat call methods ===================
 
@@ -563,6 +588,11 @@ class MetaBridgeMixin:
     def _detection_state(self, value: str):
         e = self._services.get("meta.detection")
         if e: e.state = value
+
+    @property
+    def _lidar_state(self) -> str:
+        e = self._services.get("meta.lidar")
+        return e.state if e else META_DISCONNECTED
 
     @property
     def meta_connected(self) -> bool:

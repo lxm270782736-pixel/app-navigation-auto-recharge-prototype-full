@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from .logic import BusinessLogic
+from .meta_process import meta_process_launcher
 
 # Support reverse-proxy path prefix for Stardust Desktop embedding.
 # Set APP_ROOT_PATH="/apps/navigation" when running behind a gateway.
@@ -41,6 +42,27 @@ app.add_middleware(
 )
 
 logic = BusinessLogic()
+
+
+def _auto_launch_meta_processes_enabled() -> bool:
+    value = os.environ.get("APP_NAVIGATION_AUTO_LAUNCH_METAS", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+@app.on_event("startup")
+def launch_required_meta_processes():
+    """Start required Meta server processes only; do not configure or activate."""
+    if not _auto_launch_meta_processes_enabled():
+        logger.info("[meta_process] auto launch disabled")
+        return
+    result = meta_process_launcher.launch_all()
+    logger.info("[meta_process] auto launch result: %s", result)
+
+
+@app.on_event("shutdown")
+def stop_started_meta_processes():
+    """Stop only Meta processes started by this app instance."""
+    meta_process_launcher.terminate_started()
 
 
 # ==================== SSE: 状态推送 ====================
@@ -600,7 +622,7 @@ def deactivate_meta():
 
 
 class MetaControlRequest(BaseModel):
-    service: str  # loc | nav | detection
+    service: str  # loc | nav | lidar | detection
     action: str   # start | stop
 
 
@@ -612,6 +634,8 @@ def meta_control(req: MetaControlRequest):
         ("loc",       "stop"):  logic.stop_localization,
         ("nav",       "start"): logic.start_navigation,
         ("nav",       "stop"):  logic.stop_navigation,
+        ("lidar",     "start"): logic.start_lidar,
+        ("lidar",     "stop"):  logic.stop_lidar,
         ("detection", "start"): logic.start_detection,
         ("detection", "stop"):  logic.stop_detection,
     }
