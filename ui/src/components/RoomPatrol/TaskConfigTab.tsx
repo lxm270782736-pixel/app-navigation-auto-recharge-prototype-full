@@ -668,6 +668,14 @@ export const TaskConfigTab: React.FC = () => {
                         disabled={step.enabled === false}
                         options={allStepOptions.map(o => ({ value: o.value, label: o.label }))}
                       />
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#666' }}>
+                        跌倒
+                        <Switch
+                          size="small"
+                          checked={step.fall_detection_enabled ?? true}
+                          onChange={(v) => updateStep(idx, { fall_detection_enabled: v })}
+                        />
+                      </span>
                       {step.type === 'navigate' && (
                         <>
                           <Select size="small" value={step.target} onChange={(v) => updateStep(idx, { target: v })} style={{ width: 100 }}
