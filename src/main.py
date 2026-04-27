@@ -657,6 +657,11 @@ def list_assets(category: str):
     return logic.list_assets(category)
 
 
+@app.get("/api/assets/trajectories")
+def list_all_trajectories():
+    return logic.list_all_trajectories()
+
+
 @app.post("/api/assets/{category}/upload")
 async def upload_asset_pair(
     category: str,

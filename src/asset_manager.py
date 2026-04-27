@@ -140,6 +140,22 @@ class AssetManagerMixin:
         return {"success": True, "message": f"Deleted pair #{pair_index}", "deleted": deleted}
 
 
+    # ---- Trajectory listing (cross-category) ----
+
+    def list_all_trajectories(self) -> dict:
+        trajectories = []
+        for cat in ASSET_CATEGORIES:
+            hdf5_dir = _HDF5_DIR / cat
+            if not hdf5_dir.exists():
+                continue
+            for f in hdf5_dir.iterdir():
+                m = _INDEX_RE.match(f.name)
+                if m and m.group(3) == "hdf5":
+                    idx = int(m.group(2))
+                    trajectories.append(f"{cat}/{cat}_{idx}")
+        trajectories.sort()
+        return {"success": True, "trajectories": trajectories}
+
     # ---- Preview ----
 
     def preview_audio(self, category: str, pair_index: int) -> dict:

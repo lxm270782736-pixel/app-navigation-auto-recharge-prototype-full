@@ -167,8 +167,9 @@
         {
           "key": "traj_name",
           "label": "轨迹名称",
-          "type": "string",
-          "default_value": "idle/breathing_8",
+          "type": "select",
+          "options_source": "trajectories",
+          "default_value": "",
           "required": true
         },
         {

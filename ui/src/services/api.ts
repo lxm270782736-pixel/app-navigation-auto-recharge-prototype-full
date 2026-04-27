@@ -780,6 +780,10 @@ class ApiService {
     return this._get('/api/assets/replay-status');
   }
 
+  async listTrajectories(): Promise<{ success: boolean; trajectories: string[] }> {
+    return this._get('/api/assets/trajectories');
+  }
+
   // ------ HTTP helpers ------
 
   private async _post(path: string, body: any): Promise<any> {

@@ -239,6 +239,7 @@ export const TaskConfigTab: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [trajectoryOptions, setTrajectoryOptions] = useState<{ value: string; label: string }[]>([]);
 
   // Dynamic step options: built-in + custom
   const allStepOptions = useMemo(() => [
@@ -284,6 +285,14 @@ export const TaskConfigTab: React.FC = () => {
   }, [connectionStatus]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    apiService.listTrajectories().then(res => {
+      if (res.success) {
+        setTrajectoryOptions(res.trajectories.map((t: string) => ({ value: t, label: t })));
+      }
+    }).catch(() => {});
+  }, []);
 
   // When selectedPresetId changes, load that preset into editing state
   useEffect(() => {
@@ -716,7 +725,7 @@ export const TaskConfigTab: React.FC = () => {
                           {p.type === 'number' && <InputNumber size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 60 }} />}
                           {p.type === 'string' && <Input size="small" value={step.params?.[p.key] ?? p.default_value ?? ''} onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })} style={{ width: 80 }} />}
                           {p.type === 'boolean' && <Switch size="small" checked={step.params?.[p.key] ?? p.default_value ?? false} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} />}
-                          {p.type === 'select' && <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 80 }} options={p.options || []} />}
+                          {p.type === 'select' && <Select size="small" value={step.params?.[p.key] ?? p.default_value} onChange={v => updateStep(idx, { params: { ...step.params, [p.key]: v } })} style={{ width: 160 }} showSearch options={(p as any).options_source === 'trajectories' ? trajectoryOptions : (p.options || [])} />}
                         </span>
                       ))}
                       {isCustom && customDef?.action?.type === 'meta' && (
