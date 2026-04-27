@@ -2,7 +2,7 @@
 SCRIPT_DIR="$(dirname "$0")"
 TIMESTAMP=$(date +%Y_%m_%d_%H_%M_%S)
 LOG_BASE=/opt/astribot_ros/log
-mkdir -p $LOG_BASE/{astribot_navigation,astribot_chassis,astribot_detection,astribot_localization,astribot_sales_replay,app_navigation}
+mkdir -p $LOG_BASE/{astribot_navigation,astribot_chassis,astribot_detection,astribot_localization,astribot_sales_replay,astribot_sales_audio,app_navigation}
 
 "$SCRIPT_DIR/scripts/kill_all.sh"
 terminator &
@@ -156,4 +156,26 @@ xdotool key Return
 xdotool type "source /home/astribot/workspace/astribot_sdk_aarch64/env.sh"
 xdotool key Return
 xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:SalesReplay 2>&1 | tee $LOG_BASE/astribot_sales_replay/log_${TIMESTAMP}.log"
+xdotool key Return
+
+
+################################
+# 在右下再垂直分割出 meta_sales_audio
+################################
+
+sleep 1
+xdotool key Alt+Down
+sleep 0.5
+
+xdotool key Ctrl+Shift+E
+sleep 1
+
+
+################################
+# Terminal 6 (右下右 - meta_sales_audio)
+################################
+
+xdotool type "cd /home/astribot/workspace/meta_sales_audio/"
+xdotool key Return
+xdotool type "PYTHONUNBUFFERED=1 python3 -m meta_base src.api:AudioPlay 2>&1 | tee $LOG_BASE/astribot_sales_audio/log_${TIMESTAMP}.log"
 xdotool key Return

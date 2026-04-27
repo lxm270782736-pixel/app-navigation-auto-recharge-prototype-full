@@ -216,6 +216,7 @@ export const TaskConfigTab: React.FC = () => {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deletePresetId, setDeletePresetId] = useState<string | null>(null);
+  const [trajectoryOptions, setTrajectoryOptions] = useState<{ value: string; label: string }[]>([]);
 
   // Dynamic step options: built-in + custom
   const allStepOptions = useMemo(() => [
@@ -261,6 +262,14 @@ export const TaskConfigTab: React.FC = () => {
   }, [connectionStatus]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    apiService.listTrajectories().then(res => {
+      if (res.success) {
+        setTrajectoryOptions(res.trajectories.map((t: string) => ({ value: t, label: t })));
+      }
+    }).catch(() => {});
+  }, []);
 
   // When selectedPresetId changes, load that preset into editing state
   useEffect(() => {
@@ -672,13 +681,20 @@ export const TaskConfigTab: React.FC = () => {
                           step.enabled === false && 'opacity-[0.45]'
                         )}
                         disabled={step.enabled === false}
-                      >
-                        {allStepOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        >
+                          {allStepOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          跌倒
+                          <UISwitch
+                            checked={step.fall_detection_enabled ?? true}
+                            onCheckedChange={v => updateStep(idx, { fall_detection_enabled: v })}
+                          />
+                        </span>
                       {step.type === 'navigate' && (
                         <>
                           <select
@@ -743,9 +759,9 @@ export const TaskConfigTab: React.FC = () => {
                             <select
                               value={String(step.params?.[p.key] ?? p.default_value ?? '')}
                               onChange={e => updateStep(idx, { params: { ...step.params, [p.key]: e.target.value } })}
-                              className="h-8 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                              className="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                             >
-                              {(p.options || []).map((option) => (
+                              {(((p as any).options_source === 'trajectories' ? trajectoryOptions : (p.options || [])) as Array<{ value: string; label: string }>).map((option) => (
                                 <option key={option.value} value={option.value}>
                                   {option.label}
                                 </option>

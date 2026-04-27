@@ -738,6 +738,52 @@ class ApiService {
     }
   }
 
+  // ------ 素材管理 ------
+
+  async listAssets(category: string): Promise<any> {
+    return this._get(`/api/assets/${encodeURIComponent(category)}/list`);
+  }
+
+  async uploadAssetPair(category: string, hdf5File?: File, mp3File?: File): Promise<any> {
+    const formData = new FormData();
+    if (hdf5File) formData.append('hdf5_file', hdf5File);
+    if (mp3File) formData.append('mp3_file', mp3File);
+    const res = await fetch(`${API_BASE}/api/assets/${encodeURIComponent(category)}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return res.json();
+  }
+
+  async deleteAssetPair(category: string, pairIndex: number): Promise<any> {
+    return this._post(`/api/assets/${encodeURIComponent(category)}/delete`, { pair_index: pairIndex });
+  }
+
+  async previewAudio(category: string, pairIndex: number): Promise<any> {
+    return this._post('/api/assets/preview-audio', { category, pair_index: pairIndex });
+  }
+
+  async stopAudio(): Promise<any> {
+    return this._post('/api/assets/stop-audio', {});
+  }
+
+  async previewAction(category: string, pairIndex: number): Promise<any> {
+    return this._post('/api/assets/preview-action', { category, pair_index: pairIndex });
+  }
+
+  async stopAction(): Promise<any> {
+    return this._post('/api/assets/stop-action', {});
+  }
+
+  async getReplayStatus(): Promise<any> {
+    return this._get('/api/assets/replay-status');
+  }
+
+  async listTrajectories(): Promise<{ success: boolean; trajectories: string[] }> {
+    return this._get('/api/assets/trajectories');
+  }
+
   // ------ HTTP helpers ------
 
   private async _post(path: string, body: any): Promise<any> {

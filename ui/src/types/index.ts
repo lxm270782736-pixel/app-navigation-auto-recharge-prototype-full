@@ -236,6 +236,7 @@ export interface RoomTaskStep {
   duration?: number;
   params?: Record<string, any>;  // 自定义步骤参数
   enabled?: boolean;  // 步骤使能开关，默认 true
+  fall_detection_enabled?: boolean;  // 当前步骤是否启用跌倒检测，默认 true
   retry_limit?: number;  // 失败重试次数，仅 navigate 步骤使用，未设置时用任务级 retry_limit
   deactivate_after?: boolean;  // 步骤完成后是否 deactivate 对应 meta 服务（覆盖步骤定义默认值）
 }

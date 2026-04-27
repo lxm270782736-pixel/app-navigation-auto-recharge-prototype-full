@@ -18,13 +18,14 @@ const Mapping = lazy(() => import('@/components/Mapping').then((module) => ({ de
 const Navigation = lazy(() => import('@/components/Navigation').then((module) => ({ default: module.Navigation })));
 const Settings = lazy(() => import('@/components/Settings').then((module) => ({ default: module.Settings })));
 const RoomPatrol = lazy(() => import('@/components/RoomPatrol').then((module) => ({ default: module.RoomPatrol })));
+const AssetManager = lazy(() => import('@/components/AssetManager').then((module) => ({ default: module.AssetManager })));
 
 export type AppComponentProps = {
   appId: string;
   onExit: () => void;
 };
 
-const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol'];
+const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol', '/asset-manager'];
 
 type NavigationRoutesProps = {
   chromeClassName?: string;
@@ -44,6 +45,7 @@ export function NavigationRoutes({ chromeClassName = 'app-shell' }: NavigationRo
           <Route path="/mapping" element={<Mapping />} />
           <Route path="/navigation" element={<Navigation />} />
           <Route path="/room-patrol" element={<RoomPatrol />} />
+          <Route path="/asset-manager" element={<AssetManager />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>
