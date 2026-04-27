@@ -540,13 +540,17 @@ class RoomPatrolMixin:
             for wp in rc.get("waypoints", []):
                 if wp.get("pose"):
                     wp_dict[wp["id"]] = wp["pose"]
+            # 兼容旧格式：door_outside/door_inside/bed_check 直接在 room config 顶层
+            for old_key in ("door_outside", "door_inside", "bed_check"):
+                if old_key not in wp_dict and rc.get(old_key):
+                    wp_dict[old_key] = rc[old_key]
             # 检查任务步骤引用的 navigate target 是否都有对应点位
             steps = room.get("steps", DEFAULT_ROOM_STEPS)
             nav_targets = {s.get("target") for s in steps if s.get("type") == "navigate" and s.get("target")}
             nav_targets.discard("start_position")
             missing = nav_targets - set(wp_dict.keys())
             if missing:
-                print(f"[room_patrol] Room {rid} missing waypoints: {missing}, skipping")
+                print(f"[room_patrol] Room {rid} missing waypoints: {missing} (available: {list(wp_dict.keys())}), skipping")
                 continue
             room_with_coords = {**room, "waypoints": wp_dict}
             valid_rooms.append(room_with_coords)
@@ -794,6 +798,9 @@ class RoomPatrolMixin:
                 step_type = step.get("type", "")
                 step_target = step.get("target", step.get("label", ""))
                 step_result = {"step": step_type, "target": step_target, "status": "running", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+
+                # 每一步可单独控制跌倒检测开关，默认开启
+                self._fall_monitor_enabled = step.get("fall_detection_enabled", True)
 
                 with self._lock:
                     self._room_patrol_current_step = step_type

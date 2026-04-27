@@ -7,6 +7,7 @@ import {
   Compass,
   Map,
   MoveRight,
+  Package,
   Radar,
   Route,
   Settings2,
@@ -211,6 +212,7 @@ export function Dashboard() {
             <ActionCard title="SLAM 建图" description="启动建图流程并把结果保存为导航地图。" icon={Compass} onClick={() => navigate('/mapping')} />
             <ActionCard title="自主导航" description="基于当前地图下发导航目标并观测轨迹反馈。" icon={Route} onClick={() => navigate('/navigation')} />
             <ActionCard title="导览任务" description="配置点位、编排任务流并下发巡检/导览任务。" icon={Radar} onClick={() => navigate('/room-patrol')} />
+            <ActionCard title="素材管理" description="管理回放轨迹与音频素材，供任务编排和预览使用。" icon={Package} onClick={() => navigate('/asset-manager')} />
             <ActionCard title="系统设置" description="集中管理导航相关 Meta、参数与运行模式。" icon={Settings2} onClick={() => navigate('/settings')} />
           </CardContent>
         </Card>

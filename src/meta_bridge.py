@@ -61,6 +61,7 @@ _DEFAULT_SERVICES = [
     {"name": "meta.lidar",               "startup": True,  "config": _DEFAULT_LIDAR_CONFIG},
     {"name": "meta.detection",           "startup": True,  "config": {"simulated": True}},
     {"name": "meta.sales_replay",        "startup": False, "config": {}},
+    {"name": "meta.sales_audio",         "startup": False, "config": {}},
     {"name": "meta.camera",              "startup": False, "config": {}},
 ]
 

@@ -1,5 +1,6 @@
 astribot_link
 fastapi
+python-multipart
 sse-starlette
 uvicorn
 pyyaml
