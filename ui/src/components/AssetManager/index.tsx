@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Tabs, Table, Upload, Space, Popconfirm, message, Tag, Card, Row, Col } from 'antd';
 import {
-  ArrowLeftOutlined,
-  UploadOutlined,
-  PauseCircleOutlined,
-  DeleteOutlined,
-  SoundOutlined,
-  RocketOutlined,
-} from '@ant-design/icons';
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  cn,
+} from '@astribot/ui';
+import { ArrowLeft, Play, Rocket, Square, Trash2, Upload } from 'lucide-react';
 import { apiService } from '@/services/api';
 
 const CATEGORIES: Record<string, string> = {
@@ -30,56 +34,47 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const CategoryPanel: React.FC<{ category: string }> = ({ category }) => {
+function CategoryPanel({ category }: { category: string }) {
   const [pairs, setPairs] = useState<AssetPair[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [hdf5File, setHdf5File] = useState<File | null>(null);
-  const [mp3File, setMp3File] = useState<File | null>(null);
   const [playingAudio, setPlayingAudio] = useState<number | null>(null);
   const [playingAction, setPlayingAction] = useState<number | null>(null);
+  const hdf5Ref = useRef<HTMLInputElement>(null);
+  const mp3Ref = useRef<HTMLInputElement>(null);
+// PLACEHOLDER_HANDLERS
 
   const loadPairs = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiService.listAssets(category);
       if (res.success) setPairs(res.pairs || []);
-    } catch (e: any) {
-      message.error(`加载失败: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+    } catch { /* ignore */ } finally { setLoading(false); }
   }, [category]);
 
   useEffect(() => { loadPairs(); }, [loadPairs]);
-// PLACEHOLDER_HANDLERS
 
   const handleUpload = async () => {
-    if (!hdf5File && !mp3File) { message.warning('请至少选择一个文件'); return; }
+    const hdf5 = hdf5Ref.current?.files?.[0];
+    const mp3 = mp3Ref.current?.files?.[0];
+    if (!hdf5 && !mp3) return;
     setUploading(true);
     try {
-      const res = await apiService.uploadAssetPair(category, hdf5File || undefined, mp3File || undefined);
+      const res = await apiService.uploadAssetPair(category, hdf5, mp3);
       if (res.success) {
-        message.success(`上传成功，编号 #${res.pair_index}`);
-        setHdf5File(null);
-        setMp3File(null);
+        if (hdf5Ref.current) hdf5Ref.current.value = '';
+        if (mp3Ref.current) mp3Ref.current.value = '';
         loadPairs();
-      } else {
-        message.error(res.message);
       }
-    } catch (e: any) {
-      message.error(`上传失败: ${e.message}`);
-    } finally {
-      setUploading(false);
-    }
+    } catch { /* ignore */ } finally { setUploading(false); }
   };
 
-  const handleDelete = async (pairIndex: number) => {
+  const handleDelete = async (idx: number) => {
+    if (!confirm(`确定删除编号 #${idx} 的素材？`)) return;
     try {
-      const res = await apiService.deleteAssetPair(category, pairIndex);
-      if (res.success) { message.success(res.message); loadPairs(); }
-      else message.error(res.message);
-    } catch (e: any) { message.error(`删除失败: ${e.message}`); }
+      const res = await apiService.deleteAssetPair(category, idx);
+      if (res.success) loadPairs();
+    } catch { /* ignore */ }
   };
 
   const handlePreviewAudio = async (idx: number) => {
@@ -87,7 +82,7 @@ const CategoryPanel: React.FC<{ category: string }> = ({ category }) => {
       if (playingAudio === idx) { await apiService.stopAudio(); setPlayingAudio(null); return; }
       await apiService.previewAudio(category, idx);
       setPlayingAudio(idx);
-    } catch (e: any) { message.error(`音频预览失败: ${e.message}`); }
+    } catch { /* ignore */ }
   };
 
   const handlePreviewAction = async (idx: number) => {
@@ -95,101 +90,95 @@ const CategoryPanel: React.FC<{ category: string }> = ({ category }) => {
       if (playingAction === idx) { await apiService.stopAction(); setPlayingAction(null); return; }
       await apiService.previewAction(category, idx);
       setPlayingAction(idx);
-    } catch (e: any) { message.error(`动作预览失败: ${e.message}`); }
+    } catch { /* ignore */ }
   };
 
-  const columns = [
-    { title: '编号', dataIndex: 'index', key: 'index', width: 80 },
-    {
-      title: 'HDF5 轨迹', key: 'hdf5',
-      render: (_: any, r: AssetPair) => r.hdf5
-        ? <span>{r.hdf5.filename} <Tag color="blue">{formatSize(r.hdf5.size)}</Tag></span>
-        : <Tag color="default">未上传</Tag>,
-    },
-    {
-      title: 'MP3 音频', key: 'audio',
-      render: (_: any, r: AssetPair) => r.audio
-        ? <span>{r.audio.filename} <Tag color="green">{formatSize(r.audio.size)}</Tag></span>
-        : <Tag color="default">未上传</Tag>,
-    },
-    {
-      title: '操作', key: 'actions', width: 300,
-      render: (_: any, r: AssetPair) => (
-        <Space>
-          {r.audio && (
-            <Button size="small" type={playingAudio === r.index ? 'primary' : 'default'}
-              icon={playingAudio === r.index ? <PauseCircleOutlined /> : <SoundOutlined />}
-              onClick={() => handlePreviewAudio(r.index)}>
-              {playingAudio === r.index ? '停止' : '播放'}
-            </Button>
-          )}
-          {r.hdf5 && (
-            <Button size="small" type={playingAction === r.index ? 'primary' : 'default'}
-              danger={playingAction === r.index}
-              icon={playingAction === r.index ? <PauseCircleOutlined /> : <RocketOutlined />}
-              onClick={() => handlePreviewAction(r.index)}>
-              {playingAction === r.index ? '停止' : '预览'}
-            </Button>
-          )}
-          <Popconfirm title="确定删除该组素材？" onConfirm={() => handleDelete(r.index)}>
-            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+// PLACEHOLDER_RENDER
 
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16} align="middle">
-          <Col>
-            <Upload accept=".hdf5" maxCount={1} beforeUpload={(f) => { setHdf5File(f); return false; }}
-              fileList={hdf5File ? [{ uid: '-1', name: hdf5File.name, status: 'done' } as any] : []}
-              onRemove={() => setHdf5File(null)}>
-              <Button icon={<UploadOutlined />}>选择 HDF5</Button>
-            </Upload>
-          </Col>
-          <Col>
-            <Upload accept=".mp3" maxCount={1} beforeUpload={(f) => { setMp3File(f); return false; }}
-              fileList={mp3File ? [{ uid: '-2', name: mp3File.name, status: 'done' } as any] : []}
-              onRemove={() => setMp3File(null)}>
-              <Button icon={<UploadOutlined />}>选择 MP3</Button>
-            </Upload>
-          </Col>
-          <Col>
-            <Button type="primary" onClick={handleUpload} loading={uploading} disabled={!hdf5File && !mp3File}>
-              上传
-            </Button>
-          </Col>
-          <Col style={{ color: '#999', fontSize: 12 }}>
-            可同时上传 HDF5+MP3（同编号），也可单独上传（自动补到缺失的组）
-          </Col>
-        </Row>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-4 p-4">
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">HDF5 轨迹</span>
+            <input ref={hdf5Ref} type="file" accept=".hdf5" className="block text-sm file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:text-primary" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">MP3 音频</span>
+            <input ref={mp3Ref} type="file" accept=".mp3" className="block text-sm file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:text-primary" />
+          </label>
+          <Button size="sm" onClick={handleUpload} disabled={uploading}>
+            <Upload className="mr-1 h-3.5 w-3.5" />{uploading ? '上传中...' : '上传'}
+          </Button>
+          <span className="text-xs text-muted-foreground">可同时上传或单独上传，自动配对同编号</span>
+        </CardContent>
       </Card>
-      <Table columns={columns} dataSource={pairs} rowKey="index" loading={loading} pagination={false} size="middle"
-        locale={{ emptyText: '暂无素材' }} />
+
+      {loading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">加载中...</p>
+      ) : pairs.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">暂无素材</p>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2 font-medium">编号</th>
+                  <th className="px-4 py-2 font-medium">HDF5 轨迹</th>
+                  <th className="px-4 py-2 font-medium">MP3 音频</th>
+                  <th className="px-4 py-2 font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pairs.map(p => (
+                  <tr key={p.index} className="border-b last:border-0">
+                    <td className="px-4 py-2 font-mono text-xs">#{p.index}</td>
+                    <td className="px-4 py-2">{p.hdf5 ? <span className="text-xs">{p.hdf5.filename} <span className="text-muted-foreground">({formatSize(p.hdf5.size)})</span></span> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                    <td className="px-4 py-2">{p.audio ? <span className="text-xs">{p.audio.filename} <span className="text-muted-foreground">({formatSize(p.audio.size)})</span></span> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                    <td className="flex gap-1 px-4 py-2">
+                      {p.audio && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handlePreviewAudio(p.index)}>{playingAudio === p.index ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</Button>}
+                      {p.hdf5 && <Button variant="ghost" size="icon" className={cn('h-7 w-7', playingAction === p.index && 'text-destructive')} onClick={() => handlePreviewAction(p.index)}>{playingAction === p.index ? <Square className="h-3.5 w-3.5" /> : <Rocket className="h-3.5 w-3.5" />}</Button>}
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(p.index)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
-};
+}
 
 // PLACEHOLDER_EXPORT
 
-export const AssetManager: React.FC = () => {
+export function AssetManager() {
   const navigate = useNavigate();
-  const tabItems = Object.entries(CATEGORIES).map(([key, label]) => ({
-    key, label, children: <CategoryPanel category={key} />,
-  }));
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      <div style={{ padding: '12px 24px', background: '#fff', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>返回</Button>
-        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>素材管理</div>
-      </div>
-      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        <Tabs items={tabItems} destroyInactiveTabPane />
+    <div className="flex h-screen flex-col bg-background">
+      <header className="flex items-center gap-4 border-b px-6 py-3">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+          <ArrowLeft className="mr-1 h-4 w-4" />返回
+        </Button>
+        <h1 className="text-base font-semibold">素材管理</h1>
+      </header>
+      <div className="flex-1 overflow-auto p-6">
+        <Tabs defaultValue="yingbin">
+          <TabsList>
+            {Object.entries(CATEGORIES).map(([key, label]) => (
+              <TabsTrigger key={key} value={key}>{label}</TabsTrigger>
+            ))}
+          </TabsList>
+          {Object.keys(CATEGORIES).map(key => (
+            <TabsContent key={key} value={key}>
+              <CategoryPanel category={key} />
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
     </div>
   );
-};
+}
