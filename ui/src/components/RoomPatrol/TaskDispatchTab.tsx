@@ -434,6 +434,16 @@ export const TaskDispatchTab: React.FC = () => {
 
   // Build ALL waypoints for map display: dynamic per-room waypoints + start_position
   const roomLookup = new Map(roomConfigs.map(r => [r.room_id, r]));
+  // 点位 id → 名称映射（用于步骤显示）
+  const waypointNameMap = useMemo(() => {
+    const map: Record<string, string> = { start_position: '起点' };
+    for (const rc of roomConfigs) {
+      for (const wp of (rc.waypoints || [])) {
+        if (wp.id && wp.name && !map[wp.id]) map[wp.id] = wp.name;
+      }
+    }
+    return map;
+  }, [roomConfigs]);
   const displayRoomIds = taskRoomIds.length > 0 ? taskRoomIds : roomConfigs.filter(r => (r.waypoints || []).some(wp => wp.pose)).map(r => r.room_id);
   const waypoints: Pose[] = [];
   const waypointMeta: { roomId: string; type: string; waypointIdx: number }[] = [];
@@ -827,7 +837,8 @@ export const TaskDispatchTab: React.FC = () => {
                           }
 
                           const label = stepLabels[step.type] || step.type;
-                          const suffix = step.type === 'navigate' ? ` → ${step.target || ''}` : step.label ? ` (${step.label})` : '';
+                          const targetName = step.target ? (waypointNameMap[step.target] || step.target) : '';
+                          const suffix = step.type === 'navigate' ? ` → ${targetName}` : step.label ? ` (${step.label})` : '';
                           const isCurrentStep = isCurrent && si === currentStepIdx && status === 'process';
                           const canJump = isAwaiting && si !== currentStepIdx + 1;
 
