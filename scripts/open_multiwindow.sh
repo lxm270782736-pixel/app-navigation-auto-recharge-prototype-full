@@ -23,7 +23,7 @@ xdotool type "cd /home/instellar/Documents/Codes/Planning/meta_astribot_navigati
 xdotool key Return
 xdotool type "source install/setup.bash"
 xdotool key Return
-xdotool type "python3 -m meta_base src.api:AstribotNavigation"
+xdotool type "NAV_MODE=sim python3 -m meta_base src.api:AstribotNavigation"
 xdotool key Return
 ################################
 # 创建右侧列

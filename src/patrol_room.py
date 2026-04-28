@@ -759,10 +759,6 @@ class RoomPatrolMixin:
             room_success = True
             skip_room = False
             self._last_photo = None  # reset per-room photo
-            # 清除地面检测缓存，确保每次进入房间重新调用 meta 服务
-            cache_key = f"_floor_cache_{room_id}"
-            if hasattr(self, cache_key):
-                delattr(self, cache_key)
 
             step_idx = 0
             while step_idx < len(steps):
