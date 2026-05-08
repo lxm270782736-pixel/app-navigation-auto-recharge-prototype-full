@@ -118,6 +118,7 @@ class BusinessLogic(
 
         # Cached pose updated by background poller to avoid blocking SSE
         self._cached_pose: dict | None = None
+        self._cached_nav_debug: dict | None = None
         self._pose_poller_thread: threading.Thread | None = None
         self._pose_poller_stop = threading.Event()
         self._start_pose_poller()
@@ -138,6 +139,26 @@ class BusinessLogic(
                         self._cached_pose = self._loc.get_pose()
                     except Exception:
                         pass
+                # Poll MPC/planner debug only while a navigation task is
+                # actually in flight. When idle the MPC horizon is stale and
+                # the FSM sits in IDLE — polling just burns Meta RPC cycles.
+                is_navigating = (
+                    self._nav_status == "navigating"
+                    or self._patrol_active
+                    or self._room_patrol_active
+                )
+                if self._nav_state == "active" and self._nav and is_navigating:
+                    try:
+                        debug = self.get_nav_debug_snapshot()
+                        if isinstance(debug, dict) and debug.get("success"):
+                            self._cached_nav_debug = {
+                                "mpc": debug.get("mpc") or {},
+                                "planner": debug.get("planner") or {},
+                            }
+                    except Exception:
+                        pass
+                else:
+                    self._cached_nav_debug = None
                 self._pose_poller_stop.wait(timeout=0.5)
 
         self._pose_poller_thread = threading.Thread(target=_poll, daemon=True, name="pose-poller")
@@ -213,6 +234,7 @@ class BusinessLogic(
                         and self._room_patrol_status == "paused_manual_advance"
                     ),
                 },
+                "nav_debug": self._cached_nav_debug,
             }
 
         return raw

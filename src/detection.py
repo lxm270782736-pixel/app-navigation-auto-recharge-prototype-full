@@ -40,11 +40,7 @@ class DetectionMixin:
             {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None}
 
     def _detect_floor_full(self, room_id: str) -> dict:
-        """调用 meta.detection.detect_floor()，同一房间同一步骤只调用一次。"""
-        cache_key = f"_floor_cache_{room_id}"
-        cached = getattr(self, cache_key, None)
-        if cached:
-            return cached
+        """调用 meta.detection.detect_floor()，每次都重新推理最新帧。"""
         result = self._detection_call("detect_floor", room_id=room_id)
         if isinstance(result, dict) and "clutter" in result:
             clutter = result.get("clutter") or {}
@@ -54,17 +50,14 @@ class DetectionMixin:
                         clutter.get("is_abnormal"), clutter.get("confidence"),
                         "{is_abnormal:%s, confidence:%s}" % (water.get("is_abnormal"), water.get("confidence")) if water else "N/A",
                         result.get("any_abnormal"))
-            setattr(self, cache_key, result)
             return result
         logger.warning("[detection] detect_floor unavailable for room %s", room_id)
-        fallback = {
+        return {
             "clutter": {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},
             "water":   {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},
             "room_id": room_id,
             "any_abnormal": False,
         }
-        setattr(self, cache_key, fallback)
-        return fallback
 
     def capture_image(self) -> str | None:
         """拍照，返回 base64。真机替换为摄像头数据。"""

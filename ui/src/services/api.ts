@@ -284,6 +284,41 @@ class ApiService {
     return this._get('/api/navigation/path');
   }
 
+  /** Fetch a live ESDF snapshot. `max_dist` is the distance at which cells are
+   *  clamped to 100 (farthest). Returns null when unavailable. */
+  async getEsdfSnapshot(maxDist: number = 2.0): Promise<{
+    resolution: number;
+    width: number;
+    height: number;
+    origin_x: number;
+    origin_y: number;
+    data: number[];
+    stamp_ns: number;
+  } | null> {
+    try {
+      const r: any = await this._get(`/api/navigation/esdf?max_dist=${maxDist}`);
+      if (!r || !r.success || !r.data) return null;
+      return r.data;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch combined MPC + planner debug state. Prefer SSE `nav_debug` when
+   *  possible; this endpoint exists for on-demand refresh. */
+  async getNavigationDebug(): Promise<{
+    mpc?: any;
+    planner?: any;
+  } | null> {
+    try {
+      const r: any = await this._get('/api/navigation/debug');
+      if (!r || !r.success) return null;
+      return { mpc: r.mpc, planner: r.planner };
+    } catch {
+      return null;
+    }
+  }
+
   sendLocalNavigationGoal(pose: Pose): void {
     this._post('/api/navigation/local-go', {
       x: pose.x,

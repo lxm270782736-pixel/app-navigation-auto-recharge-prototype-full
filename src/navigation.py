@@ -179,3 +179,67 @@ class NavigationMixin:
     def send_local_navigation_goal(self, x: float, y: float, theta: float) -> dict:
         """Local navigation — not available via Meta yet."""
         return {"success": False, "message": "Local navigation not available via Meta"}
+
+    # ---- Debug snapshots (ESDF grid, MPC/planner debug) ----
+
+    def get_esdf_snapshot(self, max_dist: float = 2.0) -> dict:
+        """Fetch ESDF grid snapshot from meta.astribot_navigation.
+
+        Caches the last successful snapshot. On RPC timeout / service inactive
+        we fall back to the cache and mark it ``stale`` so the UI can still
+        render the last known distance field instead of blanking out. Cache is
+        cleared on cancel_navigation / service shutdown.
+        """
+        cached = getattr(self, '_last_esdf_snapshot', None)
+
+        def _stale_reply(msg: str) -> dict:
+            if cached is not None:
+                return {"success": True, "stale": True, "message": msg, "data": cached}
+            return {"success": False, "message": msg}
+
+        if self._nav_state != "active" or not self._nav:
+            return _stale_reply("Navigation service not active")
+        try:
+            result = self._nav.get_esdf_snapshot(max_dist=float(max_dist))
+            if isinstance(result, dict) and result.get("success") and result.get("data"):
+                self._last_esdf_snapshot = result["data"]
+                return result
+            # Upstream said failure — keep serving cache.
+            return _stale_reply(
+                (result or {}).get("message", "ESDF not available") if isinstance(result, dict) else "ESDF not available"
+            )
+        except Exception as e:
+            logger.debug("[nav] get_esdf_snapshot failed: %s", e)
+            return _stale_reply(str(e))
+
+    def get_occ_snapshot(self) -> dict:
+        cached = getattr(self, '_last_occ_snapshot', None)
+
+        def _stale_reply(msg: str) -> dict:
+            if cached is not None:
+                return {"success": True, "stale": True, "message": msg, "data": cached}
+            return {"success": False, "message": msg}
+
+        if self._nav_state != "active" or not self._nav:
+            return _stale_reply("Navigation service not active")
+        try:
+            result = self._nav.get_occ_snapshot()
+            if isinstance(result, dict) and result.get("success") and result.get("data"):
+                self._last_occ_snapshot = result["data"]
+                return result
+            return _stale_reply(
+                (result or {}).get("message", "Occupancy grid not available") if isinstance(result, dict) else "Occupancy grid not available"
+            )
+        except Exception as e:
+            logger.debug("[nav] get_occ_snapshot failed: %s", e)
+            return _stale_reply(str(e))
+
+    def get_nav_debug_snapshot(self) -> dict:
+        """Combined MPC + planner debug in a single Meta RPC."""
+        if self._nav_state != "active" or not self._nav:
+            return {"success": False, "message": "Navigation service not active"}
+        try:
+            return self._nav.get_debug_snapshot()
+        except Exception as e:
+            logger.debug("[nav] get_debug_snapshot failed: %s", e)
+            return {"success": False, "message": str(e)}
