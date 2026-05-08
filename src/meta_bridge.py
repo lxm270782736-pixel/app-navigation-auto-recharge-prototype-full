@@ -441,8 +441,28 @@ class MetaBridgeMixin:
         entry = self._services.get(service_name)
         return entry.deactivate_after_step if entry else False
 
-    def get_meta_status(self) -> dict:
-        """Return state of all registered services."""
+    def get_meta_status(self, refresh: bool = False) -> dict:
+        """Return state of all registered services.
+
+        Args:
+            refresh: If True, re-probe each connected proxy's real lifecycle
+                state (handles meta-side restart where cached state is stale).
+        """
+        if refresh:
+            for name, entry in self._services.items():
+                if entry.proxy is None:
+                    continue
+                probed = self._probe_service_state(entry.proxy, name)
+                if probed != entry.state:
+                    logger.info("[meta] refresh %s: %s → %s", name, entry.state, probed)
+                entry.state = probed
+                if probed == META_DISCONNECTED:
+                    try:
+                        if hasattr(entry.proxy, 'close'):
+                            entry.proxy.close()
+                    except Exception:
+                        pass
+                    entry.proxy = None
         alias_by_name = {
             "meta.localization": "loc_state",
             "meta.astribot_navigation": "nav_state",

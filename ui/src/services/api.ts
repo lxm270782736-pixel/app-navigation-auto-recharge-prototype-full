@@ -529,8 +529,9 @@ class ApiService {
     return this._post('/api/meta/control', { service, action });
   }
 
-  async getMetaStatus(): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; lidar_state: string; fall_state: string }> {
-    return this._get('/api/meta/status');
+  async getMetaStatus(refresh: boolean = false): Promise<{ meta_connected: boolean; loc_state: string; nav_state: string; lidar_state: string; fall_state: string }> {
+    const qs = refresh ? '?refresh=true' : '';
+    return this._get(`/api/meta/status${qs}`);
   }
 
   async getMetaServicesConfig(): Promise<{ services: Array<{ name: string; startup: boolean; config: Record<string, any> }> }> {

@@ -669,8 +669,8 @@ def meta_control(req: MetaControlRequest):
 
 
 @app.get("/api/meta/status")
-def meta_status():
-    return logic.get_meta_status()
+def meta_status(refresh: bool = False):
+    return logic.get_meta_status(refresh=refresh)
 
 
 @app.get("/api/meta/services-config")
