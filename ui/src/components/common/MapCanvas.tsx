@@ -352,6 +352,14 @@ interface MapCanvasProps {
   showLaserScan?: boolean;
   showGrid?: boolean;
   gridSize?: number;
+  /** Optional ESDF grid overlay. Same shape as MapData; values 0-100 = distance
+   *  bins (low = near obstacle, high = far), -1 = unknown. Rendered as a
+   *  semi-transparent heatmap above the occupancy grid when present. */
+  esdfData?: MapData | null;
+  /** Opacity of the ESDF overlay, 0..1. Default 0.55. */
+  esdfOpacity?: number;
+  /** Optional MPC predicted horizon; drawn as a distinct polyline. */
+  horizonPath?: PathPoint[];
   waypoints?: Pose[];
   currentWaypointIndex?: number;
   completedWaypoints?: number[];
@@ -382,6 +390,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   showLaserScan = false,
   showGrid = false,
   gridSize = 1.0,
+  esdfData = null,
+  esdfOpacity = 0.55,
+  horizonPath,
   waypoints = [],
   currentWaypointIndex = -1,
   completedWaypoints = [],
@@ -394,6 +405,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   waypointColors,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const esdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { connectionStatus } = useRobot();
 
@@ -540,6 +552,70 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     ctx.putImageData(imageData, 0, 0);
   }, [mapData]);
+
+  // ========== ESDF overlay ==========
+  // Paints the ESDF grid into a secondary canvas with a blue→yellow→red heatmap.
+  // Cell values: -1 = unknown (fully transparent), 0..100 = distance bucket
+  // where 0 ≈ at obstacle (red) and 100 ≈ far (blue). The canvas is CSS-sized
+  // in map-pixels so the parent transform applied to the occupancy canvas also
+  // aligns this overlay. If the ESDF grid has a different resolution/origin
+  // from the base map, we translate+scale this canvas in world space relative
+  // to the base map's origin.
+  useEffect(() => {
+    const canvas = esdfCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
+
+    if (!esdfData || !esdfData.data || esdfData.data.length === 0) {
+      canvas.width = 0;
+      canvas.height = 0;
+      return;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = esdfData.width * dpr;
+    canvas.height = esdfData.height * dpr;
+    canvas.style.width = `${esdfData.width}px`;
+    canvas.style.height = `${esdfData.height}px`;
+
+    const img = ctx.createImageData(esdfData.width * dpr, esdfData.height * dpr);
+    for (let y = 0; y < esdfData.height; y++) {
+      for (let x = 0; x < esdfData.width; x++) {
+        const v = esdfData.data[y * esdfData.width + x];
+        const flippedY = esdfData.height - 1 - y;
+        let r = 0, g = 0, b = 0, a = 0;
+        if (v === -1) {
+          a = 0;
+        } else {
+          // 0 → red (near), 50 → yellow, 100 → blue (far).
+          const t = Math.max(0, Math.min(100, v)) / 100;
+          if (t < 0.5) {
+            const k = t / 0.5;
+            r = 230;
+            g = Math.round(60 + k * 180);
+            b = Math.round(60 * (1 - k));
+          } else {
+            const k = (t - 0.5) / 0.5;
+            r = Math.round(230 * (1 - k));
+            g = Math.round(240 * (1 - k) + 150 * k);
+            b = Math.round(60 + k * 195);
+          }
+          a = 255;
+        }
+        for (let dy = 0; dy < dpr; dy++) {
+          for (let dx = 0; dx < dpr; dx++) {
+            const idx = ((flippedY * dpr + dy) * esdfData.width * dpr + (x * dpr + dx)) * 4;
+            img.data[idx] = r;
+            img.data[idx + 1] = g;
+            img.data[idx + 2] = b;
+            img.data[idx + 3] = a;
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }, [esdfData]);
 
   // ========== 鼠标交互 ==========
 
@@ -878,6 +954,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }}
         />
 
+        {/* ESDF 叠加层：半透明距离场热力图，坐标对齐到底图 */}
+        {esdfData && esdfData.data && esdfData.data.length > 0 && (() => {
+          // ESDF 底图的左下角 (origin_x, origin_y) 对应的底图像素坐标。
+          const originMapPx = worldToMap(esdfData.origin.x, esdfData.origin.y, mapData);
+          const resRatio = esdfData.resolution / mapData.resolution;
+          // 底图左上角是 y=0，ESDF 图层在底图里从左下角铺开，翻转后的 top 即是
+          // originMapPx.y 对应的像素 - ESDF 高度（因为 worldToMap 已翻转）。
+          const esdfTop = originMapPx.y - esdfData.height * resRatio;
+          const esdfLeft = originMapPx.x;
+          return (
+            <canvas
+              ref={esdfCanvasRef}
+              className="pointer-events-none absolute left-0 top-0"
+              style={{
+                opacity: esdfOpacity,
+                transform: `translate(${offset.x + esdfLeft * scale}px, ${offset.y + esdfTop * scale}px) scale(${scale * resRatio})`,
+                transformOrigin: '0 0',
+              }}
+            />
+          );
+        })()}
+
         {/* SVG 覆盖层：所有矢量图形 */}
         <svg
           className="pointer-events-none absolute left-0 top-0 overflow-visible"
@@ -897,6 +995,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* 导航路径（规划路径） */}
           {path && path.length > 0 && (
             <NavigationPathOverlay path={path} mapData={mapData} scale={scale} />
+          )}
+
+          {/* MPC 预测 horizon */}
+          {horizonPath && horizonPath.length > 1 && (
+            <polyline
+              points={horizonPath.map(p => {
+                const m = worldToMap(p.x, p.y, mapData);
+                return `${m.x},${m.y}`;
+              }).join(' ')}
+              fill="none"
+              stroke="#ff5cf5"
+              strokeWidth={2 / scale}
+              strokeDasharray={`${6 / scale},${4 / scale}`}
+              strokeLinecap="round"
+            />
           )}
 
           {/* 机器人轨迹 */}

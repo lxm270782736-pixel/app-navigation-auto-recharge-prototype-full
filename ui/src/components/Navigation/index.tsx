@@ -77,6 +77,8 @@ export function Navigation() {
   const { connectionStatus } = useRobot();
 
   const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
+  const [esdfData, setEsdfData] = useState<MapData | null>(null);
+  const [navDebug, setNavDebug] = useState<{ mpc?: any; planner?: any } | null>(null);
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [isMapRealtime, setIsMapRealtime] = useState(false);
   const [currentMapName, setCurrentMapName] = useState('');
@@ -116,6 +118,8 @@ export function Navigation() {
     goalPose: true,
     path: true,
     trail: true,
+    esdf: false,
+    horizon: false,
   });
 
   useEffect(() => {
@@ -208,7 +212,11 @@ export function Navigation() {
   }, [connectionStatus]);
 
   useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+    // Only poll planning data while a navigation task is actually in flight.
+    // When idle we burn backend + Meta RPC cycles for nothing (observed in
+    // server logs: /path every 500 ms while sitting idle).
+    const isActive = isNavigating || isPatrolActive;
+    if (connectionStatus !== ConnectionStatus.CONNECTED || !isActive) {
       setNavigationPath([]);
       return;
     }
@@ -240,7 +248,72 @@ export function Navigation() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [connectionStatus]);
+  }, [connectionStatus, isNavigating, isPatrolActive]);
+
+  // ESDF overlay polling — always available while the layer is on, but the
+  // cadence tracks navigation state: fast (1 Hz) when actively navigating so
+  // the heatmap stays in sync with the robot; slow (every 5 s) when idle so
+  // the user can still inspect the local distance field without hammering the
+  // backend.
+  useEffect(() => {
+    if (!layers.esdf || connectionStatus !== ConnectionStatus.CONNECTED) {
+      setEsdfData(null);
+      return;
+    }
+    const isActive = isNavigating || isPatrolActive;
+    const intervalMs = isActive ? 1000 : 5000;
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await apiService.getEsdfSnapshot(2.0);
+      if (cancelled) return;
+      // If the backend can't reach meta.astribot_navigation right now
+      // (RPC timeout) we receive null here. Keep whatever we had before
+      // so the overlay doesn't flicker on transient failures.
+      if (!snap || !snap.data || snap.data.length === 0) {
+        return;
+      }
+      const frame: MapData = {
+        id: 'esdf',
+        name: 'esdf',
+        createdAt: '',
+        thumbnail: '',
+        width: snap.width,
+        height: snap.height,
+        resolution: snap.resolution,
+        origin: { x: snap.origin_x, y: snap.origin_y, orientation: 0 },
+        data: snap.data,
+      };
+      setEsdfData(frame);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [layers.esdf, connectionStatus, isNavigating, isPatrolActive]);
+
+  // MPC horizon + FSM debug polling — layer on + navigating. When idle the
+  // MPC horizon is stale and the FSM sits in IDLE, so polling is pointless.
+  useEffect(() => {
+    const isActive = isNavigating || isPatrolActive;
+    if (!layers.horizon || connectionStatus !== ConnectionStatus.CONNECTED || !isActive) {
+      setNavDebug(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const dbg = await apiService.getNavigationDebug();
+      if (cancelled) return;
+      setNavDebug(dbg);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [layers.horizon, connectionStatus, isNavigating, isPatrolActive]);
 
   useEffect(() => {
     const handleNavigationResult = (data: any) => {
@@ -598,6 +671,8 @@ export function Navigation() {
             goalPose={layers.goalPose ? goalPose : undefined}
             initialPose={initialPose}
             path={layers.path ? navigationPath : undefined}
+            esdfData={layers.esdf ? esdfData : null}
+            horizonPath={layers.horizon && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
             onMapClick={handleMapClick}
             showCoordinateSystem={layers.coordinateSystem}
             showRobotTrail={layers.trail}
@@ -623,6 +698,8 @@ export function Navigation() {
                 { key: 'path', label: '规划路径' },
                 { key: 'trail', label: '轨迹' },
                 { key: 'grid', label: '栅格' },
+                { key: 'esdf', label: 'ESDF 距离场' },
+                { key: 'horizon', label: 'MPC 预测' },
               ].map(({ key, label }) => (
                 <div key={key} className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">{label}</span>
@@ -648,6 +725,30 @@ export function Navigation() {
                       </Button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {layers.horizon && navDebug && (
+                <div className="space-y-1.5 border-t border-border pt-3 font-mono text-[11px] text-foreground">
+                  <div className="mb-1 text-xs text-muted-foreground">导航调试</div>
+                  {navDebug.planner?.fsm_state && (
+                    <div>FSM: <span className="text-primary">{navDebug.planner.fsm_state}</span></div>
+                  )}
+                  {navDebug.planner?.last_replan_reason && navDebug.planner.last_replan_reason !== 'NONE' && (
+                    <div>重规划: {navDebug.planner.last_replan_reason}</div>
+                  )}
+                  {navDebug.mpc && typeof navDebug.mpc.proj_t === 'number' && (
+                    <div>proj_t: {navDebug.mpc.proj_t.toFixed(2)} / {navDebug.mpc.traj_duration?.toFixed(2) ?? '?'}</div>
+                  )}
+                  {navDebug.mpc && typeof navDebug.mpc.pos_err === 'number' && (
+                    <div>pos_err: {navDebug.mpc.pos_err.toFixed(3)} m</div>
+                  )}
+                  {navDebug.mpc && typeof navDebug.mpc.yaw_err === 'number' && (
+                    <div>yaw_err: {navDebug.mpc.yaw_err.toFixed(3)} rad</div>
+                  )}
+                  {navDebug.mpc?.in_rotation_phase && (
+                    <div className="text-amber-500">旋转阶段</div>
+                  )}
                 </div>
               )}
             </div>

@@ -225,6 +225,28 @@ def get_navigation_path():
     return logic.get_navigation_path()
 
 
+@app.get("/api/navigation/esdf")
+def get_navigation_esdf(max_dist: float = 2.0):
+    """Return live ESDF grid snapshot (normalized to 0-100, -1 unknown).
+
+    Payload shape matches nav_msgs/OccupancyGrid so the UI can reuse the
+    map-canvas decoder.
+    """
+    return logic.get_esdf_snapshot(max_dist)
+
+
+@app.get("/api/navigation/occ")
+def get_navigation_occ():
+    """Return live occupancy snapshot (same format as /api/navigation/esdf)."""
+    return logic.get_occ_snapshot()
+
+
+@app.get("/api/navigation/debug")
+def get_navigation_debug():
+    """Combined MPC + planner debug; identical shape to the SSE `nav_debug` field."""
+    return logic.get_nav_debug_snapshot()
+
+
 @app.post("/api/navigation/cancel")
 def cancel_navigation():
     return logic.cancel_navigation()
