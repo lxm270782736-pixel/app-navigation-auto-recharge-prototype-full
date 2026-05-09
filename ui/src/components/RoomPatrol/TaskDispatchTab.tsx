@@ -60,6 +60,10 @@ export const TaskDispatchTab: React.FC = () => {
   const [skipping, setSkipping] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [alertToasts, setAlertToasts] = useState<Array<{ id: string; message: string; description: string }>>([]);
+  const [esdfData, setEsdfData] = useState<MapData | null>(null);
+  const [navDebug, setNavDebug] = useState<{ mpc?: any; planner?: any } | null>(null);
+  const [esdfLayerOn, setEsdfLayerOn] = useState(false);
+  const [horizonLayerOn, setHorizonLayerOn] = useState(false);
 
   const fallEvent = patrolState?.fall_event ?? null;
   const stuckEvent = patrolState?.stuck_event ?? null;
@@ -288,6 +292,65 @@ export const TaskDispatchTab: React.FC = () => {
 
   const isActive = patrolState?.active ?? false;
 
+  // ESDF snapshot polling — only when ESDF layer is on.
+  useEffect(() => {
+    if (!esdfLayerOn || connectionStatus !== ConnectionStatus.CONNECTED) {
+      setEsdfData(null);
+      return;
+    }
+    const intervalMs = isActive ? 1000 : 5000;
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await apiService.getEsdfSnapshot(2.0);
+      if (cancelled) return;
+      if (!snap || !snap.data || snap.data.length === 0) {
+        return;
+      }
+      setEsdfData({
+        id: 'esdf',
+        name: 'esdf',
+        createdAt: '',
+        thumbnail: '',
+        width: snap.width,
+        height: snap.height,
+        resolution: snap.resolution,
+        origin: { x: snap.origin_x, y: snap.origin_y, orientation: 0 },
+        data: snap.data,
+      });
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [esdfLayerOn, connectionStatus, isActive]);
+
+  // MPC / planner debug polling — only when MPC layer is on and a run is active.
+  useEffect(() => {
+    if (!horizonLayerOn || connectionStatus !== ConnectionStatus.CONNECTED || !isActive) {
+      setNavDebug(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const dbg = await apiService.getNavigationDebug();
+      if (cancelled) return;
+      setNavDebug(dbg);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [horizonLayerOn, connectionStatus, isActive]);
+
+  const handleLayerChange = useCallback((key: string, visible: boolean) => {
+    if (key === 'esdf') setEsdfLayerOn(visible);
+    else if (key === 'horizon') setHorizonLayerOn(visible);
+  }, []);
+
   const handleStart = async () => {
     const preset = presets.find(p => p.id === selectedPresetId);
     const taskConfig = preset
@@ -469,7 +532,7 @@ export const TaskDispatchTab: React.FC = () => {
       </Dialog>
 
       {/* Left: Map */}
-      <div className="relative min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1 overflow-hidden">
         {currentMap ? (
           <MapCanvas
             mapData={currentMap}
@@ -482,10 +545,39 @@ export const TaskDispatchTab: React.FC = () => {
             completedWaypoints={completedWaypoints}
             showCoordinateSystem={true}
             showRobotTrail={true}
+            esdfData={esdfLayerOn ? esdfData : null}
+            horizonPath={horizonLayerOn && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
+            availableLayers={['esdf', 'horizon']}
+            onLayerChange={handleLayerChange}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             {connectionStatus === ConnectionStatus.CONNECTED ? '等待地图数据...' : '请先连接 后端'}
+          </div>
+        )}
+
+        {/* 导航调试浮窗 — horizon 图层开启时显示 */}
+        {currentMap && horizonLayerOn && navDebug && (
+          <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-52 space-y-1.5 rounded-md border border-border/70 bg-card/90 p-3 font-mono text-[11px] text-foreground shadow-sm backdrop-blur">
+            <div className="mb-1 font-sans text-xs text-muted-foreground">导航调试</div>
+            {navDebug.planner?.fsm_state && (
+              <div>FSM: <span className="text-primary">{navDebug.planner.fsm_state}</span></div>
+            )}
+            {navDebug.planner?.last_replan_reason && navDebug.planner.last_replan_reason !== 'NONE' && (
+              <div>重规划: {navDebug.planner.last_replan_reason}</div>
+            )}
+            {navDebug.mpc && typeof navDebug.mpc.proj_t === 'number' && (
+              <div>proj_t: {navDebug.mpc.proj_t.toFixed(2)} / {navDebug.mpc.traj_duration?.toFixed(2) ?? '?'}</div>
+            )}
+            {navDebug.mpc && typeof navDebug.mpc.pos_err === 'number' && (
+              <div>pos_err: {navDebug.mpc.pos_err.toFixed(3)} m</div>
+            )}
+            {navDebug.mpc && typeof navDebug.mpc.yaw_err === 'number' && (
+              <div>yaw_err: {navDebug.mpc.yaw_err.toFixed(3)} rad</div>
+            )}
+            {navDebug.mpc?.in_rotation_phase && (
+              <div className="text-amber-500">旋转阶段</div>
+            )}
           </div>
         )}
       </div>

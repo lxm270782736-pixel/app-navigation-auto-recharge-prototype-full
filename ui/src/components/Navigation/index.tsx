@@ -678,6 +678,7 @@ export function Navigation() {
             showRobotTrail={layers.trail}
             showGrid={layers.grid}
             gridSize={layers.gridSize}
+            showLayerPanel={false}
             waypoints={waypointMode ? (isPatrolActive ? (patrolState?.waypoints ?? []).map((waypoint: Waypoint) => waypoint.pose) : waypoints.map((waypoint) => waypoint.pose)) : []}
             currentWaypointIndex={currentWaypointIndex}
             completedWaypoints={completedWaypoints}

@@ -1,0 +1,74 @@
+/*
+ * Standalone-only stylesheet — loaded ONLY by `src/main.tsx` when running
+ * `npm run dev:standalone` / `npm run build:standalone`.
+ *
+ * When this app is embedded in Stardust Desktop, the host shell injects the
+ * Tailwind `base`/`components` layers and the `--background` / `--foreground`
+ * / `--primary` / ... CSS variables (see platform_client/clients/web/src/index.css).
+ * Standalone builds have no host, so we replicate the host's theme here.
+ *
+ * Keep in sync with platform_client/clients/web/src/index.css. If the host
+ * changes its palette, update this file too.
+ */
+
+@tailwind base;
+@tailwind components;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 16% 19%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
+    --primary: 258 100% 64%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 240 16% 19%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 240 6% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 92.5%;
+    --input: 0 0% 90.2%;
+    --ring: 258 100% 64%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 15% 6%;
+    --foreground: 0 0% 96%;
+    --card: 240 14% 11%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 14% 11%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 258 100% 68%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 10% 16%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 5% 70%;
+    --accent: 240 10% 18%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 8% 22%;
+    --input: 240 8% 20%;
+    --ring: 258 100% 68%;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
