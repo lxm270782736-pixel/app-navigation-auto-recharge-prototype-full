@@ -159,11 +159,13 @@ export const WaypointControl: React.FC<WaypointControlProps> = ({
               </div>
             ) : (
               <>
-                {isNavigating && currentWaypointIndex >= 0 && (
+                {isNavigating && (currentWaypointIndex >= 0 || completedWaypoints.length > 0) && (
                   <div className="space-y-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium text-sky-100">巡航进度</span>
-                      <span className="text-sky-100">{currentWaypointIndex + 1} / {waypoints.length}</span>
+                      <span className="text-sky-100">
+                        {currentWaypointIndex >= 0 ? currentWaypointIndex + 1 : completedWaypoints.length} / {waypoints.length}
+                      </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-secondary/80">
                       <div

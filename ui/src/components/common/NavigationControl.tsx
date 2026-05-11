@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Badge,
   Button,
@@ -298,8 +298,37 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     setActionConfig((prev) => ({ ...prev, [key]: next }));
   };
 
-  const progress = navigationFeedback?.progress ?? 0;
-  const remainingDistance = navigationFeedback?.distance_to_goal ?? 0;
+  // meta 不上报有效 progress / distance_to_goal（in-process driver 没有
+  // 接 pose/distance 回调），所以前端用 robot_pose 和 goal_pose 自己算，
+  // 起点距离锚定在目标下发的那一刻。
+  const goalAnchorRef = useRef<{ x: number; y: number; initial: number } | null>(null);
+  useEffect(() => {
+    if (!goalPose || !robotPose) {
+      goalAnchorRef.current = null;
+      return;
+    }
+    const anchor = goalAnchorRef.current;
+    const goalChanged = !anchor || anchor.x !== goalPose.x || anchor.y !== goalPose.y;
+    if (goalChanged) {
+      goalAnchorRef.current = {
+        x: goalPose.x,
+        y: goalPose.y,
+        initial: Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y),
+      };
+    }
+  }, [goalPose, robotPose]);
+
+  const remainingDistance = robotPose && goalPose
+    ? Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y)
+    : 0;
+  // 巡航完成的 sticky 窗口期保持 100%，避免归零闪烁。
+  const inPatrolTerminalSuccess = !patrolState?.active && patrolState?.status === 'succeeded';
+  const progress = (() => {
+    if (inPatrolTerminalSuccess) return 1;
+    const anchor = goalAnchorRef.current;
+    if (!anchor || anchor.initial <= 0.05) return 0;
+    return Math.max(0, Math.min(1, 1 - remainingDistance / anchor.initial));
+  })();
   const canStart = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose) || chassisControlType === 'joy' || hasActiveAction;
 
   return (
@@ -450,16 +479,10 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 任务：<span className="font-medium text-foreground">{navigationFeedback.current_task}</span>
               </div>
             )}
-            {patrolState?.active && (
+            {(patrolState?.active || patrolState?.status === 'succeeded') && (patrolState.skipped.length > 0 || patrolState.error) && (
               <div className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>巡航进度</span>
-                  <span className="font-medium text-foreground">
-                    {patrolState.completed.length + patrolState.skipped.length} / {patrolState.total}
-                  </span>
-                </div>
                 {patrolState.skipped.length > 0 && (
-                  <div className="mt-2 text-amber-200">
+                  <div className="text-amber-200">
                     跳过：{patrolState.skipped.map((i) => i + 1).join(', ')} 号路径点
                   </div>
                 )}

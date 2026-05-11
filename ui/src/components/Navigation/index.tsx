@@ -98,8 +98,13 @@ export function Navigation() {
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [patrolState, setPatrolState] = useState<PatrolState | null>(null);
   const isPatrolActive = patrolState?.active ?? false;
+  // Backend keeps status='succeeded' + completed=[...all] for ~3s after flipping
+  // active=false. Treat that window as terminal so the 100% bar / checkmarks
+  // stay visible instead of snapping back to 0.
+  const isPatrolTerminalSuccess = !isPatrolActive && patrolState?.status === 'succeeded';
+  const showPatrolProgress = isPatrolActive || isPatrolTerminalSuccess;
   const currentWaypointIndex = isPatrolActive ? (patrolState?.current_index ?? -1) : -1;
-  const completedWaypoints = isPatrolActive ? (patrolState?.completed ?? []) : [];
+  const completedWaypoints = showPatrolProgress ? (patrolState?.completed ?? []) : [];
   const [waypointConfigModalVisible, setWaypointConfigModalVisible] = useState(false);
   const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);
   const [selectedWaypointIndex, setSelectedWaypointIndex] = useState(-1);
@@ -809,7 +814,7 @@ export function Navigation() {
               <WaypointControl
                 waypointMode={waypointMode}
                 onModeChange={handleModeChange}
-                waypoints={isPatrolActive ? ((patrolState?.waypoints ?? []) as Waypoint[]) : waypoints}
+                waypoints={showPatrolProgress ? ((patrolState?.waypoints ?? []) as Waypoint[]) : waypoints}
                 currentWaypointIndex={currentWaypointIndex}
                 completedWaypoints={completedWaypoints}
                 selectedWaypointIndex={selectedWaypointIndex}
@@ -817,7 +822,7 @@ export function Navigation() {
                 onDeleteWaypoint={handleDeleteWaypoint}
                 onClearWaypoints={handleClearWaypoints}
                 onMoveWaypoint={handleMoveWaypoint}
-                isNavigating={isNavigating || isPatrolActive}
+                isNavigating={isNavigating || showPatrolProgress}
               />
             )}
           </Suspense>
