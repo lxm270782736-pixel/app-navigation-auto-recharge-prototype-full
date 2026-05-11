@@ -375,12 +375,33 @@ interface MapCanvasProps {
   showLayerPanel?: boolean;
   /** Force specific layer toggles to appear in the panel even if no data
    *  is currently provided (so the user can turn them on to trigger
-   *  on-demand polling via onLayerChange). */
+   *  on-demand polling via onLayerVisibilityChange). */
   availableLayers?: Array<'esdf' | 'horizon' | 'laserScan'>;
-  /** Notifies when a layer toggle is flipped so the host can start/stop
-   *  on-demand polling (e.g. ESDF snapshot or MPC debug). */
-  onLayerChange?: (key: string, visible: boolean) => void;
+  /** Controlled layer visibility. If provided, MapCanvas does NOT keep
+   *  internal state; the parent owns truth. Pair with onLayerVisibilityChange.
+   *  If omitted, MapCanvas uses sensible defaults derived from data presence. */
+  layerVisibility?: Partial<LayerVisibility>;
+  /** Notifies the parent when a layer toggle is flipped. Receives the FULL
+   *  next visibility map so a controlled parent can do `setVisibility(next)`
+   *  without merging. The string overload is kept for back-compat. */
+  onLayerVisibilityChange?: (next: LayerVisibility) => void;
+  /** @deprecated use onLayerVisibilityChange */
+  onLayerChange?: (key: keyof LayerVisibility, visible: boolean) => void;
 }
+
+export type LayerVisibility = {
+  coordinateSystem: boolean;
+  grid: boolean;
+  robotPose: boolean;
+  robotTrail: boolean;
+  path: boolean;
+  goalPose: boolean;
+  initialPose: boolean;
+  laserScan: boolean;
+  waypoints: boolean;
+  esdf: boolean;
+  horizon: boolean;
+};
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
   mapData,
@@ -415,6 +436,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   waypointColors,
   showLayerPanel = true,
   availableLayers,
+  layerVisibility: controlledVisibility,
+  onLayerVisibilityChange,
   onLayerChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -456,8 +479,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // 使用内部订阅的位姿或外部传入的位姿
   const robotPose = showRobotPose ? internalRobotPose : externalRobotPose;
 
-  // 图层可见性（内部开关）— 由 props 初始化，用户可通过右上角面板切换
-  const [layerVisibility, setLayerVisibility] = useState({
+  // ===== 图层可见性:受控 + 非受控 =====
+  //
+  // 受控模式(父传 `layerVisibility`):MapCanvas 无内部 state,父掌握真相。
+  //   切换开关只通过 onLayerVisibilityChange 回传,父自行 setState 后回流。
+  //
+  // 非受控模式(父未传 `layerVisibility`):MapCanvas 只记录用户显式覆盖
+  //   (sparse Partial),没有被用户碰过的图层走默认值(默认按数据存在性)。
+  //   避免用 "prop 初始化的 useState" 导致的 stale state。
+  const [uncontrolledOverrides, setUncontrolledOverrides] = useState<Partial<LayerVisibility>>({});
+
+  // 默认可见性 — 只要数据/prop 在,默认就显示。
+  // 这样不关心内置面板的宿主(只通过 props 传数据/条件数据)能"零配置"得到渲染;
+  // 关心图层开关的宿主可传 `layerVisibility` 受控或让用户用面板切换。
+  const defaultVisibility: LayerVisibility = {
     coordinateSystem: showCoordinateSystem,
     grid: showGrid,
     robotPose: true,
@@ -467,30 +502,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     initialPose: true,
     laserScan: showLaserScan,
     waypoints: true,
-    esdf: false,
-    horizon: false,
-  });
-  const toggleLayer = (key: keyof typeof layerVisibility) => {
-    setLayerVisibility((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      onLayerChange?.(key, next[key]);
-      return next;
-    });
+    esdf: true,
+    horizon: true,
   };
 
-  // 最终图层显示 = prop 允许 && 内部开关打开
+  // 当前生效可见性
+  const effectiveVisibility: LayerVisibility = controlledVisibility
+    ? { ...defaultVisibility, ...controlledVisibility }
+    : { ...defaultVisibility, ...uncontrolledOverrides };
+
+  const toggleLayer = (key: keyof LayerVisibility) => {
+    const next: LayerVisibility = {
+      ...effectiveVisibility,
+      [key]: !effectiveVisibility[key],
+    };
+    if (!controlledVisibility) {
+      setUncontrolledOverrides((prev) => ({ ...prev, [key]: next[key] }));
+    }
+    onLayerVisibilityChange?.(next);
+    onLayerChange?.(key, next[key]);
+  };
+
+  // 渲染门控:既要 prop 允许(有数据/启用显示),也要当前可见性打开
   const layerOn = {
-    coordinateSystem: showCoordinateSystem && layerVisibility.coordinateSystem,
-    grid: showGrid && layerVisibility.grid,
-    robotPose: layerVisibility.robotPose,
-    robotTrail: showRobotTrail && layerVisibility.robotTrail,
-    path: layerVisibility.path,
-    goalPose: layerVisibility.goalPose,
-    initialPose: layerVisibility.initialPose,
-    laserScan: showLaserScan && layerVisibility.laserScan,
-    waypoints: layerVisibility.waypoints,
-    esdf: layerVisibility.esdf,
-    horizon: layerVisibility.horizon,
+    coordinateSystem: showCoordinateSystem && effectiveVisibility.coordinateSystem,
+    grid: showGrid && effectiveVisibility.grid,
+    robotPose: effectiveVisibility.robotPose,
+    robotTrail: showRobotTrail && effectiveVisibility.robotTrail,
+    path: effectiveVisibility.path,
+    goalPose: effectiveVisibility.goalPose,
+    initialPose: effectiveVisibility.initialPose,
+    laserScan: showLaserScan && effectiveVisibility.laserScan,
+    waypoints: effectiveVisibility.waypoints,
+    esdf: effectiveVisibility.esdf,
+    horizon: effectiveVisibility.horizon,
   };
 
   // ========== 坐标转换辅助函数 ==========
@@ -973,7 +1018,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       {/* 图层开关面板 */}
       {showLayerPanel && (() => {
         const forced = new Set(availableLayers ?? []);
-        const items: Array<{ key: keyof typeof layerVisibility; label: string; available: boolean }> = [
+        const items: Array<{ key: keyof LayerVisibility; label: string; available: boolean }> = [
           { key: 'coordinateSystem', label: '坐标系', available: showCoordinateSystem },
           { key: 'grid', label: '栅格', available: showGrid },
           { key: 'robotPose', label: '机器人', available: Boolean(robotPose) },
@@ -996,7 +1041,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <div key={key} className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs text-muted-foreground">{label}</span>
                   <Switch
-                    checked={layerVisibility[key]}
+                    checked={effectiveVisibility[key]}
                     onCheckedChange={() => toggleLayer(key)}
                   />
                 </div>

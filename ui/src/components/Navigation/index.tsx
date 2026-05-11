@@ -222,20 +222,44 @@ export function Navigation() {
     }
 
     let cancelled = false;
+    // Monotonic request id — protects against out-of-order responses: a
+    // slow N then a fast N+1 would otherwise let N overwrite N+1. We only
+    // accept a response if its id is still the freshest one observed.
+    let seq = 0;
+    let latestAccepted = 0;
+    // Hold the last non-empty path across short gaps (meta restart / RPC
+    // hiccup / transient _nav_state downgrade). Without this the user sees
+    // the path flicker every 500 ms that polling returns []. 3 consecutive
+    // empties (~1.5 s) is treated as "really cleared".
+    let emptyStreak = 0;
+    const EMPTY_TOLERANCE = 3;
+
     const pollPath = async () => {
+      const mySeq = ++seq;
       try {
         const path = await apiService.getNavigationPath();
-        if (cancelled) {
-          return;
-        }
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
         const points: PathPoint[] = Array.isArray(path)
           ? path
               .filter((point: any) => typeof point?.x === 'number' && typeof point?.y === 'number')
               .map((point: any) => ({ x: point.x, y: point.y }))
           : [];
-        setNavigationPath(points);
+        if (points.length === 0) {
+          emptyStreak += 1;
+          if (emptyStreak >= EMPTY_TOLERANCE) {
+            setNavigationPath([]);
+          }
+          // else: keep showing the previous path
+        } else {
+          emptyStreak = 0;
+          setNavigationPath(points);
+        }
       } catch {
-        if (!cancelled) {
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
+        emptyStreak += 1;
+        if (emptyStreak >= EMPTY_TOLERANCE) {
           setNavigationPath([]);
         }
       }

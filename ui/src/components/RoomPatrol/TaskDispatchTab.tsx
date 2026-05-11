@@ -265,19 +265,37 @@ export const TaskDispatchTab: React.FC = () => {
     }
 
     let cancelled = false;
+    // Monotonic seq guards against out-of-order responses overwriting newer
+    // data; empty-streak tolerance smooths over transient RPC hiccups so
+    // the path doesn't flicker when the backend returns [] for a frame.
+    let seq = 0;
+    let latestAccepted = 0;
+    let emptyStreak = 0;
+    const EMPTY_TOLERANCE = 3;
 
     const pollPath = async () => {
+      const mySeq = ++seq;
       try {
         const path = await apiService.getNavigationPath();
-        if (cancelled) return;
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
         const points: PathPoint[] = Array.isArray(path)
           ? path
               .filter((p: any) => typeof p?.x === 'number' && typeof p?.y === 'number')
               .map((p: any) => ({ x: p.x, y: p.y }))
           : [];
-        setNavigationPath(points);
+        if (points.length === 0) {
+          emptyStreak += 1;
+          if (emptyStreak >= EMPTY_TOLERANCE) setNavigationPath([]);
+        } else {
+          emptyStreak = 0;
+          setNavigationPath(points);
+        }
       } catch {
-        if (!cancelled) setNavigationPath([]);
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
+        emptyStreak += 1;
+        if (emptyStreak >= EMPTY_TOLERANCE) setNavigationPath([]);
       }
     };
 
@@ -346,9 +364,9 @@ export const TaskDispatchTab: React.FC = () => {
     };
   }, [horizonLayerOn, connectionStatus, isActive]);
 
-  const handleLayerChange = useCallback((key: string, visible: boolean) => {
-    if (key === 'esdf') setEsdfLayerOn(visible);
-    else if (key === 'horizon') setHorizonLayerOn(visible);
+  const handleLayerVisibilityChange = useCallback((next: { esdf: boolean; horizon: boolean }) => {
+    setEsdfLayerOn(next.esdf);
+    setHorizonLayerOn(next.horizon);
   }, []);
 
   const handleStart = async () => {
@@ -548,7 +566,7 @@ export const TaskDispatchTab: React.FC = () => {
             esdfData={esdfLayerOn ? esdfData : null}
             horizonPath={horizonLayerOn && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
             availableLayers={['esdf', 'horizon']}
-            onLayerChange={handleLayerChange}
+            onLayerVisibilityChange={handleLayerVisibilityChange}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

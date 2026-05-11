@@ -138,6 +138,12 @@ class NavigationMixin:
     def get_navigation_path(self) -> list[dict]:
         """Return current MINCO path from meta.astribot_navigation without auto-activating the service."""
         if self._nav_state != "active" or not self._nav:
+            # Throttled: the frontend polls this at 2 Hz; if the cached state
+            # is stale (meta restart, pending auto-recovery) this branch fires
+            # continuously. One log line every 5 s is enough to diagnose.
+            log_throttled(logger, "nav.path.not_active", 5.0, "info",
+                          "[nav] get_navigation_path skipped: nav_state=%s, proxy=%s",
+                          self._nav_state, "yes" if self._nav else "no")
             return []
         if getattr(self, '_nav_path_unsupported', False):
             return []
@@ -149,7 +155,8 @@ class NavigationMixin:
                 self._nav_path_unsupported = True
                 logger.info("[nav] get_navigation_path not supported by this nav service, disabling")
             else:
-                logger.warning("[nav] get_navigation_path failed: %s", e)
+                log_throttled(logger, "nav.path.rpc_fail", 5.0, "warning",
+                              "[nav] get_navigation_path failed: %s", e)
             return []
 
     def cancel_navigation(self) -> dict:
