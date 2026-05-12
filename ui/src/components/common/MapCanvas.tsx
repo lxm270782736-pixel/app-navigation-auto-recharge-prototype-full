@@ -360,6 +360,9 @@ interface MapCanvasProps {
   esdfOpacity?: number;
   /** Optional MPC predicted horizon; drawn as a distinct polyline. */
   horizonPath?: PathPoint[];
+  /** Optional JPS fallback corridor; drawn as a dashed amber polyline so it's
+   *  visually distinct from the optimised MINCO path. */
+  jpsPath?: PathPoint[];
   waypoints?: Pose[];
   currentWaypointIndex?: number;
   completedWaypoints?: number[];
@@ -376,7 +379,7 @@ interface MapCanvasProps {
   /** Force specific layer toggles to appear in the panel even if no data
    *  is currently provided (so the user can turn them on to trigger
    *  on-demand polling via onLayerVisibilityChange). */
-  availableLayers?: Array<'esdf' | 'horizon' | 'laserScan'>;
+  availableLayers?: Array<'esdf' | 'horizon' | 'laserScan' | 'jps'>;
   /** Controlled layer visibility. If provided, MapCanvas does NOT keep
    *  internal state; the parent owns truth. Pair with onLayerVisibilityChange.
    *  If omitted, MapCanvas uses sensible defaults derived from data presence. */
@@ -401,6 +404,7 @@ export type LayerVisibility = {
   waypoints: boolean;
   esdf: boolean;
   horizon: boolean;
+  jps: boolean;
 };
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -424,6 +428,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   esdfData = null,
   esdfOpacity = 0.55,
   horizonPath,
+  jpsPath,
   waypoints = [],
   currentWaypointIndex = -1,
   completedWaypoints = [],
@@ -504,6 +509,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     waypoints: true,
     esdf: true,
     horizon: true,
+    jps: true,
   };
 
   // 当前生效可见性
@@ -536,6 +542,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     waypoints: effectiveVisibility.waypoints,
     esdf: effectiveVisibility.esdf,
     horizon: effectiveVisibility.horizon,
+    jps: effectiveVisibility.jps,
   };
 
   // ========== 坐标转换辅助函数 ==========
@@ -1030,6 +1037,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           { key: 'waypoints', label: '路径点', available: Boolean(waypoints && waypoints.length > 0) },
           { key: 'esdf', label: 'ESDF 距离场', available: forced.has('esdf') || Boolean(esdfData && esdfData.data && esdfData.data.length > 0) },
           { key: 'horizon', label: 'MPC 预测', available: forced.has('horizon') || Boolean(horizonPath && horizonPath.length > 1) },
+          { key: 'jps', label: 'JPS 路径', available: forced.has('jps') || Boolean(jpsPath && jpsPath.length > 1) },
         ];
         const visible = items.filter((it) => it.available);
         if (visible.length === 0) return null;
@@ -1126,6 +1134,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* 导航路径（规划路径） */}
           {layerOn.path && path && path.length > 0 && (
             <NavigationPathOverlay path={path} mapData={mapData} scale={scale} />
+          )}
+
+          {/* JPS 备胎路径 — MINCO 硬失败时 MPC 实际在跟的粗糙折线，琥珀色虚线区别于 MINCO */}
+          {layerOn.jps && jpsPath && jpsPath.length > 1 && (
+            <polyline
+              points={jpsPath.map(p => {
+                const m = worldToMap(p.x, p.y, mapData);
+                return `${m.x},${m.y}`;
+              }).join(' ')}
+              fill="none"
+              stroke="#ffb020"
+              strokeWidth={2.5 / scale}
+              strokeDasharray={`${8 / scale},${5 / scale}`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           )}
 
           {/* MPC 预测 horizon */}

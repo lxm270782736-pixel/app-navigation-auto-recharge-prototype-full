@@ -284,6 +284,16 @@ class ApiService {
     return this._get('/api/navigation/path');
   }
 
+  /** Fetch the JPS fallback path. Empty when MINCO is healthy. */
+  async getNavigationJpsPath(): Promise<Array<{ x: number; y: number; yaw?: number }>> {
+    try {
+      const r: any = await this._get('/api/navigation/jps-path');
+      return Array.isArray(r) ? r : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** Fetch a live ESDF snapshot. `max_dist` is the distance at which cells are
    *  clamped to 100 (farthest). Returns null when unavailable. */
   async getEsdfSnapshot(maxDist: number = 2.0): Promise<{

@@ -203,7 +203,13 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     const handleNavigationFeedback = () => {
       setHasActiveAction(true);
     };
-    const handleNavigationStatus = () => undefined;
+    const handleNavigationStatus = (data: { status?: string }) => {
+      // 后端取消或空闲时只会走 navigating → idle，不会发 navigation-result，
+      // 这里兜底把 hasActiveAction 置回 false，避免"开始导航"按钮永久灰掉。
+      if (data?.status === 'idle') {
+        setHasActiveAction(false);
+      }
+    };
     const handleNavigationResult = () => {
       setHasActiveAction(false);
     };

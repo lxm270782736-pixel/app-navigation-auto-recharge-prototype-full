@@ -77,6 +77,7 @@ export function Navigation() {
   const { connectionStatus } = useRobot();
 
   const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
+  const [jpsPath, setJpsPath] = useState<PathPoint[]>([]);
   const [esdfData, setEsdfData] = useState<MapData | null>(null);
   const [navDebug, setNavDebug] = useState<{ mpc?: any; planner?: any } | null>(null);
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
@@ -125,6 +126,7 @@ export function Navigation() {
     trail: true,
     esdf: false,
     horizon: false,
+    jps: true,
   });
 
   useEffect(() => {
@@ -222,9 +224,13 @@ export function Navigation() {
     // server logs: /path every 500 ms while sitting idle).
     const isActive = isNavigating || isPatrolActive;
     if (connectionStatus !== ConnectionStatus.CONNECTED || !isActive) {
-      setNavigationPath([]);
+      // 不清空 navigationPath / jpsPath：保留上次导航的最后一帧供查看，
+      // 等到下次开始新的导航再清。
       return;
     }
+    // 进入新一次导航：先清掉上次留下的路径，避免误以为是这次的。
+    setNavigationPath([]);
+    setJpsPath([]);
 
     let cancelled = false;
     // Monotonic request id — protects against out-of-order responses: a
@@ -237,6 +243,7 @@ export function Navigation() {
     // the path flicker every 500 ms that polling returns []. 3 consecutive
     // empties (~1.5 s) is treated as "really cleared".
     let emptyStreak = 0;
+    let jpsEmptyStreak = 0;
     const EMPTY_TOLERANCE = 3;
 
     const pollPath = async () => {
@@ -267,6 +274,31 @@ export function Navigation() {
         if (emptyStreak >= EMPTY_TOLERANCE) {
           setNavigationPath([]);
         }
+      }
+
+      // Piggy-back: pull the JPS fallback path on the same cadence. 与
+      // navigationPath 同样使用 empty streak 容忍，避免导航刚结束时最后一帧
+      // 返回空就把图层瞬间抹掉；真正导航中 JPS 被 MINCO 顶掉时，连续 3 帧
+      // (~1.5 s) 空后仍会清除。
+      try {
+        const jps = await apiService.getNavigationJpsPath();
+        if (cancelled) return;
+        const jpsPts: PathPoint[] = Array.isArray(jps)
+          ? jps
+              .filter((p: any) => typeof p?.x === 'number' && typeof p?.y === 'number')
+              .map((p: any) => ({ x: p.x, y: p.y }))
+          : [];
+        if (jpsPts.length === 0) {
+          jpsEmptyStreak += 1;
+          if (jpsEmptyStreak >= EMPTY_TOLERANCE) setJpsPath([]);
+        } else {
+          jpsEmptyStreak = 0;
+          setJpsPath(jpsPts);
+        }
+      } catch {
+        if (cancelled) return;
+        jpsEmptyStreak += 1;
+        if (jpsEmptyStreak >= EMPTY_TOLERANCE) setJpsPath([]);
       }
     };
 
@@ -700,6 +732,7 @@ export function Navigation() {
             goalPose={layers.goalPose ? goalPose : undefined}
             initialPose={initialPose}
             path={layers.path ? navigationPath : undefined}
+            jpsPath={layers.jps ? jpsPath : undefined}
             esdfData={layers.esdf ? esdfData : null}
             horizonPath={layers.horizon && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
             onMapClick={handleMapClick}
@@ -726,6 +759,7 @@ export function Navigation() {
                 { key: 'robotPose', label: '机器人' },
                 { key: 'goalPose', label: '目标点' },
                 { key: 'path', label: '规划路径' },
+                { key: 'jps', label: 'JPS 路径' },
                 { key: 'trail', label: '轨迹' },
                 { key: 'grid', label: '栅格' },
                 { key: 'esdf', label: 'ESDF 距离场' },

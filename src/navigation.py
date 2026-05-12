@@ -159,6 +159,29 @@ class NavigationMixin:
                               "[nav] get_navigation_path failed: %s", e)
             return []
 
+    def get_jps_path(self) -> list[dict]:
+        """Return current JPS fallback path from meta.astribot_navigation.
+
+        Empty when MINCO is healthy. Same shape as get_navigation_path()
+        ([{x, y, yaw}, ...]). Marked unsupported automatically if the upstream
+        Meta service is older and lacks the RPC.
+        """
+        if self._nav_state != "active" or not self._nav:
+            return []
+        if getattr(self, '_nav_jps_path_unsupported', False):
+            return []
+        try:
+            path = self._nav.get_jps_path()
+            return path if isinstance(path, list) else []
+        except Exception as e:
+            if "not found" in str(e).lower() or "has no attribute" in str(e).lower():
+                self._nav_jps_path_unsupported = True
+                logger.info("[nav] get_jps_path not supported by this nav service, disabling")
+            else:
+                log_throttled(logger, "nav.jps_path.rpc_fail", 5.0, "warning",
+                              "[nav] get_jps_path failed: %s", e)
+            return []
+
     def cancel_navigation(self) -> dict:
         if self._nav_state == "active" and self._nav:
             try:
