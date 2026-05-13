@@ -267,8 +267,19 @@ class ApiService {
         deaccelaration_ratio: goal.actionConfig.deaccelaration_ratio ?? 0.5,
       } : null,
       tasks: goal.tasks?.length ? goal.tasks : null,
+    }).then((resp: any) => {
+      // 后端拒收（如 meta 未激活）时以 HTTP 200 + success:false 返回，
+      // 需要在这里显式转化成 navigation-result 告知 UI，不然用户看不到失败。
+      if (resp && resp.success === false) {
+        this._lastNavStatus = 'idle';
+        this.emit('navigation-result', {
+          success: false,
+          errorMessage: resp.message || '导航请求被拒绝',
+        });
+      }
     }).catch((e) => {
       console.error('[ROS-HTTP] navigate failed:', e);
+      this._lastNavStatus = 'idle';
       this.emit('navigation-result', {
         success: false,
         errorMessage: `${e}`,

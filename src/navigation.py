@@ -19,7 +19,8 @@ class NavigationMixin:
     def navigate_to(self, x: float, y: float, theta: float,
                     config: dict | None = None, tasks: list | None = None) -> dict:
         if self._nav_state != "active" or not self._nav:
-            return {"success": False, "message": f"Navigation Meta not active (state={self._nav_state})"}
+            return {"success": False,
+                    "message": f"导航 Meta 未激活（当前状态：{self._nav_state}），请先启动 meta.astribot_navigation"}
 
         try:
             # 生成唯一 goal_id，用时间戳标识本次导航任务
@@ -37,10 +38,15 @@ class NavigationMixin:
             return {"success": result.get("status") == "success",
                     "message": result.get("message", "")}
         except Exception as e:
+            msg = str(e)
             logger.error("[nav] navigate_to failed: %s", e)
             with self._lock:
                 self._nav_status = "failed"
-            return {"success": False, "message": str(e)}
+                if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
+                    self._nav_fail_reason = "meta_disconnected"
+                    return {"success": False,
+                            "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务"}
+            return {"success": False, "message": msg}
 
     def _start_nav_status_poller(self, generation: int, goal_id: str = ""):
         """Poll Meta navigation status until terminal state for the given generation."""
@@ -62,6 +68,16 @@ class NavigationMixin:
                     try:
                         status = self._nav.get_navigation_status()
                     except Exception as e:
+                        msg = str(e)
+                        # meta 掉线 / 未 active：没必要继续 poll，直接失败给前端报错。
+                        if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
+                            logger.warning("[nav] Meta navigation disconnected during poll: %s", e)
+                            self._on_nav_completed(False, {
+                                "state": "failed",
+                                "fail_reason": "meta_disconnected",
+                                "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务",
+                            })
+                            break
                         logger.warning("[nav] Meta status poll error: %s", e)
                         continue
 

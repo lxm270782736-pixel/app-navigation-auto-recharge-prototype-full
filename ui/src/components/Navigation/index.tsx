@@ -115,6 +115,9 @@ export function Navigation() {
   const [isRelocalizationMode, setIsRelocalizationMode] = useState(false);
   const [saveMapDialogVisible, setSaveMapDialogVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  // 需要用户显式确认的严重错误（如 meta 掉线）。顶部 statusMessage
+  // 可能被后续地图点击等操作覆盖，用 Dialog 保证提示不丢。
+  const [errorDialog, setErrorDialog] = useState<string | null>(null);
 
   const [layers, setLayers] = useState({
     grid: false,
@@ -399,6 +402,12 @@ export function Navigation() {
         setIsNavigating(false);
         setNavigationStatus('');
         setNavigationFeedback({});
+        // meta 掉线 / 未激活这类结构性错误用 Dialog 强提示，
+        // 避免顶部 statusMessage 被其他操作覆盖后用户看不到。
+        if (data.failReason === 'meta_disconnected'
+            || (data.errorMessage && typeof data.errorMessage === 'string' && data.errorMessage.includes('Meta'))) {
+          setErrorDialog(data.errorMessage || '导航 Meta 未连接或未激活');
+        }
       }
     };
 
@@ -941,6 +950,18 @@ export function Navigation() {
             <Button onClick={() => void confirmSaveMap()}>
               确认保存
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!errorDialog} onOpenChange={(open) => { if (!open) setErrorDialog(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>导航失败</DialogTitle>
+            <DialogDescription>{errorDialog}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setErrorDialog(null)}>知道了</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
