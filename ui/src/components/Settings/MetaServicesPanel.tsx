@@ -66,9 +66,9 @@ export const MetaServicesPanel: React.FC = () => {
     }
   };
 
-  const pollStatus = async () => {
+  const pollStatus = async (refresh: boolean = false) => {
     try {
-      const data = await apiService.getMetaStatus() as any;
+      const data = await apiService.getMetaStatus(refresh) as any;
       if (data.services) {
         setStatuses(data.services);
       }
@@ -79,7 +79,7 @@ export const MetaServicesPanel: React.FC = () => {
 
   useEffect(() => {
     void load();
-    void pollStatus();
+    void pollStatus(true);
     pollRef.current = setInterval(() => {
       void pollStatus();
     }, 3000);

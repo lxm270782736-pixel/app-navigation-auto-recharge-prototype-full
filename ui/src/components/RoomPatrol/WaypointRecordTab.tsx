@@ -544,7 +544,14 @@ export const WaypointRecordTab: React.FC = () => {
       updated.start_position = newPose;
     } else {
       updated.rooms = updated.rooms.map(r =>
-        r.room_id === meta.roomId ? { ...r, [meta.type]: newPose } : r
+        r.room_id === meta.roomId
+          ? {
+              ...r,
+              waypoints: (r.waypoints || []).map(wp =>
+                wp.id === meta.type ? { ...wp, pose: newPose } : wp
+              ),
+            }
+          : r
       );
     }
     setConfig(updated);
@@ -596,7 +603,7 @@ export const WaypointRecordTab: React.FC = () => {
   return (
     <div className="flex h-full overflow-hidden bg-background">
       {/* 左侧：地图 */}
-      <div className="relative h-full min-w-0 flex-1">
+      <div className="relative h-full min-w-0 flex-1 overflow-hidden">
           {currentMap ? (
             <MapCanvas
               mapData={currentMap}

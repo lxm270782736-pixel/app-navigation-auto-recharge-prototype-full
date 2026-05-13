@@ -77,6 +77,7 @@ export function Navigation() {
   const { connectionStatus } = useRobot();
 
   const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
+  const [jpsPath, setJpsPath] = useState<PathPoint[]>([]);
   const [esdfData, setEsdfData] = useState<MapData | null>(null);
   const [navDebug, setNavDebug] = useState<{ mpc?: any; planner?: any } | null>(null);
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
@@ -98,8 +99,13 @@ export function Navigation() {
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [patrolState, setPatrolState] = useState<PatrolState | null>(null);
   const isPatrolActive = patrolState?.active ?? false;
+  // Backend keeps status='succeeded' + completed=[...all] for ~3s after flipping
+  // active=false. Treat that window as terminal so the 100% bar / checkmarks
+  // stay visible instead of snapping back to 0.
+  const isPatrolTerminalSuccess = !isPatrolActive && patrolState?.status === 'succeeded';
+  const showPatrolProgress = isPatrolActive || isPatrolTerminalSuccess;
   const currentWaypointIndex = isPatrolActive ? (patrolState?.current_index ?? -1) : -1;
-  const completedWaypoints = isPatrolActive ? (patrolState?.completed ?? []) : [];
+  const completedWaypoints = showPatrolProgress ? (patrolState?.completed ?? []) : [];
   const [waypointConfigModalVisible, setWaypointConfigModalVisible] = useState(false);
   const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);
   const [selectedWaypointIndex, setSelectedWaypointIndex] = useState(-1);
@@ -109,6 +115,9 @@ export function Navigation() {
   const [isRelocalizationMode, setIsRelocalizationMode] = useState(false);
   const [saveMapDialogVisible, setSaveMapDialogVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  // 需要用户显式确认的严重错误（如 meta 掉线）。顶部 statusMessage
+  // 可能被后续地图点击等操作覆盖，用 Dialog 保证提示不丢。
+  const [errorDialog, setErrorDialog] = useState<string | null>(null);
 
   const [layers, setLayers] = useState({
     grid: false,
@@ -120,6 +129,7 @@ export function Navigation() {
     trail: true,
     esdf: false,
     horizon: false,
+    jps: true,
   });
 
   useEffect(() => {
@@ -217,27 +227,81 @@ export function Navigation() {
     // server logs: /path every 500 ms while sitting idle).
     const isActive = isNavigating || isPatrolActive;
     if (connectionStatus !== ConnectionStatus.CONNECTED || !isActive) {
-      setNavigationPath([]);
+      // 不清空 navigationPath / jpsPath：保留上次导航的最后一帧供查看，
+      // 等到下次开始新的导航再清。
       return;
     }
+    // 进入新一次导航：先清掉上次留下的路径，避免误以为是这次的。
+    setNavigationPath([]);
+    setJpsPath([]);
 
     let cancelled = false;
+    // Monotonic request id — protects against out-of-order responses: a
+    // slow N then a fast N+1 would otherwise let N overwrite N+1. We only
+    // accept a response if its id is still the freshest one observed.
+    let seq = 0;
+    let latestAccepted = 0;
+    // Hold the last non-empty path across short gaps (meta restart / RPC
+    // hiccup / transient _nav_state downgrade). Without this the user sees
+    // the path flicker every 500 ms that polling returns []. 3 consecutive
+    // empties (~1.5 s) is treated as "really cleared".
+    let emptyStreak = 0;
+    let jpsEmptyStreak = 0;
+    const EMPTY_TOLERANCE = 3;
+
     const pollPath = async () => {
+      const mySeq = ++seq;
       try {
         const path = await apiService.getNavigationPath();
-        if (cancelled) {
-          return;
-        }
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
         const points: PathPoint[] = Array.isArray(path)
           ? path
               .filter((point: any) => typeof point?.x === 'number' && typeof point?.y === 'number')
               .map((point: any) => ({ x: point.x, y: point.y }))
           : [];
-        setNavigationPath(points);
+        if (points.length === 0) {
+          emptyStreak += 1;
+          if (emptyStreak >= EMPTY_TOLERANCE) {
+            setNavigationPath([]);
+          }
+          // else: keep showing the previous path
+        } else {
+          emptyStreak = 0;
+          setNavigationPath(points);
+        }
       } catch {
-        if (!cancelled) {
+        if (cancelled || mySeq <= latestAccepted) return;
+        latestAccepted = mySeq;
+        emptyStreak += 1;
+        if (emptyStreak >= EMPTY_TOLERANCE) {
           setNavigationPath([]);
         }
+      }
+
+      // Piggy-back: pull the JPS fallback path on the same cadence. 与
+      // navigationPath 同样使用 empty streak 容忍，避免导航刚结束时最后一帧
+      // 返回空就把图层瞬间抹掉；真正导航中 JPS 被 MINCO 顶掉时，连续 3 帧
+      // (~1.5 s) 空后仍会清除。
+      try {
+        const jps = await apiService.getNavigationJpsPath();
+        if (cancelled) return;
+        const jpsPts: PathPoint[] = Array.isArray(jps)
+          ? jps
+              .filter((p: any) => typeof p?.x === 'number' && typeof p?.y === 'number')
+              .map((p: any) => ({ x: p.x, y: p.y }))
+          : [];
+        if (jpsPts.length === 0) {
+          jpsEmptyStreak += 1;
+          if (jpsEmptyStreak >= EMPTY_TOLERANCE) setJpsPath([]);
+        } else {
+          jpsEmptyStreak = 0;
+          setJpsPath(jpsPts);
+        }
+      } catch {
+        if (cancelled) return;
+        jpsEmptyStreak += 1;
+        if (jpsEmptyStreak >= EMPTY_TOLERANCE) setJpsPath([]);
       }
     };
 
@@ -338,6 +402,12 @@ export function Navigation() {
         setIsNavigating(false);
         setNavigationStatus('');
         setNavigationFeedback({});
+        // meta 掉线 / 未激活这类结构性错误用 Dialog 强提示，
+        // 避免顶部 statusMessage 被其他操作覆盖后用户看不到。
+        if (data.failReason === 'meta_disconnected'
+            || (data.errorMessage && typeof data.errorMessage === 'string' && data.errorMessage.includes('Meta'))) {
+          setErrorDialog(data.errorMessage || '导航 Meta 未连接或未激活');
+        }
       }
     };
 
@@ -671,6 +741,7 @@ export function Navigation() {
             goalPose={layers.goalPose ? goalPose : undefined}
             initialPose={initialPose}
             path={layers.path ? navigationPath : undefined}
+            jpsPath={layers.jps ? jpsPath : undefined}
             esdfData={layers.esdf ? esdfData : null}
             horizonPath={layers.horizon && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
             onMapClick={handleMapClick}
@@ -678,6 +749,7 @@ export function Navigation() {
             showRobotTrail={layers.trail}
             showGrid={layers.grid}
             gridSize={layers.gridSize}
+            showLayerPanel={false}
             waypoints={waypointMode ? (isPatrolActive ? (patrolState?.waypoints ?? []).map((waypoint: Waypoint) => waypoint.pose) : waypoints.map((waypoint) => waypoint.pose)) : []}
             currentWaypointIndex={currentWaypointIndex}
             completedWaypoints={completedWaypoints}
@@ -696,6 +768,7 @@ export function Navigation() {
                 { key: 'robotPose', label: '机器人' },
                 { key: 'goalPose', label: '目标点' },
                 { key: 'path', label: '规划路径' },
+                { key: 'jps', label: 'JPS 路径' },
                 { key: 'trail', label: '轨迹' },
                 { key: 'grid', label: '栅格' },
                 { key: 'esdf', label: 'ESDF 距离场' },
@@ -784,7 +857,7 @@ export function Navigation() {
               <WaypointControl
                 waypointMode={waypointMode}
                 onModeChange={handleModeChange}
-                waypoints={isPatrolActive ? ((patrolState?.waypoints ?? []) as Waypoint[]) : waypoints}
+                waypoints={showPatrolProgress ? ((patrolState?.waypoints ?? []) as Waypoint[]) : waypoints}
                 currentWaypointIndex={currentWaypointIndex}
                 completedWaypoints={completedWaypoints}
                 selectedWaypointIndex={selectedWaypointIndex}
@@ -792,7 +865,7 @@ export function Navigation() {
                 onDeleteWaypoint={handleDeleteWaypoint}
                 onClearWaypoints={handleClearWaypoints}
                 onMoveWaypoint={handleMoveWaypoint}
-                isNavigating={isNavigating || isPatrolActive}
+                isNavigating={isNavigating || showPatrolProgress}
               />
             )}
           </Suspense>
@@ -877,6 +950,18 @@ export function Navigation() {
             <Button onClick={() => void confirmSaveMap()}>
               确认保存
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!errorDialog} onOpenChange={(open) => { if (!open) setErrorDialog(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>导航失败</DialogTitle>
+            <DialogDescription>{errorDialog}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setErrorDialog(null)}>知道了</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

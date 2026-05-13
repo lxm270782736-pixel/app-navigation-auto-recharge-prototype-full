@@ -225,6 +225,13 @@ def get_navigation_path():
     return logic.get_navigation_path()
 
 
+@app.get("/api/navigation/jps-path")
+def get_navigation_jps_path():
+    """Return the JPS corridor MPC is currently following. Empty when MINCO
+    is healthy or no goal is active. Same shape as /api/navigation/path."""
+    return logic.get_jps_path()
+
+
 @app.get("/api/navigation/esdf")
 def get_navigation_esdf(max_dist: float = 2.0):
     """Return live ESDF grid snapshot (normalized to 0-100, -1 unknown).
@@ -669,8 +676,8 @@ def meta_control(req: MetaControlRequest):
 
 
 @app.get("/api/meta/status")
-def meta_status():
-    return logic.get_meta_status()
+def meta_status(refresh: bool = False):
+    return logic.get_meta_status(refresh=refresh)
 
 
 @app.get("/api/meta/services-config")

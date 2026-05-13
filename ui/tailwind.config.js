@@ -1,6 +1,18 @@
 /** @type {import('tailwindcss').Config} */
+// Lib build sets BUILD_MODE=lib (see package.json scripts). In that mode we
+// DO NOT scan @astribot/ui, because the host shell bundles its own utilities
+// for those components — scanning here just bloats dist/style.css.
+// Standalone / dev builds scan it so Switch/Button etc. render correctly.
+const isLib = process.env.BUILD_MODE === 'lib';
+
 export default {
-  content: ['./src/**/*.{ts,tsx}'],
+  darkMode: ['class'],
+  content: isLib
+    ? ['./src/**/*.{ts,tsx}']
+    : [
+        './src/**/*.{ts,tsx}',
+        './node_modules/@astribot/ui/dist/**/*.js',
+      ],
   theme: {
     extend: {
       fontFamily: {

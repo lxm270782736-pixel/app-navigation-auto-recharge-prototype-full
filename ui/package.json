@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build --config vite.config.lib.ts",
-    "build:lib": "vite build --config vite.config.lib.ts",
+    "build": "BUILD_MODE=lib vite build --config vite.config.lib.ts",
+    "build:lib": "BUILD_MODE=lib vite build --config vite.config.lib.ts",
     "build:standalone": "vite build",
-    "dev": "vite build --config vite.config.lib.ts --watch",
+    "dev": "BUILD_MODE=lib vite build --config vite.config.lib.ts --watch",
     "dev:standalone": "vite",
     "preview": "vite preview"
   },

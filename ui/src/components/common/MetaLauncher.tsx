@@ -79,10 +79,10 @@ export function MetaLauncher() {
     };
   }, []);
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (refresh: boolean = false) => {
     try {
       const metaConfig = await apiService.getMetaServicesConfig();
-      const metaStatus = (await apiService.getMetaStatus()) as Record<string, unknown>;
+      const metaStatus = (await apiService.getMetaStatus(refresh)) as Record<string, unknown>;
       const servicesStatus = Array.isArray(metaStatus.services)
         ? (metaStatus.services as Array<{ name?: unknown; state?: unknown }>)
         : [];
@@ -111,7 +111,7 @@ export function MetaLauncher() {
   }, []);
 
   useEffect(() => {
-    void loadStatus();
+    void loadStatus(true);
   }, [loadStatus]);
 
   const handleAll = useCallback(async () => {
@@ -173,7 +173,7 @@ export function MetaLauncher() {
           ) : (
             <Badge variant="secondary">待启动</Badge>
           )}
-          <Button variant="ghost" size="icon" onClick={() => void loadStatus()} aria-label="刷新状态">
+          <Button variant="ghost" size="icon" onClick={() => void loadStatus(true)} aria-label="刷新状态">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>

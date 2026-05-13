@@ -19,7 +19,8 @@ class NavigationMixin:
     def navigate_to(self, x: float, y: float, theta: float,
                     config: dict | None = None, tasks: list | None = None) -> dict:
         if self._nav_state != "active" or not self._nav:
-            return {"success": False, "message": f"Navigation Meta not active (state={self._nav_state})"}
+            return {"success": False,
+                    "message": f"导航 Meta 未激活（当前状态：{self._nav_state}），请先启动 meta.astribot_navigation"}
 
         try:
             # 生成唯一 goal_id，用时间戳标识本次导航任务
@@ -37,10 +38,15 @@ class NavigationMixin:
             return {"success": result.get("status") == "success",
                     "message": result.get("message", "")}
         except Exception as e:
+            msg = str(e)
             logger.error("[nav] navigate_to failed: %s", e)
             with self._lock:
                 self._nav_status = "failed"
-            return {"success": False, "message": str(e)}
+                if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
+                    self._nav_fail_reason = "meta_disconnected"
+                    return {"success": False,
+                            "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务"}
+            return {"success": False, "message": msg}
 
     def _start_nav_status_poller(self, generation: int, goal_id: str = ""):
         """Poll Meta navigation status until terminal state for the given generation."""
@@ -62,6 +68,16 @@ class NavigationMixin:
                     try:
                         status = self._nav.get_navigation_status()
                     except Exception as e:
+                        msg = str(e)
+                        # meta 掉线 / 未 active：没必要继续 poll，直接失败给前端报错。
+                        if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
+                            logger.warning("[nav] Meta navigation disconnected during poll: %s", e)
+                            self._on_nav_completed(False, {
+                                "state": "failed",
+                                "fail_reason": "meta_disconnected",
+                                "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务",
+                            })
+                            break
                         logger.warning("[nav] Meta status poll error: %s", e)
                         continue
 
@@ -138,6 +154,12 @@ class NavigationMixin:
     def get_navigation_path(self) -> list[dict]:
         """Return current MINCO path from meta.astribot_navigation without auto-activating the service."""
         if self._nav_state != "active" or not self._nav:
+            # Throttled: the frontend polls this at 2 Hz; if the cached state
+            # is stale (meta restart, pending auto-recovery) this branch fires
+            # continuously. One log line every 5 s is enough to diagnose.
+            log_throttled(logger, "nav.path.not_active", 5.0, "info",
+                          "[nav] get_navigation_path skipped: nav_state=%s, proxy=%s",
+                          self._nav_state, "yes" if self._nav else "no")
             return []
         if getattr(self, '_nav_path_unsupported', False):
             return []
@@ -149,7 +171,31 @@ class NavigationMixin:
                 self._nav_path_unsupported = True
                 logger.info("[nav] get_navigation_path not supported by this nav service, disabling")
             else:
-                logger.warning("[nav] get_navigation_path failed: %s", e)
+                log_throttled(logger, "nav.path.rpc_fail", 5.0, "warning",
+                              "[nav] get_navigation_path failed: %s", e)
+            return []
+
+    def get_jps_path(self) -> list[dict]:
+        """Return current JPS fallback path from meta.astribot_navigation.
+
+        Empty when MINCO is healthy. Same shape as get_navigation_path()
+        ([{x, y, yaw}, ...]). Marked unsupported automatically if the upstream
+        Meta service is older and lacks the RPC.
+        """
+        if self._nav_state != "active" or not self._nav:
+            return []
+        if getattr(self, '_nav_jps_path_unsupported', False):
+            return []
+        try:
+            path = self._nav.get_jps_path()
+            return path if isinstance(path, list) else []
+        except Exception as e:
+            if "not found" in str(e).lower() or "has no attribute" in str(e).lower():
+                self._nav_jps_path_unsupported = True
+                logger.info("[nav] get_jps_path not supported by this nav service, disabling")
+            else:
+                log_throttled(logger, "nav.jps_path.rpc_fail", 5.0, "warning",
+                              "[nav] get_jps_path failed: %s", e)
             return []
 
     def cancel_navigation(self) -> dict:

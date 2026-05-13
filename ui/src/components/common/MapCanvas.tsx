@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Button as UIButton, cn } from '@astribot/ui';
+import { Button as UIButton, Switch, cn } from '@astribot/ui';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
@@ -360,6 +360,9 @@ interface MapCanvasProps {
   esdfOpacity?: number;
   /** Optional MPC predicted horizon; drawn as a distinct polyline. */
   horizonPath?: PathPoint[];
+  /** Optional JPS fallback corridor; drawn as a dashed amber polyline so it's
+   *  visually distinct from the optimised MINCO path. */
+  jpsPath?: PathPoint[];
   waypoints?: Pose[];
   currentWaypointIndex?: number;
   completedWaypoints?: number[];
@@ -370,7 +373,39 @@ interface MapCanvasProps {
   onWaypointDelete?: (index: number) => void;
   waypointLabels?: string[];
   waypointColors?: string[];
+  /** Show the built-in layer toggle panel (top-right). Default true.
+   *  Set false if the host screen renders its own layers panel. */
+  showLayerPanel?: boolean;
+  /** Force specific layer toggles to appear in the panel even if no data
+   *  is currently provided (so the user can turn them on to trigger
+   *  on-demand polling via onLayerVisibilityChange). */
+  availableLayers?: Array<'esdf' | 'horizon' | 'laserScan' | 'jps'>;
+  /** Controlled layer visibility. If provided, MapCanvas does NOT keep
+   *  internal state; the parent owns truth. Pair with onLayerVisibilityChange.
+   *  If omitted, MapCanvas uses sensible defaults derived from data presence. */
+  layerVisibility?: Partial<LayerVisibility>;
+  /** Notifies the parent when a layer toggle is flipped. Receives the FULL
+   *  next visibility map so a controlled parent can do `setVisibility(next)`
+   *  without merging. The string overload is kept for back-compat. */
+  onLayerVisibilityChange?: (next: LayerVisibility) => void;
+  /** @deprecated use onLayerVisibilityChange */
+  onLayerChange?: (key: keyof LayerVisibility, visible: boolean) => void;
 }
+
+export type LayerVisibility = {
+  coordinateSystem: boolean;
+  grid: boolean;
+  robotPose: boolean;
+  robotTrail: boolean;
+  path: boolean;
+  goalPose: boolean;
+  initialPose: boolean;
+  laserScan: boolean;
+  waypoints: boolean;
+  esdf: boolean;
+  horizon: boolean;
+  jps: boolean;
+};
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
   mapData,
@@ -393,6 +428,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   esdfData = null,
   esdfOpacity = 0.55,
   horizonPath,
+  jpsPath,
   waypoints = [],
   currentWaypointIndex = -1,
   completedWaypoints = [],
@@ -403,6 +439,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onWaypointDelete,
   waypointLabels,
   waypointColors,
+  showLayerPanel = true,
+  availableLayers,
+  layerVisibility: controlledVisibility,
+  onLayerVisibilityChange,
+  onLayerChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const esdfCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -442,6 +483,67 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 使用内部订阅的位姿或外部传入的位姿
   const robotPose = showRobotPose ? internalRobotPose : externalRobotPose;
+
+  // ===== 图层可见性:受控 + 非受控 =====
+  //
+  // 受控模式(父传 `layerVisibility`):MapCanvas 无内部 state,父掌握真相。
+  //   切换开关只通过 onLayerVisibilityChange 回传,父自行 setState 后回流。
+  //
+  // 非受控模式(父未传 `layerVisibility`):MapCanvas 只记录用户显式覆盖
+  //   (sparse Partial),没有被用户碰过的图层走默认值(默认按数据存在性)。
+  //   避免用 "prop 初始化的 useState" 导致的 stale state。
+  const [uncontrolledOverrides, setUncontrolledOverrides] = useState<Partial<LayerVisibility>>({});
+
+  // 默认可见性 — 只要数据/prop 在,默认就显示。
+  // 这样不关心内置面板的宿主(只通过 props 传数据/条件数据)能"零配置"得到渲染;
+  // 关心图层开关的宿主可传 `layerVisibility` 受控或让用户用面板切换。
+  const defaultVisibility: LayerVisibility = {
+    coordinateSystem: showCoordinateSystem,
+    grid: showGrid,
+    robotPose: true,
+    robotTrail: showRobotTrail,
+    path: true,
+    goalPose: true,
+    initialPose: true,
+    laserScan: showLaserScan,
+    waypoints: true,
+    esdf: true,
+    horizon: true,
+    jps: true,
+  };
+
+  // 当前生效可见性
+  const effectiveVisibility: LayerVisibility = controlledVisibility
+    ? { ...defaultVisibility, ...controlledVisibility }
+    : { ...defaultVisibility, ...uncontrolledOverrides };
+
+  const toggleLayer = (key: keyof LayerVisibility) => {
+    const next: LayerVisibility = {
+      ...effectiveVisibility,
+      [key]: !effectiveVisibility[key],
+    };
+    if (!controlledVisibility) {
+      setUncontrolledOverrides((prev) => ({ ...prev, [key]: next[key] }));
+    }
+    onLayerVisibilityChange?.(next);
+    onLayerChange?.(key, next[key]);
+  };
+
+  // 渲染门控:既要 prop 允许(有数据/启用显示),也要当前可见性打开
+  const layerOn = {
+    coordinateSystem: showCoordinateSystem && effectiveVisibility.coordinateSystem,
+    grid: showGrid && effectiveVisibility.grid,
+    robotPose: effectiveVisibility.robotPose,
+    robotTrail: showRobotTrail && effectiveVisibility.robotTrail,
+    path: effectiveVisibility.path,
+    goalPose: effectiveVisibility.goalPose,
+    initialPose: effectiveVisibility.initialPose,
+    laserScan: showLaserScan && effectiveVisibility.laserScan,
+    waypoints: effectiveVisibility.waypoints,
+    esdf: effectiveVisibility.esdf,
+    horizon: effectiveVisibility.horizon,
+    jps: effectiveVisibility.jps,
+  };
 
   // ========== 坐标转换辅助函数 ==========
 
@@ -920,6 +1022,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         )}
       </div>
 
+      {/* 图层开关面板 */}
+      {showLayerPanel && (() => {
+        const forced = new Set(availableLayers ?? []);
+        const items: Array<{ key: keyof LayerVisibility; label: string; available: boolean }> = [
+          { key: 'coordinateSystem', label: '坐标系', available: showCoordinateSystem },
+          { key: 'grid', label: '栅格', available: showGrid },
+          { key: 'robotPose', label: '机器人', available: Boolean(robotPose) },
+          { key: 'robotTrail', label: '轨迹', available: showRobotTrail && Boolean(robotPose) },
+          { key: 'path', label: '规划路径', available: Boolean(path && path.length > 0) },
+          { key: 'goalPose', label: '目标点', available: Boolean(goalPose) },
+          { key: 'initialPose', label: '初始位姿', available: Boolean(initialPose) },
+          { key: 'laserScan', label: '激光扫描', available: forced.has('laserScan') || (showLaserScan && Boolean(laserScan)) },
+          { key: 'waypoints', label: '路径点', available: Boolean(waypoints && waypoints.length > 0) },
+          { key: 'esdf', label: 'ESDF 距离场', available: forced.has('esdf') || Boolean(esdfData && esdfData.data && esdfData.data.length > 0) },
+          { key: 'horizon', label: 'MPC 预测', available: forced.has('horizon') || Boolean(horizonPath && horizonPath.length > 1) },
+          { key: 'jps', label: 'JPS 路径', available: forced.has('jps') || Boolean(jpsPath && jpsPath.length > 1) },
+        ];
+        const visible = items.filter((it) => it.available);
+        if (visible.length === 0) return null;
+        return (
+          <div className="absolute right-2.5 top-2.5 z-10 w-40 rounded-md border border-border/70 bg-card/90 p-3 shadow-sm backdrop-blur">
+            <div className="mb-2 text-xs font-medium text-foreground">图层</div>
+            <div className="space-y-2">
+              {visible.map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-xs text-muted-foreground">{label}</span>
+                  <Switch
+                    checked={effectiveVisibility[key]}
+                    onCheckedChange={() => toggleLayer(key)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 地图容器 */}
       <div
         ref={containerRef}
@@ -955,7 +1094,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
 
         {/* ESDF 叠加层：半透明距离场热力图，坐标对齐到底图 */}
-        {esdfData && esdfData.data && esdfData.data.length > 0 && (() => {
+        {layerOn.esdf && esdfData && esdfData.data && esdfData.data.length > 0 && (() => {
           // ESDF 底图的左下角 (origin_x, origin_y) 对应的底图像素坐标。
           const originMapPx = worldToMap(esdfData.origin.x, esdfData.origin.y, mapData);
           const resRatio = esdfData.resolution / mapData.resolution;
@@ -987,18 +1126,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }}
         >
           {/* 栅格 */}
-          {showGrid && <GridOverlay mapData={mapData} gridSize={gridSize} scale={scale} />}
+          {layerOn.grid && <GridOverlay mapData={mapData} gridSize={gridSize} scale={scale} />}
 
           {/* 坐标系 */}
-          {showCoordinateSystem && <CoordinateSystemOverlay mapData={mapData} scale={scale} />}
+          {layerOn.coordinateSystem && <CoordinateSystemOverlay mapData={mapData} scale={scale} />}
 
           {/* 导航路径（规划路径） */}
-          {path && path.length > 0 && (
+          {layerOn.path && path && path.length > 0 && (
             <NavigationPathOverlay path={path} mapData={mapData} scale={scale} />
           )}
 
+          {/* JPS 备胎路径 — MINCO 硬失败时 MPC 实际在跟的粗糙折线，琥珀色虚线区别于 MINCO */}
+          {layerOn.jps && jpsPath && jpsPath.length > 1 && (
+            <polyline
+              points={jpsPath.map(p => {
+                const m = worldToMap(p.x, p.y, mapData);
+                return `${m.x},${m.y}`;
+              }).join(' ')}
+              fill="none"
+              stroke="#ffb020"
+              strokeWidth={2.5 / scale}
+              strokeDasharray={`${8 / scale},${5 / scale}`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
           {/* MPC 预测 horizon */}
-          {horizonPath && horizonPath.length > 1 && (
+          {layerOn.horizon && horizonPath && horizonPath.length > 1 && (
             <polyline
               points={horizonPath.map(p => {
                 const m = worldToMap(p.x, p.y, mapData);
@@ -1013,20 +1168,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* 机器人轨迹 */}
-          {showRobotTrail && robotTrail.length > 1 && (
+          {layerOn.robotTrail && robotTrail.length > 1 && (
             <RobotTrailOverlay trail={robotTrail} mapData={mapData} scale={scale} />
           )}
 
           {/* 雷达扫描 */}
-          {showLaserScan && laserScan && robotPose && (
+          {layerOn.laserScan && laserScan && robotPose && (
             <LaserScanOverlay laserScan={laserScan} robotPose={robotPose} mapData={mapData} scale={scale} />
           )}
 
           {/* 初始位姿（重定位标记） */}
-          {initialPose && <InitialPoseMarker pose={initialPose} mapData={mapData} scale={scale} />}
+          {layerOn.initialPose && initialPose && <InitialPoseMarker pose={initialPose} mapData={mapData} scale={scale} />}
 
           {/* 路径点连线 + 路径点标记 */}
-          {waypoints && waypoints.length > 0 && (
+          {layerOn.waypoints && waypoints && waypoints.length > 0 && (
             <>
               <WaypointPathOverlay waypoints={waypoints} mapData={mapData} currentIndex={currentWaypointIndex} scale={scale} />
               {waypoints.map((wp, i) => (
@@ -1058,12 +1213,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* 目标点 */}
-          {goalPose && goalMapPos && (
+          {layerOn.goalPose && goalPose && goalMapPos && (
             <GoalMarker x={goalMapPos.x} y={goalMapPos.y} theta={goalPose.theta} scale={scale} />
           )}
 
           {/* 机器人 */}
-          {robotPose && robotMapPos && (
+          {layerOn.robotPose && robotPose && robotMapPos && (
             <RobotMarker x={robotMapPos.x} y={robotMapPos.y} theta={robotPose.theta} scale={scale} />
           )}
         </svg>
