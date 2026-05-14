@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@astribot/ui';
 import { BatteryCharging, Loader2, PlugZap, Power, RotateCcw, XCircle } from 'lucide-react';
 import { apiService } from '@/services/api';
-import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { ConnectionStatus } from '@/types';
 import { useRobot } from '@/contexts/RobotContext';
 
@@ -52,87 +51,108 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
   const [isDockActionActive, setIsDockActionActive] = useState(false);
   const [lastError, setLastError] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const prevStatusCodeRef = useRef<number>(DockStatusCode.IDLE);
 
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
       return;
     }
 
-    const unsubscribe = apiService.subscribeTopic<any>(
-      '/dock_status',
-      MESSAGE_TYPES.DOCK_STATUS,
-      (msg) => {
-        setDockStatus({
-          status: msg.status ?? DockStatusCode.IDLE,
-          state_code: msg.state_code ?? 0,
-          state_description: msg.state_description ?? '',
-          progress: msg.progress ?? 0,
-          error_code: msg.error_code ?? 0,
-          battery_percentage: msg.battery_percentage ?? 0,
-          is_charging: msg.is_charging ?? false,
-          charging_current: msg.charging_current ?? 0,
-          qr_detected: msg.qr_detected ?? false,
-          dock_mode: msg.dock_mode ?? 0,
+    // meta.astribot_dock 返回的状态机枚举名（见 dock/types.py）：
+    //   dock_state ∈ {IDLE, CHECK_MAP, P2P_NAV, ROTATE_ALIGN, LOCAL_SEARCH,
+    //                 QR_ALIGN, FINAL_DOCK, CHARGING, RETRY_BACKOFF, FAIL_TERMINATE}
+    //   undock_state ∈ {DOCKED, PRE_UNDOCK_CHECK, UNDOCK_BACKWARD,
+    //                   UNDOCK_CLEARANCE_CHECK, SAVE_UNDOCK_POINT,
+    //                   UNDOCK_COMPLETE, UNDOCK_FAILED}
+    // 中文描述也来自 meta（DOCK_STATE_DESC），但暂时未透出，所以用枚举名 fallback。
+    const DOCKING_BUSY = new Set([
+      'CHECK_MAP', 'P2P_NAV', 'ROTATE_ALIGN', 'LOCAL_SEARCH', 'QR_ALIGN',
+      'FINAL_DOCK', 'RETRY_BACKOFF',
+    ]);
+    const UNDOCKING_BUSY = new Set([
+      'PRE_UNDOCK_CHECK', 'UNDOCK_BACKWARD', 'UNDOCK_CLEARANCE_CHECK', 'SAVE_UNDOCK_POINT',
+    ]);
+
+    const mapState = (s: any) => {
+      const dockSt = String(s?.dock_state ?? 'IDLE');
+      const undockSt = String(s?.undock_state ?? 'DOCKED');
+      let code: number = DockStatusCode.IDLE;
+      if (dockSt === 'FAIL_TERMINATE' || undockSt === 'UNDOCK_FAILED') {
+        code = DockStatusCode.FAILED;
+      } else if (UNDOCKING_BUSY.has(undockSt)) {
+        code = DockStatusCode.UNDOCKING;
+      } else if (DOCKING_BUSY.has(dockSt)) {
+        code = DockStatusCode.DOCKING;
+      } else if (dockSt === 'CHARGING' || s?.is_charging) {
+        code = DockStatusCode.CHARGING;
+      }
+      return {
+        status: code,
+        state_code: 0,
+        state_description: s?.state_description ?? (
+          UNDOCKING_BUSY.has(undockSt) ? undockSt
+          : DOCKING_BUSY.has(dockSt) ? dockSt
+          : ''
+        ),
+        progress: s?.progress ?? 0,
+        error_code: s?.error_code ?? 0,
+        battery_percentage: s?.battery_percentage ?? 0,
+        is_charging: !!s?.is_charging,
+        charging_current: s?.charging_current ?? 0,
+        qr_detected: !!s?.qr_detected,
+        dock_mode: s?.dock_mode ?? 0,
+      };
+    };
+
+    const handleDockStatus = (s: any) => {
+      const mapped = mapState(s);
+      const prev = prevStatusCodeRef.current;
+      const cur = mapped.status;
+      const wasActive = prev === DockStatusCode.DOCKING || prev === DockStatusCode.UNDOCKING;
+      const nowDone = cur !== DockStatusCode.DOCKING && cur !== DockStatusCode.UNDOCKING;
+      if (wasActive && nowDone) {
+        setIsDockActionActive(false);
+        setActionFeedback(null);
+        if (cur === DockStatusCode.FAILED) {
+          const msg = mapped.state_description || `操作失败 (错误码: ${mapped.error_code})`;
+          setLastError(msg);
+          setNotice(msg);
+        } else if (prev === DockStatusCode.DOCKING) {
+          setNotice('上桩成功');
+        } else if (prev === DockStatusCode.UNDOCKING) {
+          setNotice('下桩成功');
+        }
+      } else if (cur === DockStatusCode.DOCKING || cur === DockStatusCode.UNDOCKING) {
+        setIsDockActionActive(true);
+        setActionFeedback({
+          progress: mapped.progress,
+          description: mapped.state_description,
+        });
+      } else if (nowDone) {
+        // 动作完成太快，边沿检测没捕到中间态（如下桩瞬间完成），
+        // 但 isDockActionActive 仍为 true → 兜底清除。
+        setIsDockActionActive((active) => {
+          if (active) {
+            setActionFeedback(null);
+            if (cur === DockStatusCode.FAILED) {
+              const msg = mapped.state_description || '操作失败';
+              setLastError(msg);
+              setNotice(msg);
+            } else {
+              setNotice(prev === DockStatusCode.UNDOCKING ? '下桩成功' : '操作完成');
+            }
+          }
+          return false;
         });
       }
-    );
-
+      prevStatusCodeRef.current = cur;
+      setDockStatus(mapped);
+    };
+    apiService.on('dock-status', handleDockStatus);
     return () => {
-      unsubscribe();
+      apiService.off('dock-status', handleDockStatus);
     };
   }, [connectionStatus]);
-
-  useEffect(() => {
-    const handleDockFeedback = (data: any) => {
-      setActionFeedback({
-        progress: data.progress ?? 0,
-        description: data.state_description ?? '',
-      });
-      setIsDockActionActive(true);
-    };
-
-    const handleDockResult = (data: any) => {
-      setIsDockActionActive(false);
-      setActionFeedback(null);
-      if (data.success) {
-        setNotice('上桩成功');
-      } else {
-        setLastError(data.message || `上桩失败 (错误码: ${data.error_code})`);
-        setNotice(data.message || '上桩失败');
-      }
-    };
-
-    const handleUndockFeedback = (data: any) => {
-      setActionFeedback({
-        progress: data.progress ?? 0,
-        description: data.state_description ?? '',
-      });
-      setIsDockActionActive(true);
-    };
-
-    const handleUndockResult = (data: any) => {
-      setIsDockActionActive(false);
-      setActionFeedback(null);
-      if (data.success) {
-        setNotice('下桩成功');
-      } else {
-        setLastError(data.message || `下桩失败 (错误码: ${data.error_code})`);
-        setNotice(data.message || '下桩失败');
-      }
-    };
-
-    apiService.on('dock-feedback', handleDockFeedback);
-    apiService.on('dock-result', handleDockResult);
-    apiService.on('undock-feedback', handleUndockFeedback);
-    apiService.on('undock-result', handleUndockResult);
-
-    return () => {
-      apiService.off('dock-feedback', handleDockFeedback);
-      apiService.off('dock-result', handleDockResult);
-      apiService.off('undock-feedback', handleUndockFeedback);
-      apiService.off('undock-result', handleUndockResult);
-    };
-  }, []);
 
   const handleDock = useCallback(async (forceRetry = false) => {
     try {

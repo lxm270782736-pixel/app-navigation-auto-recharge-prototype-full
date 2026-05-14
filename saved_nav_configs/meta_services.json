@@ -60,6 +60,19 @@
       "startup": false,
       "deactivate_after_step": false,
       "config": {}
+    },
+    {
+      "name": "meta.astribot_dock",
+      "startup": true,
+      "deactivate_after_step": false,
+      "config": {
+        "dock_config_path": "",
+        "prepose_distance": 0.6,
+        "align_position_threshold": 0.02,
+        "align_yaw_threshold": 0.05,
+        "charging_current_threshold": 0.1,
+        "low_battery_threshold": 15
+      }
     }
   ]
 }

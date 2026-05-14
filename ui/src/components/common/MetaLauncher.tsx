@@ -63,6 +63,7 @@ export function MetaLauncher() {
         'meta.astribot_navigation': 'nav_state',
         'meta.lidar': 'lidar_state',
         'meta.detection': 'fall_state',
+        'meta.astribot_dock': 'dock_state',
       };
       setServices((prev) =>
         prev.map((service) => {
@@ -96,6 +97,7 @@ export function MetaLauncher() {
         'meta.astribot_navigation': statesFromServices['meta.astribot_navigation'] ?? String(metaStatus.nav_state ?? 'disconnected'),
         'meta.lidar': statesFromServices['meta.lidar'] ?? String(metaStatus.lidar_state ?? 'disconnected'),
         'meta.detection': statesFromServices['meta.detection'] ?? String(metaStatus.fall_state ?? 'disconnected'),
+        'meta.astribot_dock': statesFromServices['meta.astribot_dock'] ?? String(metaStatus.dock_state ?? 'disconnected'),
       };
 
       setServices(

@@ -467,6 +467,7 @@ class MetaBridgeMixin:
             "meta.localization": "loc_state",
             "meta.astribot_navigation": "nav_state",
             "meta.detection": "fall_state",
+            "meta.astribot_dock": "dock_state",
         }
         status = {
             "meta_connected": self.meta_connected,
@@ -614,6 +615,21 @@ class MetaBridgeMixin:
     def _lidar_state(self) -> str:
         e = self._services.get("meta.lidar")
         return e.state if e else META_DISCONNECTED
+
+    @property
+    def _dock(self):
+        e = self._services.get("meta.astribot_dock")
+        return e.proxy if e else None
+
+    @property
+    def _dock_state(self) -> str:
+        e = self._services.get("meta.astribot_dock")
+        return e.state if e else META_DISCONNECTED
+
+    @_dock_state.setter
+    def _dock_state(self, value: str):
+        e = self._services.get("meta.astribot_dock")
+        if e: e.state = value
 
     @property
     def meta_connected(self) -> bool:

@@ -128,6 +128,11 @@ class ApiService {
           this.emit('patrol-state', state.patrol);
         }
 
+        // Dispatch dock status from meta.astribot_dock via SSE.
+        if (state.dock_status) {
+          this.emit('dock-status', state.dock_status);
+        }
+
         // Dispatch room patrol state
         if (state.room_patrol) {
           state.room_patrol.nav_fail_reason = state.nav_fail_reason || null;
