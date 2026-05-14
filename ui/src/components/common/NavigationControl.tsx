@@ -308,6 +308,16 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   // 接 pose/distance 回调），所以前端用 robot_pose 和 goal_pose 自己算，
   // 起点距离锚定在目标下发的那一刻。
   const goalAnchorRef = useRef<{ x: number; y: number; initial: number } | null>(null);
+  const [navCompleted, setNavCompleted] = useState(false);
+
+  useEffect(() => {
+    const onResult = (data: { success?: boolean }) => {
+      if (data?.success) setNavCompleted(true);
+    };
+    apiService.on('navigation-result', onResult);
+    return () => { apiService.off('navigation-result', onResult); };
+  }, []);
+
   useEffect(() => {
     if (!goalPose || !robotPose) {
       goalAnchorRef.current = null;
@@ -321,16 +331,17 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
         y: goalPose.y,
         initial: Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y),
       };
+      setNavCompleted(false);
     }
   }, [goalPose, robotPose]);
 
-  const remainingDistance = robotPose && goalPose
-    ? Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y)
-    : 0;
+  const remainingDistance = navCompleted ? 0
+    : (robotPose && goalPose ? Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y) : 0);
   // 巡航完成的 sticky 窗口期保持 100%，避免归零闪烁。
   const inPatrolTerminalSuccess = !patrolState?.active && patrolState?.status === 'succeeded';
   const progress = (() => {
     if (inPatrolTerminalSuccess) return 1;
+    if (navCompleted) return 1;
     const anchor = goalAnchorRef.current;
     if (!anchor || anchor.initial <= 0.05) return 0;
     return Math.max(0, Math.min(1, 1 - remainingDistance / anchor.initial));
