@@ -9,6 +9,43 @@ from ._utils import log_throttled
 logger = logging.getLogger(__name__)
 
 
+# Per-goal soft-parameter overrides supported by meta.astribot_navigation.
+# Field names mirror astribot_nav_msgs/NavigationPlannerConfig.msg (the
+# legacy MoveChassisTo server payload) plus an MPC-side ``goal_tolerance``
+# knob. Keep this list in sync with
+# meta_astribot_navigation/src/core/navigation_driver.OVERRIDE_WHITELIST.
+_NAV_OVERRIDE_KEYS = (
+    "safe_dist",
+    "v_max",
+    "w_max",
+    "a_max",
+    "dw_max",
+    "is_holonomic",
+    "deaccelaration_dist",
+    "deaccelaration_ratio",
+    "goal_tolerance",
+)
+# How long to block on the planner before returning to the caller. The Meta
+# side's set_goal+plan latency is normally well under a second on a healthy
+# map; 3 s gives slow first-plan headroom without keeping the HTTP request
+# pinned forever.
+_NAV_PLAN_WAIT_SEC = 3.0
+
+
+def _filter_overrides(config: dict | None) -> dict:
+    """Strip the inbound web payload to the override whitelist.
+
+    Honours ``use_default_config``: when truthy (or missing other keys), the
+    front-end is asking for YAML defaults — return {} so meta resets to
+    planner_config_init_.
+    """
+    if not isinstance(config, dict):
+        return {}
+    if config.get("use_default_config"):
+        return {}
+    return {k: config[k] for k in _NAV_OVERRIDE_KEYS if k in config}
+
+
 def _ts():
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
@@ -25,18 +62,31 @@ class NavigationMixin:
         try:
             # 生成唯一 goal_id，用时间戳标识本次导航任务
             goal_id = f"nav_{int(time.time() * 1000)}"
-            result = self._nav.navigate_to(x=x, y=y, yaw=theta, goal_id=goal_id)
+            overrides = _filter_overrides(config)
+            result = self._nav.navigate_to(
+                x=x, y=y, yaw=theta, goal_id=goal_id,
+                overrides=overrides or None,
+                wait_plan_timeout=_NAV_PLAN_WAIT_SEC,
+            )
+            plan_result = (result or {}).get("plan_result") or {}
             with self._lock:
                 self._nav_status = "navigating"
-                self._nav_feedback = {}
+                self._nav_feedback = {"plan_result": plan_result} if plan_result else {}
                 self._nav_generation = getattr(self, '_nav_generation', 0) + 1
                 self._nav_goal_id = goal_id
+                self._nav_last_plan_result = plan_result
                 my_gen = self._nav_generation
-            logger.info("[nav] %s Meta navigate_to(%.3f, %.3f, %.3f) goal_id=%s: %s",
-                        _ts(), x, y, theta, goal_id, result)
+            logger.info(
+                "[nav] %s Meta navigate_to(%.3f, %.3f, %.3f) goal_id=%s overrides=%s "
+                "plan_success=%s plan_latency_ms=%.1f",
+                _ts(), x, y, theta, goal_id, overrides,
+                plan_result.get("success"),
+                float(plan_result.get("plan_latency_ms") or 0.0),
+            )
             self._start_nav_status_poller(my_gen, goal_id)
             return {"success": result.get("status") == "success",
-                    "message": result.get("message", "")}
+                    "message": result.get("message", ""),
+                    "plan_result": plan_result}
         except Exception as e:
             msg = str(e)
             logger.error("[nav] navigate_to failed: %s", e)
@@ -47,6 +97,29 @@ class NavigationMixin:
                     return {"success": False,
                             "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务"}
             return {"success": False, "message": msg}
+
+    def get_last_plan_result(self, goal_id: str = "") -> dict:
+        """Return the last plan-result snapshot for the requested goal_id (or
+        the most recent if goal_id is empty). Falls through to whatever the
+        Meta side has cached, with a local-cache fallback when Meta is down.
+        """
+        cached = getattr(self, "_nav_last_plan_result", None) or {}
+        if self._nav_state != "active" or not self._nav:
+            if goal_id and cached.get("goal_id") != goal_id:
+                return {}
+            return cached
+        try:
+            result = self._nav.get_last_plan_result(goal_id=goal_id)
+            if isinstance(result, dict) and result:
+                with self._lock:
+                    self._nav_last_plan_result = result
+                return result
+        except Exception as e:
+            log_throttled(logger, "nav.plan_result.rpc_fail", 5.0, "warning",
+                          "[nav] get_last_plan_result failed: %s", e)
+        if goal_id and cached.get("goal_id") != goal_id:
+            return {}
+        return cached
 
     def _start_nav_status_poller(self, generation: int, goal_id: str = ""):
         """Poll Meta navigation status until terminal state for the given generation."""

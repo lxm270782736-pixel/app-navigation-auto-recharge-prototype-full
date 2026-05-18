@@ -262,6 +262,7 @@ class ApiService {
       y: goal.pose.y,
       theta: goal.pose.theta,
       config: goal.actionConfig ? {
+        use_default_config: goal.actionConfig.use_default_config ?? true,
         safe_dist: goal.actionConfig.safe_dist ?? 0.35,
         v_max: goal.actionConfig.v_max ?? 0.5,
         w_max: goal.actionConfig.w_max ?? 1.0,
@@ -270,6 +271,7 @@ class ApiService {
         is_holonomic: goal.actionConfig.is_holonomic ?? false,
         deaccelaration_dist: goal.actionConfig.deaccelaration_dist ?? 0.5,
         deaccelaration_ratio: goal.actionConfig.deaccelaration_ratio ?? 0.5,
+        goal_tolerance: goal.actionConfig.goal_tolerance ?? 0.02,
       } : null,
       tasks: goal.tasks?.length ? goal.tasks : null,
     }).then((resp: any) => {

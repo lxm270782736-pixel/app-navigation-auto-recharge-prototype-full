@@ -63,7 +63,7 @@
     },
     {
       "name": "meta.astribot_dock",
-      "startup": true,
+      "startup": false,
       "deactivate_after_step": false,
       "config": {
         "dock_config_path": "",

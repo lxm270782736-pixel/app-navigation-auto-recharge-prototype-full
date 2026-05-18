@@ -225,6 +225,17 @@ def get_navigation_path():
     return logic.get_navigation_path()
 
 
+@app.get("/api/navigation/plan-result")
+def get_navigation_plan_result(goal_id: str = ""):
+    """Return the last plan-result snapshot from the Meta navigation service.
+
+    Includes global/jps path, horizon, applied_overrides, plan_latency_ms,
+    fail_reason, etc. Empty dict when no plan has been issued (or the
+    requested goal_id doesn't match the most recent one).
+    """
+    return logic.get_last_plan_result(goal_id)
+
+
 @app.get("/api/navigation/jps-path")
 def get_navigation_jps_path():
     """Return the JPS corridor MPC is currently following. Empty when MINCO

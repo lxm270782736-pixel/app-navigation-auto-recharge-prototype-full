@@ -402,11 +402,17 @@ export function Navigation() {
         setIsNavigating(false);
         setNavigationStatus('');
         setNavigationFeedback({});
-        // meta 掉线 / 未激活这类结构性错误用 Dialog 强提示，
-        // 避免顶部 statusMessage 被其他操作覆盖后用户看不到。
+        // 结构性错误用 Dialog 强提示，避免顶部 statusMessage 被其他操作覆盖。
+        // - meta 掉线/未激活
+        // - 参数校验失败 (invalid_override / out of range / unknown override key)
+        const errMsg = (typeof data.errorMessage === 'string') ? data.errorMessage : '';
+        const isParamError = errMsg.startsWith('invalid_override')
+          || errMsg.includes('out of range')
+          || errMsg.includes('unknown override');
         if (data.failReason === 'meta_disconnected'
-            || (data.errorMessage && typeof data.errorMessage === 'string' && data.errorMessage.includes('Meta'))) {
-          setErrorDialog(data.errorMessage || '导航 Meta 未连接或未激活');
+            || errMsg.includes('Meta')
+            || isParamError) {
+          setErrorDialog(errMsg || '导航请求被拒绝');
         }
       }
     };

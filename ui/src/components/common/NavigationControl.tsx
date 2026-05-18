@@ -85,6 +85,7 @@ const FIELD_META: Array<{
   { key: 'dw_max', label: '最大转向加速度 (rad/s²)', min: 0.1, max: 3.0, step: 0.1 },
   { key: 'deaccelaration_dist', label: '减速距离 (m)', min: 0.1, max: 5.0, step: 0.1 },
   { key: 'deaccelaration_ratio', label: '减速比例', min: 0.1, max: 1.0, step: 0.05 },
+  { key: 'goal_tolerance', label: '到点容忍距离 (m)', min: 0.005, max: 0.5, step: 0.005 },
 ];
 
 const getTaskTypeLabel = (type: string): string => {
@@ -167,7 +168,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
   >(null);
   const [actionConfig, setActionConfig] = useState<NavigationActionConfig>({
     use_default_config: true,
-    safe_dist: 0.2,
+    safe_dist: 0.35,
     v_max: 0.5,
     w_max: 1.0,
     a_max: 0.5,
@@ -175,7 +176,11 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     is_holonomic: false,
     deaccelaration_dist: 0.5,
     deaccelaration_ratio: 0.5,
+    goal_tolerance: 0.02,
   });
+  // Per-field raw input draft so number fields can hold transient states like
+  // "", "0.", "0.0" without `Number('')→0` collapsing them on each keystroke.
+  const [numberDrafts, setNumberDrafts] = useState<Partial<Record<string, string>>>({});
 
   useEffect(() => {
     const initChassisControlType = async () => {
@@ -297,11 +302,27 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     key: keyof Omit<NavigationActionConfig, 'use_default_config' | 'is_holonomic'>,
     value: string
   ) => {
+    setNumberDrafts((prev) => ({ ...prev, [key]: value }));
+    if (value === '' || value === '-' || value.endsWith('.')) {
+      // Allow transient input states (empty, lone minus, trailing dot) without
+      // committing — otherwise Number('') === 0 collapses small decimals.
+      return;
+    }
     const next = Number(value);
     if (Number.isNaN(next)) {
       return;
     }
     setActionConfig((prev) => ({ ...prev, [key]: next }));
+  };
+
+  const commitNumberField = (
+    key: keyof Omit<NavigationActionConfig, 'use_default_config' | 'is_holonomic'>
+  ) => {
+    setNumberDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   // meta 不上报有效 progress / distance_to_goal（in-process driver 没有
@@ -595,8 +616,11 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                             min={field.min}
                             max={field.max}
                             step={field.step}
-                            value={String(actionConfig[field.key])}
+                            value={
+                              numberDrafts[field.key] ?? String(actionConfig[field.key] ?? '')
+                            }
                             onChange={(event) => updateNumberField(field.key, event.target.value)}
+                            onBlur={() => commitNumberField(field.key)}
                             className="h-9"
                           />
                         </label>
