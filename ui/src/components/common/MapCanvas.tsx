@@ -1,10 +1,12 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Button as UIButton, Switch, cn } from '@astribot/ui';
 import type { MapData, Pose, PathPoint, LaserScan } from '@/types';
+import { RobotShapeType } from '@/types';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
+import { settingsService } from '@/services/settings';
 
 // ========== 坐标转换工具函数（模块级别，供 SVG 组件使用） ==========
 
@@ -49,16 +51,60 @@ function getClickedWaypointIndex(
 //  scale 参数用于保持元素在屏幕上恒定大小（不随缩放变化）。
 // ==========================================================================
 
-/** 机器人标记 - 绿色圆形 + 朝向箭头 */
+/** 机器人标记 - 按设置里的机器人碰撞形状绘制（圆形或多边形），尺寸
+ *  跟随地图比例尺（resolution）按真实米显示；朝向用白色箭头指示。*/
 const RobotMarker: React.FC<{
-  x: number; y: number; theta: number; scale: number;
-}> = React.memo(({ x, y, theta, scale }) => {
-  const s = 18 / scale;
+  x: number; y: number; theta: number; scale: number; resolution: number;
+}> = React.memo(({ x, y, theta, scale, resolution }) => {
+  const shape = useMemo(() => settingsService.getRobotShape(), []);
   const deg = -(theta * 180) / Math.PI;
+
+  // 描边下限，防止缩很小时消失
+  const minStroke = 1.5 / scale;
+
+  // 朝向箭头：按包围圆的半径派生一个比例基准
+  const baseRadius = (() => {
+    if (shape.type === RobotShapeType.CIRCLE) return (shape.radius ?? 0.3);
+    if (shape.type === RobotShapeType.POLYGON && shape.vertices && shape.vertices.length) {
+      let r = 0;
+      for (const v of shape.vertices) {
+        const d = Math.hypot(v.x, v.y);
+        if (d > r) r = d;
+      }
+      return r || 0.3;
+    }
+    return 0.3;
+  })();
+  const s = baseRadius / resolution; // 主尺寸 (map px)
+  const strokeW = Math.max(s * 0.08, minStroke);
+
+  // 形状本体
+  let body: React.ReactNode;
+  if (shape.type === RobotShapeType.POLYGON && shape.vertices && shape.vertices.length >= 3) {
+    // 顶点在机器人本体坐标系（米，x 朝前，y 朝左）。rotate(deg) 已把本体
+    // 坐标系对齐到地图方向；这里只需把米换到 map px，并反转 y（SVG y 向下）。
+    const pts = shape.vertices
+      .map((v) => `${v.x / resolution},${-v.y / resolution}`)
+      .join(' ');
+    body = (
+      <>
+        <polygon points={pts} fill="#52c41a" opacity={0.15} transform="scale(1.15)" />
+        <polygon points={pts} fill="#52c41a" stroke="#fff" strokeWidth={strokeW} />
+      </>
+    );
+  } else {
+    const r = baseRadius / resolution;
+    body = (
+      <>
+        <circle r={r * 1.3} fill="#52c41a" opacity={0.15} />
+        <circle r={r} fill="#52c41a" stroke="#fff" strokeWidth={strokeW} />
+      </>
+    );
+  }
+
   return (
     <g transform={`translate(${x}, ${y}) rotate(${deg})`}>
-      <circle r={s * 1.3} fill="#52c41a" opacity={0.15} />
-      <circle r={s} fill="#52c41a" stroke="#fff" strokeWidth={s * 0.15} />
+      {body}
       <polygon
         points={`${s * 1.25},0 ${-s * 0.4},${-s * 0.55} ${-s * 0.15},0 ${-s * 0.4},${s * 0.55}`}
         fill="#fff" opacity={0.95}
@@ -1219,7 +1265,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
           {/* 机器人 */}
           {layerOn.robotPose && robotPose && robotMapPos && (
-            <RobotMarker x={robotMapPos.x} y={robotMapPos.y} theta={robotPose.theta} scale={scale} />
+            <RobotMarker x={robotMapPos.x} y={robotMapPos.y} theta={robotPose.theta} scale={scale} resolution={mapData.resolution} />
           )}
         </svg>
       </div>

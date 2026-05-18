@@ -34,9 +34,10 @@ const FIELD_META: Array<{
   step?: number;
   isBoolean?: boolean;
 }> = [
-  { key: 'safe_dist', label: '安全距离 (m)', min: 0.1, max: 1.0, step: 0.1 },
+  { key: 'safe_dist', label: '安全距离 (m)', min: 0.1, max: 1.0, step: 0.05 },
   { key: 'v_max', label: '最大线速度 (m/s)', min: 0.1, max: 2.0, step: 0.1 },
   { key: 'w_max', label: '最大角速度 (rad/s)', min: 0.1, max: 3.0, step: 0.1 },
+  { key: 'goal_tolerance', label: '到点容忍距离 (m)', min: 0.005, max: 0.5, step: 0.005 },
   { key: 'is_holonomic', label: '全向移动', isBoolean: true },
 ];
 
@@ -109,7 +110,7 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
   const [useDefaultConfig, setUseDefaultConfig] = useState(true);
   const [actionConfig, setActionConfig] = useState<NavigationActionConfig>({
     use_default_config: true,
-    safe_dist: 0.2,
+    safe_dist: 0.35,
     v_max: 0.5,
     w_max: 1.0,
     a_max: 0.5,
@@ -117,8 +118,12 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
     is_holonomic: false,
     deaccelaration_dist: 0.5,
     deaccelaration_ratio: 0.5,
+    goal_tolerance: 0.02,
   });
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Per-field raw input draft so number fields can hold transient states like
+  // "", "0.", "0.0" without `Number('')→0` collapsing them on each keystroke.
+  const [numberDrafts, setNumberDrafts] = useState<Partial<Record<string, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -176,11 +181,25 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
   };
 
   const updateNumberField = (key: keyof Omit<NavigationActionConfig, 'use_default_config'>, value: string) => {
+    setNumberDrafts((prev) => ({ ...prev, [key]: value }));
+    if (value === '' || value === '-' || value.endsWith('.')) {
+      // Allow transient input states (empty, lone minus, trailing dot) without
+      // committing — otherwise Number('') === 0 collapses small decimals.
+      return;
+    }
     const next = Number(value);
     if (Number.isNaN(next)) {
       return;
     }
     setActionConfig((prev) => ({ ...prev, [key]: next }));
+  };
+
+  const commitNumberField = (key: keyof Omit<NavigationActionConfig, 'use_default_config'>) => {
+    setNumberDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   if (!waypoint) {
@@ -337,8 +356,11 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
                                 min={field.min}
                                 max={field.max}
                                 step={field.step}
-                                value={String(actionConfig[field.key] as number)}
+                                value={
+                                  numberDrafts[field.key] ?? String(actionConfig[field.key] ?? '')
+                                }
                                 onChange={(event) => updateNumberField(field.key, event.target.value)}
+                                onBlur={() => commitNumberField(field.key)}
                               />
                             </label>
                           )

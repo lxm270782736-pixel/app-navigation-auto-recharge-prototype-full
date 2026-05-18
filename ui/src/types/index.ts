@@ -139,6 +139,7 @@ export interface NavigationActionConfig {
   is_holonomic?: boolean; // 是否为全向运动 (true=全向, false=差速)
   deaccelaration_dist?: number; // 减速策略距离 (m)
   deaccelaration_ratio?: number; // 减速策略系数
+  goal_tolerance?: number; // 到点位置容忍距离 (m)
 }
 
 // 机器人状态

@@ -196,9 +196,11 @@ class BusinessLogic(
                 "nav_state": self._nav_state,
                 "lidar_state": self._lidar_state,
                 "fall_state": self._detection_state,
+                "dock_state": self._dock_state,
                 "nav_status": self._nav_status,
                 "nav_fail_reason": getattr(self, '_nav_fail_reason', None),
                 "nav_feedback": self._nav_feedback.copy(),
+                "dock_status": self.get_dock_status(),
                 "current_map_name": self._current_map_name,
                 "pose": pose,
                 "patrol": {

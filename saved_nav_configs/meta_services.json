@@ -29,11 +29,11 @@
     },
     {
       "name": "meta.lidar",
-      "startup": true,
+      "startup": false,
       "deactivate_after_step": false,
       "config": {
         "user_config_path": "",
-        "publish_freq": 10.0,
+        "publish_freq": 10,
         "xfer_format": 0,
         "multi_topic": 1,
         "data_src": 0,
@@ -60,6 +60,19 @@
       "startup": false,
       "deactivate_after_step": false,
       "config": {}
+    },
+    {
+      "name": "meta.astribot_dock",
+      "startup": false,
+      "deactivate_after_step": false,
+      "config": {
+        "dock_config_path": "",
+        "prepose_distance": 0.6,
+        "align_position_threshold": 0.02,
+        "align_yaw_threshold": 0.05,
+        "charging_current_threshold": 0.1,
+        "low_battery_threshold": 15
+      }
     }
   ]
 }
