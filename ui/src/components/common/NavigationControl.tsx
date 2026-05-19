@@ -79,13 +79,13 @@ const FIELD_META: Array<{
   step: number;
 }> = [
   { key: 'safe_dist', label: '安全距离 (m)', min: 0.1, max: 1.0, step: 0.05 },
-  { key: 'v_max', label: '最大速度 (m/s)', min: 0.1, max: 2.0, step: 0.1 },
+  { key: 'goal_tolerance', label: '到点容忍距离 (m)', min: 0.005, max: 0.5, step: 0.005 },
+  { key: 'v_max', label: '最大线速度 (m/s)', min: 0.1, max: 2.0, step: 0.1 },
   { key: 'w_max', label: '最大角速度 (rad/s)', min: 0.1, max: 3.0, step: 0.1 },
-  { key: 'a_max', label: '最大加速度 (m/s²)', min: 0.1, max: 2.0, step: 0.1 },
-  { key: 'dw_max', label: '最大转向加速度 (rad/s²)', min: 0.1, max: 3.0, step: 0.1 },
+  { key: 'a_max', label: '最大线加速度 (m/s²)', min: 0.1, max: 2.0, step: 0.1 },
+  { key: 'dw_max', label: '最大角加速度 (rad/s²)', min: 0.1, max: 3.0, step: 0.1 },
   { key: 'deaccelaration_dist', label: '减速距离 (m)', min: 0.1, max: 5.0, step: 0.1 },
   { key: 'deaccelaration_ratio', label: '减速比例', min: 0.1, max: 1.0, step: 0.05 },
-  { key: 'goal_tolerance', label: '到点容忍距离 (m)', min: 0.005, max: 0.5, step: 0.005 },
 ];
 
 const getTaskTypeLabel = (type: string): string => {
