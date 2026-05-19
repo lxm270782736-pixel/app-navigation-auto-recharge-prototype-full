@@ -137,8 +137,7 @@ export interface NavigationActionConfig {
   a_max?: number; // 最大加速度 (m/s²)
   dw_max?: number; // 最大转向加速度 (rad/s²)
   is_holonomic?: boolean; // 是否为全向运动 (true=全向, false=差速)
-  deaccelaration_dist?: number; // 减速策略距离 (m)
-  deaccelaration_ratio?: number; // 减速策略系数
+  jps_safe_dis_margin?: number; // JPS 在 safe_dist 之上额外预留 (m), 走更宽路径
   goal_tolerance?: number; // 到点位置容忍距离 (m)
 }
 

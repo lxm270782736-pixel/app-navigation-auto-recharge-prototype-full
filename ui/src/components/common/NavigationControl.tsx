@@ -84,8 +84,7 @@ const FIELD_META: Array<{
   { key: 'w_max', label: '最大角速度 (rad/s)', min: 0.1, max: 3.0, step: 0.1 },
   { key: 'a_max', label: '最大线加速度 (m/s²)', min: 0.1, max: 2.0, step: 0.1 },
   { key: 'dw_max', label: '最大角加速度 (rad/s²)', min: 0.1, max: 3.0, step: 0.1 },
-  { key: 'deaccelaration_dist', label: '减速距离 (m)', min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'deaccelaration_ratio', label: '减速比例', min: 0.1, max: 1.0, step: 0.05 },
+  { key: 'jps_safe_dis_margin', label: 'JPS 宽路余量 (m)', min: 0.0, max: 1.0, step: 0.05 },
 ];
 
 const getTaskTypeLabel = (type: string): string => {
@@ -174,8 +173,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     a_max: 0.5,
     dw_max: 1.0,
     is_holonomic: false,
-    deaccelaration_dist: 0.5,
-    deaccelaration_ratio: 0.5,
+    jps_safe_dis_margin: 0.3,
     goal_tolerance: 0.02,
   });
   // Per-field raw input draft so number fields can hold transient states like
