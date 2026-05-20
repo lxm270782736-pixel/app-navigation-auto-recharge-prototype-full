@@ -116,8 +116,7 @@ export const WaypointConfigModal: React.FC<WaypointConfigModalProps> = ({
     a_max: 0.5,
     dw_max: 1.0,
     is_holonomic: false,
-    deaccelaration_dist: 0.5,
-    deaccelaration_ratio: 0.5,
+    jps_safe_dis_margin: 0.3,
     goal_tolerance: 0.02,
   });
   const [advancedOpen, setAdvancedOpen] = useState(false);

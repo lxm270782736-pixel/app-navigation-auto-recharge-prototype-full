@@ -21,8 +21,7 @@ _NAV_OVERRIDE_KEYS = (
     "a_max",
     "dw_max",
     "is_holonomic",
-    "deaccelaration_dist",
-    "deaccelaration_ratio",
+    "jps_safe_dis_margin",
     "goal_tolerance",
 )
 # How long to block on the planner before returning to the caller. The Meta
