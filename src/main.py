@@ -61,7 +61,12 @@ def launch_required_meta_processes():
 
 @app.on_event("shutdown")
 def stop_started_meta_processes():
-    """Stop only Meta processes started by this app instance."""
+    """Deactivate Meta services, then stop processes started by this app instance."""
+    try:
+        result = logic.deactivate_meta()
+        logger.info("[meta] deactivate on shutdown: %s", result)
+    except Exception as e:
+        logger.warning("[meta] deactivate on shutdown failed: %s", e)
     meta_process_launcher.terminate_started()
 
 
