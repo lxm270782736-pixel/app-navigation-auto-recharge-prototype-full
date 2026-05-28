@@ -19,6 +19,7 @@ const SHORT_LABELS: Record<string, string> = {
   detection: '检测',
   sales_replay: '轨迹回放',
   camera: '相机',
+  astribot_dock: '充电对接',
 };
 
 const SERVICE_ICONS: Record<string, typeof Bot> = {
@@ -26,6 +27,7 @@ const SERVICE_ICONS: Record<string, typeof Bot> = {
   astribot_navigation: Bot,
   lidar: Radar,
   detection: Activity,
+  astribot_dock: Power,
 };
 
 interface ServiceInfo {
@@ -135,11 +137,12 @@ export function MetaLauncher() {
   const handleControl = useCallback(
     async (name: string, action: 'start' | 'stop') => {
       const short = getShortName(name);
-      const keyMap: Record<string, 'loc' | 'nav' | 'lidar' | 'detection'> = {
+      const keyMap: Record<string, 'loc' | 'nav' | 'lidar' | 'detection' | 'dock'> = {
         localization: 'loc',
         astribot_navigation: 'nav',
         lidar: 'lidar',
         detection: 'detection',
+        astribot_dock: 'dock',
       };
       const controlKey = keyMap[short];
       if (!controlKey) {

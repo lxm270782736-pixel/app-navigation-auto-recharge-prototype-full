@@ -532,6 +532,12 @@ class MetaBridgeMixin:
     def stop_lidar(self) -> dict:
         return self._ctrl_service("meta.lidar", "stop")
 
+    def start_dock(self) -> dict:
+        return self._ctrl_service("meta.astribot_dock", "start")
+
+    def stop_dock(self) -> dict:
+        return self._ctrl_service("meta.astribot_dock", "stop")
+
     # =================== Backward-compat call methods ===================
 
     def _loc_call(self, method_name: str, *args, **kwargs) -> dict:

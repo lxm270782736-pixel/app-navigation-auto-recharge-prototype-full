@@ -552,7 +552,7 @@ class ApiService {
     return this._post('/api/meta/deactivate', {});
   }
 
-  async metaControl(service: 'loc' | 'nav' | 'lidar' | 'detection', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
+  async metaControl(service: 'loc' | 'nav' | 'lidar' | 'detection' | 'dock', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
     return this._post('/api/meta/control', { service, action });
   }
 

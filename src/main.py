@@ -667,13 +667,13 @@ def deactivate_meta():
 
 
 class MetaControlRequest(BaseModel):
-    service: str  # loc | nav | lidar | detection
+    service: str  # loc | nav | lidar | detection | dock
     action: str   # start | stop
 
 
 @app.post("/api/meta/control")
 def meta_control(req: MetaControlRequest):
-    """单服务控制。service: loc|nav|detection, action: start|stop"""
+    """单服务控制。service: loc|nav|lidar|detection|dock, action: start|stop"""
     _MAP = {
         ("loc",       "start"): logic.start_localization,
         ("loc",       "stop"):  logic.stop_localization,
@@ -683,6 +683,8 @@ def meta_control(req: MetaControlRequest):
         ("lidar",     "stop"):  logic.stop_lidar,
         ("detection", "start"): logic.start_detection,
         ("detection", "stop"):  logic.stop_detection,
+        ("dock", "start"): logic.start_dock,
+        ("dock", "stop"):  logic.stop_dock,
     }
     fn = _MAP.get((req.service, req.action))
     if fn is None:
