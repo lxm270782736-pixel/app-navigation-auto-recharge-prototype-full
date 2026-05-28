@@ -12,26 +12,19 @@ const STATE_LABELS: Record<string, { text: string; tone: string }> = {
   finalized: { text: '已终止', tone: 'bg-muted text-muted-foreground' },
 };
 
-const SHORT_LABELS: Record<string, string> = {
-  localization: '定位',
-  astribot_navigation: '导航',
-  lidar: '雷达',
-  detection: '检测',
-  sales_replay: '轨迹回放',
-  camera: '相机',
-};
-
 const SERVICE_ICONS: Record<string, typeof Bot> = {
   localization: Radar,
   astribot_navigation: Bot,
   lidar: Radar,
   detection: Activity,
+  astribot_dock: Power,
 };
 
 interface ServiceInfo {
   name: string;
   state: string;
   startup: boolean;
+  displayName: string;
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -42,8 +35,8 @@ function getShortName(name: string) {
   return name.replace('meta.', '');
 }
 
-function getServiceLabel(name: string) {
-  return SHORT_LABELS[getShortName(name)] || getShortName(name);
+function getServiceLabel(service: ServiceInfo) {
+  return service.displayName || getShortName(service.name);
 }
 
 function getServiceIcon(name: string) {
@@ -58,17 +51,11 @@ export function MetaLauncher() {
 
   useEffect(() => {
     const handler = (state: Record<string, unknown>) => {
-      const stateKeysByName: Record<string, string> = {
-        'meta.localization': 'loc_state',
-        'meta.astribot_navigation': 'nav_state',
-        'meta.lidar': 'lidar_state',
-        'meta.detection': 'fall_state',
-        'meta.astribot_dock': 'dock_state',
-      };
+      const metaStates = (state.meta_states as Record<string, string> | undefined) ?? {};
       setServices((prev) =>
         prev.map((service) => {
-          const key = stateKeysByName[service.name] ?? `${getShortName(service.name)}_state`;
-          const nextState = state[key];
+          const nextState =
+            metaStates[service.name] ?? state[`${getShortName(service.name)}_state`];
           return typeof nextState === 'string' ? { ...service, state: nextState } : service;
         }),
       );
@@ -87,24 +74,18 @@ export function MetaLauncher() {
       const servicesStatus = Array.isArray(metaStatus.services)
         ? (metaStatus.services as Array<{ name?: unknown; state?: unknown }>)
         : [];
-      const statesFromServices = Object.fromEntries(
+      const statesByName = Object.fromEntries(
         servicesStatus
           .filter((service) => typeof service.name === 'string' && typeof service.state === 'string')
           .map((service) => [service.name as string, service.state as string]),
       );
-      const statesByName: Record<string, string> = {
-        'meta.localization': statesFromServices['meta.localization'] ?? String(metaStatus.loc_state ?? 'disconnected'),
-        'meta.astribot_navigation': statesFromServices['meta.astribot_navigation'] ?? String(metaStatus.nav_state ?? 'disconnected'),
-        'meta.lidar': statesFromServices['meta.lidar'] ?? String(metaStatus.lidar_state ?? 'disconnected'),
-        'meta.detection': statesFromServices['meta.detection'] ?? String(metaStatus.fall_state ?? 'disconnected'),
-        'meta.astribot_dock': statesFromServices['meta.astribot_dock'] ?? String(metaStatus.dock_state ?? 'disconnected'),
-      };
 
       setServices(
         (metaConfig.services ?? []).map((service) => ({
           name: service.name,
           startup: service.startup,
           state: statesByName[service.name] ?? 'disconnected',
+          displayName: (service as { display_name?: string }).display_name ?? '',
         })),
       );
     } catch (error) {
@@ -134,21 +115,9 @@ export function MetaLauncher() {
 
   const handleControl = useCallback(
     async (name: string, action: 'start' | 'stop') => {
-      const short = getShortName(name);
-      const keyMap: Record<string, 'loc' | 'nav' | 'lidar' | 'detection'> = {
-        localization: 'loc',
-        astribot_navigation: 'nav',
-        lidar: 'lidar',
-        detection: 'detection',
-      };
-      const controlKey = keyMap[short];
-      if (!controlKey) {
-        return;
-      }
-
       setLoading((prev) => ({ ...prev, [name]: true }));
       try {
-        await apiService.metaControl(controlKey, action);
+        await apiService.metaControl(name, action);
         await loadStatus();
       } catch (error) {
         console.error(`Failed to ${action} ${name}:`, error);
@@ -209,7 +178,7 @@ export function MetaLauncher() {
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{getServiceLabel(service.name)}</div>
+                      <div className="truncate text-sm font-medium">{getServiceLabel(service)}</div>
                       <div className="truncate text-xs text-muted-foreground">{getShortName(service.name)}</div>
                     </div>
                   </div>

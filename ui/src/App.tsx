@@ -25,7 +25,7 @@ export type AppComponentProps = {
   onExit: () => void;
 };
 
-const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/settings', '/room-patrol', '/asset-manager'];
+const fullScreenRoutes = ['/map-editor', '/mapping', '/navigation', '/room-patrol', '/asset-manager'];
 
 type NavigationRoutesProps = {
   chromeClassName?: string;
