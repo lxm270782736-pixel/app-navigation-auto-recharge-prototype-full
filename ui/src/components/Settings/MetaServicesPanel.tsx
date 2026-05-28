@@ -13,15 +13,17 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Label,
   Switch,
 } from '@astribot/ui';
-import { Pencil, Play, RefreshCw, Save } from 'lucide-react';
+import { Pencil, Play, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { apiService } from '@/services/api';
 
 interface ServiceEntry {
   name: string;
   startup: boolean;
   deactivate_after_step?: boolean;
+  display_name?: string;
   config: Record<string, any>;
 }
 
@@ -50,6 +52,12 @@ export const MetaServicesPanel: React.FC = () => {
   const [configDraft, setConfigDraft] = useState('');
   const [configError, setConfigError] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [addingOpen, setAddingOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [newConfigDraft, setNewConfigDraft] = useState('{}');
+  const [newError, setNewError] = useState('');
+  const [removingIdx, setRemovingIdx] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async () => {
@@ -102,6 +110,63 @@ export const MetaServicesPanel: React.FC = () => {
     next[idx] = { ...next[idx], deactivate_after_step: value };
     setServices(next);
     setDirty(true);
+  };
+
+  const handleChangeDisplayName = (idx: number, value: string) => {
+    const next = [...services];
+    next[idx] = { ...next[idx], display_name: value };
+    setServices(next);
+    setDirty(true);
+  };
+
+  const handleAddService = () => {
+    const name = newName.trim();
+    if (!name.startsWith('meta.')) {
+      setNewError('服务名必须以 meta. 开头');
+      return;
+    }
+    if (services.some((s) => s.name === name)) {
+      setNewError('服务已存在');
+      return;
+    }
+    let parsed: Record<string, any> = {};
+    try {
+      const draft = newConfigDraft.trim() || '{}';
+      parsed = JSON.parse(draft);
+      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+        setNewError('config 必须是 JSON 对象');
+        return;
+      }
+    } catch (error: any) {
+      setNewError(`config JSON 解析失败: ${error.message}`);
+      return;
+    }
+    setServices([
+      ...services,
+      {
+        name,
+        startup: false,
+        deactivate_after_step: false,
+        display_name: newDisplayName.trim(),
+        config: parsed,
+      },
+    ]);
+    setDirty(true);
+    setAddingOpen(false);
+    setNewName('');
+    setNewDisplayName('');
+    setNewConfigDraft('{}');
+    setNewError('');
+    setNotice('已新增服务草稿，记得保存');
+  };
+
+  const handleConfirmRemove = () => {
+    if (removingIdx === null) return;
+    const removed = services[removingIdx];
+    setServices(services.filter((_, i) => i !== removingIdx));
+    setDirty(true);
+    setRemovingIdx(null);
+    setNotice(`已移除 ${removed.name} 草稿，记得保存`);
   };
 
   const handleOpenConfigEditor = (idx: number) => {
@@ -167,29 +232,32 @@ export const MetaServicesPanel: React.FC = () => {
 
   return (
     <>
-      <Card className="max-w-5xl border-border/70 bg-card/80 shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle className="text-base">Meta 服务配置</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                配置一键启动会激活哪些 meta 服务，以及各服务的默认参数。修改 config 后，已 active 的服务需要下次 deactivate → activate 才会生效。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={handleStartMeta} disabled={starting}>
-                <Play className="mr-2 h-4 w-4" />
-                一键启动
-              </Button>
-              <Button type="button" variant="outline" onClick={() => { void load(); void pollStatus(); }} disabled={loading}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                重载
-              </Button>
-              <Button type="button" onClick={handleSaveAll} disabled={!dirty || saving}>
-                <Save className="mr-2 h-4 w-4" />
-                {dirty ? '保存 *' : '保存'}
-              </Button>
-            </div>
+      <Card className="border-border/70 bg-card/80 shadow-sm">
+        <CardHeader className="space-y-3 pb-3">
+          <div className="space-y-1">
+            <CardTitle className="text-base">Meta 服务配置</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              配置一键启动会激活哪些 meta 服务，以及各服务的默认参数。修改 config 后，已 active 的服务需要下次 deactivate → activate 才会生效。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={handleStartMeta} disabled={starting}>
+              <Play className="mr-2 h-4 w-4" />
+              一键启动
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => { void load(); void pollStatus(); }} disabled={loading}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              重载
+            </Button>
+            <span className="hidden h-5 w-px bg-border/70 sm:block" />
+            <Button type="button" variant="outline" size="sm" onClick={() => setAddingOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              新增服务
+            </Button>
+            <Button type="button" size="sm" onClick={handleSaveAll} disabled={!dirty || saving}>
+              <Save className="mr-2 h-4 w-4" />
+              {dirty ? '保存 *' : '保存'}
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -199,36 +267,55 @@ export const MetaServicesPanel: React.FC = () => {
             return (
               <div
                 key={service.name}
-                className="grid gap-3 rounded-lg border border-border/70 bg-background/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+                className="space-y-3 rounded-lg border border-border/70 bg-background/40 p-4"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium text-foreground">{service.name}</span>
-                    <Badge className={badge.className}>{badge.text}</Badge>
-                  </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="truncate font-medium text-foreground">{service.name}</span>
+                  <Badge className={badge.className}>{badge.text}</Badge>
+                  <span className="text-xs text-muted-foreground">
                     {Object.keys(service.config).length} 项配置
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleOpenConfigEditor(idx)}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      编辑配置
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setRemovingIdx(idx)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      删除
+                    </Button>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 sm:min-w-40">
-                  <span className="text-sm text-foreground">随启动</span>
-                  <Switch checked={service.startup} onCheckedChange={(checked) => handleToggleStartup(idx, checked)} />
-                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                  <div className="flex items-center gap-2">
+                    <Label className="shrink-0 text-xs text-muted-foreground">显示名</Label>
+                    <Input
+                      value={service.display_name ?? ''}
+                      onChange={(event) => handleChangeDisplayName(idx, event.target.value)}
+                      placeholder="例如：定位"
+                      className="h-9 text-sm"
+                    />
+                  </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 sm:min-w-44">
-                  <span className="text-sm text-foreground">步骤后停用</span>
-                  <Switch
-                    checked={service.deactivate_after_step === true}
-                    onCheckedChange={(checked) => handleToggleDeactivate(idx, checked)}
-                  />
-                </div>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-1.5 md:min-w-36">
+                    <span className="text-sm text-foreground">随启动</span>
+                    <Switch checked={service.startup} onCheckedChange={(checked) => handleToggleStartup(idx, checked)} />
+                  </div>
 
-                <div className="flex items-center justify-end">
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleOpenConfigEditor(idx)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    编辑配置
-                  </Button>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-1.5 md:min-w-40">
+                    <span className="text-sm text-foreground">步骤后停用</span>
+                    <Switch
+                      checked={service.deactivate_after_step === true}
+                      onCheckedChange={(checked) => handleToggleDeactivate(idx, checked)}
+                    />
+                  </div>
                 </div>
               </div>
             );
@@ -267,6 +354,72 @@ export const MetaServicesPanel: React.FC = () => {
             </Button>
             <Button type="button" onClick={handleSaveConfig}>
               确定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addingOpen} onOpenChange={(open) => { if (!open) { setAddingOpen(false); setNewError(''); } }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>新增 Meta 服务</DialogTitle>
+            <DialogDescription>新增草稿后请点击工具栏「保存」写入配置文件。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>服务名（必须以 meta. 开头）</Label>
+              <Input
+                value={newName}
+                onChange={(event) => { setNewName(event.target.value); setNewError(''); }}
+                placeholder="meta.example"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>显示名（可选，UI 中显示的中文标题）</Label>
+              <Input
+                value={newDisplayName}
+                onChange={(event) => setNewDisplayName(event.target.value)}
+                placeholder="例如：示例服务"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>初始 config（JSON 对象）</Label>
+              <textarea
+                rows={8}
+                value={newConfigDraft}
+                onChange={(event) => { setNewConfigDraft(event.target.value); setNewError(''); }}
+                className="min-h-40 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            {newError && <div className="text-sm text-red-300">{newError}</div>}
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => { setAddingOpen(false); setNewError(''); }}>
+              取消
+            </Button>
+            <Button type="button" onClick={handleAddService}>
+              新增
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removingIdx !== null} onOpenChange={(open) => !open && setRemovingIdx(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>移除服务</DialogTitle>
+            <DialogDescription>
+              {removingIdx !== null
+                ? `确认从配置中移除 ${services[removingIdx]?.name}？此操作仅修改草稿，保存后才会写入配置文件。`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setRemovingIdx(null)}>
+              取消
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleConfirmRemove}>
+              移除
             </Button>
           </DialogFooter>
         </DialogContent>

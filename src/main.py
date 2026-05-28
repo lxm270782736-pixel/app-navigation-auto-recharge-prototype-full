@@ -667,30 +667,31 @@ def deactivate_meta():
 
 
 class MetaControlRequest(BaseModel):
-    service: str  # loc | nav | lidar | detection | dock
+    service: str  # 完整 meta 名(meta.astribot_dock)或兼容短名(loc | nav | lidar | detection | dock)
     action: str   # start | stop
+
+
+# 兼容旧前端的短名 → 完整 meta 名
+_LEGACY_SERVICE_ALIAS = {
+    "loc": "meta.localization",
+    "nav": "meta.astribot_navigation",
+    "lidar": "meta.lidar",
+    "detection": "meta.detection",
+    "dock": "meta.astribot_dock",
+}
 
 
 @app.post("/api/meta/control")
 def meta_control(req: MetaControlRequest):
-    """单服务控制。service: loc|nav|lidar|detection|dock, action: start|stop"""
-    _MAP = {
-        ("loc",       "start"): logic.start_localization,
-        ("loc",       "stop"):  logic.stop_localization,
-        ("nav",       "start"): logic.start_navigation,
-        ("nav",       "stop"):  logic.stop_navigation,
-        ("lidar",     "start"): logic.start_lidar,
-        ("lidar",     "stop"):  logic.stop_lidar,
-        ("detection", "start"): logic.start_detection,
-        ("detection", "stop"):  logic.stop_detection,
-        ("dock", "start"): logic.start_dock,
-        ("dock", "stop"):  logic.stop_dock,
-    }
-    fn = _MAP.get((req.service, req.action))
-    if fn is None:
+    """单服务控制。service 接受完整 meta 名(meta.xxx)或兼容短名;action: start|stop。"""
+    if req.action not in ("start", "stop"):
         from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=f"Unknown service/action: {req.service}/{req.action}")
-    return fn()
+        raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")
+    name = req.service if req.service.startswith("meta.") else _LEGACY_SERVICE_ALIAS.get(req.service)
+    if not name:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Unknown service: {req.service}")
+    return logic._ctrl_service(name, req.action)
 
 
 @app.get("/api/meta/status")

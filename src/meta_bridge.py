@@ -84,6 +84,7 @@ class MetaServiceEntry:
     config: dict = field(default_factory=dict)  # passed to .configure()
     startup: bool = False                # included in one-click start_meta()
     deactivate_after_step: bool = False  # 服务级默认：步骤完成后是否 deactivate
+    display_name: str = ""               # UI 展示名（中文标题），为空时前端 fallback 短名
     _lock: Any = field(default_factory=threading.Lock, repr=False)
 
 
@@ -118,6 +119,7 @@ class MetaBridgeMixin:
                 config=svc.get("config", {}),
                 startup=svc.get("startup", False),
                 deactivate_after_step=svc.get("deactivate_after_step", False),
+                display_name=svc.get("display_name", ""),
             )
 
     # =================== Core: ensure active ===================
@@ -383,6 +385,7 @@ class MetaBridgeMixin:
                     "name": entry.name,
                     "startup": entry.startup,
                     "deactivate_after_step": entry.deactivate_after_step,
+                    "display_name": entry.display_name,
                     "config": dict(entry.config),
                 }
                 for entry in self._services.values()
@@ -427,12 +430,14 @@ class MetaBridgeMixin:
                 entry.config = svc.get("config", {})
                 entry.startup = svc.get("startup", False)
                 entry.deactivate_after_step = svc.get("deactivate_after_step", False)
+                entry.display_name = svc.get("display_name", "")
             else:
                 self._services[name] = MetaServiceEntry(
                     name=name,
                     config=svc.get("config", {}),
                     startup=svc.get("startup", False),
                     deactivate_after_step=svc.get("deactivate_after_step", False),
+                    display_name=svc.get("display_name", ""),
                 )
         return {"success": True, "message": "Saved. Restart service or deactivate→activate to apply config changes."}
 
@@ -472,7 +477,8 @@ class MetaBridgeMixin:
         status = {
             "meta_connected": self.meta_connected,
             "services": [
-                {"name": entry.name, "state": entry.state, "startup": entry.startup}
+                {"name": entry.name, "state": entry.state, "startup": entry.startup,
+                 "display_name": entry.display_name}
                 for entry in self._services.values()
             ],
         }

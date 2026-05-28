@@ -552,7 +552,7 @@ class ApiService {
     return this._post('/api/meta/deactivate', {});
   }
 
-  async metaControl(service: 'loc' | 'nav' | 'lidar' | 'detection' | 'dock', action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
+  async metaControl(service: string, action: 'start' | 'stop'): Promise<{ success: boolean; state?: string; message?: string }> {
     return this._post('/api/meta/control', { service, action });
   }
 
@@ -561,11 +561,11 @@ class ApiService {
     return this._get(`/api/meta/status${qs}`);
   }
 
-  async getMetaServicesConfig(): Promise<{ services: Array<{ name: string; startup: boolean; config: Record<string, any> }> }> {
+  async getMetaServicesConfig(): Promise<{ services: Array<{ name: string; startup: boolean; display_name?: string; config: Record<string, any> }> }> {
     return this._get('/api/meta/services-config');
   }
 
-  async updateMetaServicesConfig(services: Array<{ name: string; startup: boolean; config: Record<string, any> }>): Promise<{ success: boolean; message?: string }> {
+  async updateMetaServicesConfig(services: Array<{ name: string; startup: boolean; display_name?: string; config: Record<string, any> }>): Promise<{ success: boolean; message?: string }> {
     return this._post('/api/meta/services-config', { services });
   }
 

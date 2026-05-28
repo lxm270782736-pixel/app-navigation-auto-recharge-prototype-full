@@ -197,6 +197,9 @@ class BusinessLogic(
                 "lidar_state": self._lidar_state,
                 "fall_state": self._detection_state,
                 "dock_state": self._dock_state,
+                "meta_states": {
+                    name: entry.state for name, entry in self._services.items()
+                },
                 "nav_status": self._nav_status,
                 "nav_fail_reason": getattr(self, '_nav_fail_reason', None),
                 "nav_feedback": self._nav_feedback.copy(),

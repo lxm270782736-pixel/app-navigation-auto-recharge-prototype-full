@@ -2,6 +2,7 @@
   "services": [
     {
       "name": "meta.localization",
+      "display_name": "定位",
       "startup": true,
       "deactivate_after_step": false,
       "config": {
@@ -16,6 +17,7 @@
     },
     {
       "name": "meta.astribot_navigation",
+      "display_name": "导航",
       "startup": true,
       "deactivate_after_step": false,
       "config": {
@@ -29,6 +31,7 @@
     },
     {
       "name": "meta.detection",
+      "display_name": "检测",
       "startup": false,
       "deactivate_after_step": false,
       "config": {
@@ -37,12 +40,14 @@
     },
     {
       "name": "meta.sales_replay",
+      "display_name": "轨迹回放",
       "startup": false,
       "deactivate_after_step": false,
       "config": {}
     },
     {
       "name": "meta.astribot_dock",
+      "display_name": "充电对接",
       "startup": true,
       "deactivate_after_step": false,
       "config": {
