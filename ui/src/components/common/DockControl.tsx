@@ -61,7 +61,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
     // meta.astribot_dock 返回的状态机枚举名（见 dock/types.py）：
     //   dock_state ∈ {IDLE, CHECK_MAP, P2P_NAV, ROTATE_ALIGN, LOCAL_SEARCH,
     //                 QR_ALIGN, FINAL_DOCK, CHARGING, RETRY_BACKOFF, FAIL_TERMINATE}
-    //   undock_state ∈ {DOCKED, PRE_UNDOCK_CHECK, UNDOCK_BACKWARD,
+    //   undock_state ∈ {DOCKED, PRE_UNDOCK_CHECK, UNDOCK_FORWARD,
     //                   UNDOCK_CLEARANCE_CHECK, SAVE_UNDOCK_POINT,
     //                   UNDOCK_COMPLETE, UNDOCK_FAILED}
     // 中文描述也来自 meta（DOCK_STATE_DESC），但暂时未透出，所以用枚举名 fallback。
@@ -70,7 +70,7 @@ export const DockControl: React.FC<DockControlProps> = ({ isNavigating }) => {
       'FINAL_DOCK', 'RETRY_BACKOFF',
     ]);
     const UNDOCKING_BUSY = new Set([
-      'PRE_UNDOCK_CHECK', 'UNDOCK_BACKWARD', 'UNDOCK_CLEARANCE_CHECK', 'SAVE_UNDOCK_POINT',
+      'PRE_UNDOCK_CHECK', 'UNDOCK_FORWARD', 'UNDOCK_CLEARANCE_CHECK', 'SAVE_UNDOCK_POINT',
     ]);
 
     const mapState = (s: any) => {
