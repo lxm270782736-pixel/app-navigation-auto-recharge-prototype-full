@@ -103,6 +103,8 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
       setWaitingForInitialPoseModalVisible(false);
 
       if (result.success) {
+        setCurrentMode('localization');
+        setStatusMessage('定位模式（手动）');
         setSuccessModalVisible(true);
         onModeChange?.('localization');
       } else {
@@ -136,6 +138,8 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
     try {
       const result = await apiService.startLocalizationAuto();
       if (result.success) {
+        setCurrentMode('localization_auto');
+        setStatusMessage('定位模式（自动）');
         setSuccessModalVisible(true);
         onModeChange?.('localization_auto');
       } else {

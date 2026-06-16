@@ -514,11 +514,13 @@ class MetaBridgeMixin:
                 return {"success": False, "message": str(e)}
         return {"success": False, "message": f"Unknown action: {action}"}
 
-    def start_localization(self) -> dict:
-        return self._ctrl_service("meta.localization", "start")
-
-    def stop_localization(self) -> dict:
-        return self._ctrl_service("meta.localization", "stop")
+    # NOTE: start_localization / stop_localization 故意不在这里实现。
+    # 它们由 LocalizationMixin 提供（src/localization.py），调用 meta.localization 的
+    # start_localization() RPC，触发 slam_node 的 /srv/slam/start_loc_manual 服务。
+    # 如果在这里定义同名方法，会因 BusinessLogic 的 MRO（MetaBridgeMixin 在前）
+    # 覆盖 LocalizationMixin 的版本，导致手动重定位流程只激活 meta service 而不
+    # 触发 slam_node 切到 mode=2，最终 LIO 不启动 / loc_high_freq 无数据。
+    # 服务生命周期通过 /api/meta/control 走 _ctrl_service，不需要这些便捷方法。
 
     def start_navigation(self) -> dict:
         return self._ctrl_service("meta.astribot_navigation", "start")
