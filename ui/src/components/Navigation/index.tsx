@@ -565,6 +565,10 @@ export function Navigation() {
       setIsNavigating(false);
       setNavigationStatus('');
       setNavigationFeedback({});
+      // 清空地图上的选点，使「开始巡航」按钮自动 disable
+      setWaypoints([]);
+      setSelectedWaypointIndex(-1);
+      setGoalPose(undefined);
       setStatusMessage('巡航已停止。');
     } else {
       setStatusMessage(result.message || '停止巡航失败。');
