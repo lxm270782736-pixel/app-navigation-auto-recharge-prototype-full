@@ -358,13 +358,29 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     : (robotPose && goalPose ? Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y) : 0);
   // 巡航完成的 sticky 窗口期保持 100%，避免归零闪烁。
   const inPatrolTerminalSuccess = !patrolState?.active && patrolState?.status === 'succeeded';
+  // 导航结束（单点完成 / 巡航 succeeded）后，再保持 2s 让用户看到 100%，
+  // 然后把进度条与剩余距离一起归零。下次开始新一段导航时由 navCompleted /
+  // patrolState 的变化自动复位。
+  const isCompleted = navCompleted || inPatrolTerminalSuccess;
+  const [progressForceZero, setProgressForceZero] = useState(false);
+  useEffect(() => {
+    if (!isCompleted) {
+      setProgressForceZero(false);
+      return;
+    }
+    const t = window.setTimeout(() => setProgressForceZero(true), 2000);
+    return () => window.clearTimeout(t);
+  }, [isCompleted]);
+
   const progress = (() => {
+    if (progressForceZero) return 0;
     if (inPatrolTerminalSuccess) return 1;
     if (navCompleted) return 1;
     const anchor = goalAnchorRef.current;
     if (!anchor || anchor.initial <= 0.05) return 0;
     return Math.max(0, Math.min(1, 1 - remainingDistance / anchor.initial));
   })();
+  const displayRemainingDistance = progressForceZero ? 0 : remainingDistance;
   const canStart = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose) || chassisControlType === 'joy' || hasActiveAction;
 
   return (
@@ -505,7 +521,7 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
               />
             </div>
             <div className="mt-3 flex items-center justify-between text-muted-foreground">
-              <span>剩余：<span className="font-medium text-foreground">{remainingDistance.toFixed(2)} m</span></span>
+              <span>剩余：<span className="font-medium text-foreground">{displayRemainingDistance.toFixed(2)} m</span></span>
               {isNavigating && navigationFeedback?.eta !== undefined && (
                 <span>ETA：<span className="font-medium text-foreground">{navigationFeedback.eta.toFixed(1)} s</span></span>
               )}
