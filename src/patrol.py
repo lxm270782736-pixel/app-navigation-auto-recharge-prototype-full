@@ -37,24 +37,19 @@ class PatrolMixin:
         return {"success": True, "message": f"Patrol started with {len(waypoints)} waypoints"}
 
     def stop_patrol(self) -> dict:
-        """Stop the active patrol."""
+        """Stop the active patrol.
+
+        Delegates the underlying nav-goal cancellation, generation bump and
+        patrol/nav state reset to ``cancel_navigation`` so single-point and
+        multi-point stop go through the same Meta cancel path. Only the
+        local-nav timer (patrol-specific) is cleaned up here.
+        """
         if self._patrol_local_timer:
             self._patrol_local_timer.cancel()
             self._patrol_local_timer = None
-        if self._nav_action_client:
-            try:
-                self._nav_action_client.cancel_goal()
-            except Exception:
-                pass
         with self._lock:
             was_active = self._patrol_active
-            self._patrol_active = False
-            self._patrol_status = "idle"
-            self._patrol_current_index = -1
-            self._patrol_error = ""
-            self._nav_status = "idle"
-            self._nav_feedback = {}
-        self._delete_patrol_config()
+        self.cancel_navigation()
         if was_active:
             print("[patrol] Patrol stopped by user")
         return {"success": True, "message": "Patrol stopped"}
