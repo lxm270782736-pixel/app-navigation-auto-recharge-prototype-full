@@ -358,10 +358,14 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     : (robotPose && goalPose ? Math.hypot(goalPose.x - robotPose.x, goalPose.y - robotPose.y) : 0);
   // 巡航完成的 sticky 窗口期保持 100%，避免归零闪烁。
   const inPatrolTerminalSuccess = !patrolState?.active && patrolState?.status === 'succeeded';
-  // 导航结束（单点完成 / 巡航 succeeded）后，再保持 2s 让用户看到 100%，
+  // 导航结束（单点完成 / 巡航整体 succeeded）后，再保持 2s 让用户看到 100%，
   // 然后把进度条与剩余距离一起归零。下次开始新一段导航时由 navCompleted /
   // patrolState 的变化自动复位。
-  const isCompleted = navCompleted || inPatrolTerminalSuccess;
+  //
+  // 巡航期间不进入归零窗口：每段 waypoint 完成都会推送 navigation-result，
+  // 把 navCompleted 翻成 true，如果纳入 isCompleted 会让中间段触发 2s 归零。
+  // 必须等到巡航整体结束（patrolState.active=false 且 status=succeeded）。
+  const isCompleted = (navCompleted && !patrolState?.active) || inPatrolTerminalSuccess;
   const [progressForceZero, setProgressForceZero] = useState(false);
   useEffect(() => {
     if (!isCompleted) {
