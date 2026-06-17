@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -98,6 +98,9 @@ export function Navigation() {
   const [waypointMode, setWaypointMode] = useState(false);
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [patrolState, setPatrolState] = useState<PatrolState | null>(null);
+  // 巡航中断后的恢复点索引：停止时记录 current_index，再次开始时传给后端。
+  // 任何 waypoints 编辑、巡航完成、切单点模式都会清空它，回到从 0 开始。
+  const [resumeFromIndex, setResumeFromIndex] = useState<number | null>(null);
   const isPatrolActive = patrolState?.active ?? false;
   // Backend keeps status='succeeded' + completed=[...all] for ~3s after flipping
   // active=false. Treat that window as terminal so the 100% bar / checkmarks
@@ -132,6 +135,18 @@ export function Navigation() {
     jps: true,
   });
 
+  // 任何路径点编辑（add / delete / drag / move / config / clear）都会替换 waypoints 引用，
+  // 此时让恢复点失效，下次开始巡航回到从 0 开始。stop / start 流程不会改 waypoints，所以
+  // 不会被这条副作用误清。
+  const isFirstWaypointsEffect = useRef(true);
+  useEffect(() => {
+    if (isFirstWaypointsEffect.current) {
+      isFirstWaypointsEffect.current = false;
+      return;
+    }
+    setResumeFromIndex(null);
+  }, [waypoints]);
+
   useEffect(() => {
     const handlePatrolState = (data: PatrolState) => {
       setPatrolState(data);
@@ -149,6 +164,8 @@ export function Navigation() {
       } else if (data.status === 'succeeded') {
         setIsNavigating(false);
         setGoalPose(undefined);
+        // 巡航整体跑完，恢复点失效
+        setResumeFromIndex(null);
       }
     };
     apiService.on('patrol-state', handlePatrolState);
@@ -560,28 +577,46 @@ export function Navigation() {
   }
 
   async function handleStopPatrol() {
+    // 在调 stopPatrol 之前抓快照——后端 cancel_navigation 会把 current_index 置 -1，
+    // 等 SSE 推回来再读就来不及了。0 也是合法 index，所以判断要 >= 0。
+    const interruptedAt = patrolState?.current_index;
     const result = await apiService.stopPatrol();
     if (result.success) {
       setIsNavigating(false);
       setNavigationStatus('');
       setNavigationFeedback({});
-      // 清空地图上的选点，使「开始巡航」按钮自动 disable
-      setWaypoints([]);
-      setSelectedWaypointIndex(-1);
       setGoalPose(undefined);
-      setStatusMessage('巡航已停止。');
+      // 保留 waypoints / selectedWaypointIndex，让用户可以原地点「开始巡航」从中断点继续
+      if (typeof interruptedAt === 'number' && interruptedAt >= 0) {
+        setResumeFromIndex(interruptedAt);
+        setStatusMessage(`巡航已停止，下次将从路径点 ${interruptedAt + 1} 继续。`);
+      } else {
+        setResumeFromIndex(null);
+        setStatusMessage('巡航已停止。');
+      }
     } else {
       setStatusMessage(result.message || '停止巡航失败。');
     }
   }
 
-  async function handleStartPatrol(startIndex = 0) {
+  async function handleStartPatrol(startIndex?: number) {
     if (waypoints.length === 0) {
       setStatusMessage('请先添加路径点。');
       return;
     }
-    const result = await apiService.startPatrol(waypoints, startIndex);
-    setStatusMessage(result.success ? `巡航已启动，共 ${waypoints.length} 个路径点。` : (result.message || '启动巡航失败。'));
+    // 优先用显式传入的 startIndex；否则若有中断点则从中断点继续，否则从 0 开始。
+    let actualStart = typeof startIndex === 'number' ? startIndex : (resumeFromIndex ?? 0);
+    if (actualStart < 0 || actualStart >= waypoints.length) {
+      actualStart = 0;
+    }
+    const result = await apiService.startPatrol(waypoints, actualStart);
+    if (result.success) {
+      // 启动成功后清掉恢复点，避免下一次开始还套用旧值
+      setResumeFromIndex(null);
+      setStatusMessage(`巡航已启动，共 ${waypoints.length} 个路径点${actualStart > 0 ? `，从路径点 ${actualStart + 1} 开始` : ''}。`);
+    } else {
+      setStatusMessage(result.message || '启动巡航失败。');
+    }
   }
 
   function handleMoveWaypoint(fromIndex: number, toIndex: number) {
@@ -860,7 +895,7 @@ export function Navigation() {
               waypointMode={waypointMode}
               onWaypointModeChange={handleModeChange}
               waypoints={waypoints.map((waypoint) => waypoint.pose)}
-              onStartWaypointNavigation={() => void handleStartPatrol(0)}
+              onStartWaypointNavigation={() => void handleStartPatrol()}
               patrolState={patrolState}
             />
             {waypointMode && (
