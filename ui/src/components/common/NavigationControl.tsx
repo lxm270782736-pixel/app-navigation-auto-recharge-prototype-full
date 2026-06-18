@@ -385,7 +385,17 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
     return Math.max(0, Math.min(1, 1 - remainingDistance / anchor.initial));
   })();
   const displayRemainingDistance = progressForceZero ? 0 : remainingDistance;
-  const canStart = !robotPose || (waypointMode ? waypoints.length === 0 : !goalPose) || chassisControlType === 'joy' || hasActiveAction;
+  // 巡航刚结束（succeeded）后，后端有 ~3 s 的 sticky 窗口在把 _nav_status /
+  // _patrol_status 复位到 idle，期间 driver._state 仍是 reached。如果用户在这
+  // 个窗口里再次点「开始巡航」，下一段会从 sticky reached 起步，poller 立刻
+  // 看到 reached 直接跳过该路径点。等 patrolState.status 不再是 succeeded
+  // （即 UI 上完成态视觉效果消失，路径点变蓝）再允许开始。
+  const inPatrolFinishWindow = waypointMode && patrolState?.status === 'succeeded';
+  const canStart = !robotPose
+    || (waypointMode ? waypoints.length === 0 : !goalPose)
+    || chassisControlType === 'joy'
+    || hasActiveAction
+    || inPatrolFinishWindow;
 
   return (
     <div className="space-y-3">
@@ -495,11 +505,13 @@ export const NavigationControl: React.FC<NavigationControlProps> = ({
                 {waypointMode ? '开始巡航' : '开始导航'}
               </Button>
               <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                {waypointMode
-                  ? `将按序导航到 ${waypoints.length} 个路径点。`
-                  : navigationMode === NavigationMode.OBSTACLE_AVOIDANCE
-                    ? '全局路径规划，支持避障和附加任务。'
-                    : '短距离快速导航，不做避障规划。'}
+                {inPatrolFinishWindow
+                  ? '上一轮巡航刚结束，请等待路径点状态复位（约 3 秒）后再开始下一轮。'
+                  : waypointMode
+                    ? `将按序导航到 ${waypoints.length} 个路径点。`
+                    : navigationMode === NavigationMode.OBSTACLE_AVOIDANCE
+                      ? '全局路径规划，支持避障和附加任务。'
+                      : '短距离快速导航，不做避障规划。'}
               </div>
               {chassisControlType === 'joy' && (
                 <div className="text-xs text-red-300">手柄模式下不允许开始导航，请先切换到底盘自动模式。</div>
