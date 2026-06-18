@@ -18,6 +18,20 @@ class PatrolMixin:
         if start_index < 0 or start_index >= len(waypoints):
             return {"success": False, "message": f"Invalid start_index: {start_index}"}
 
+        # Force-clear any sticky driver state lingering from the previous goal
+        # before this patrol starts. After a patrol where any waypoint was
+        # unreachable, the upstream Meta driver keeps _state="failed" sticky
+        # (only a "planning" push can release it), and the same applies to a
+        # leftover "reached" from a normal completion. Without this cancel,
+        # the very first navigate_to of the new patrol races against that
+        # stale terminal state — the poller can see failed/reached on the
+        # first tick and skip the first waypoint.
+        #
+        # Must run BEFORE we set _patrol_active below: cancel_navigation
+        # clears _patrol_active / _patrol_status as part of its reset, so
+        # writing those after the cancel is the only correct order.
+        self.cancel_navigation()
+
         with self._lock:
             if self._patrol_active:
                 return {"success": False, "message": "Patrol already active"}
