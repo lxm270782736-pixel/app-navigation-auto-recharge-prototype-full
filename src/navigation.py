@@ -30,16 +30,16 @@ _NAV_OVERRIDE_KEYS = (
 # pinned forever.
 _NAV_PLAN_WAIT_SEC = 3.0
 
-# Grace window after navigate_to during which a "reached" / "failed" status
-# from the poller is treated as stale residue from the previous goal and
-# discarded. The Meta navigation core publishes status only on EXECUTING
-# transitions and GOAL_REACHED ticks, and racy interactions with the
-# driver's sticky reached/failed state can leak the previous segment's
-# terminal status into the next poll cycle. For multi-waypoint patrol that
-# manifests as a waypoint being skipped a fraction of a second after the
-# next segment starts. 1.5 s comfortably covers the observed ~0.7 s window
-# without delaying a real "reached" by a noticeable amount on legitimate
-# segments (the next poll tick is at most 0.5 s away).
+# Grace window after the poller starts during which a "reached" / "failed"
+# status is treated as stale residue from the previous goal and discarded.
+# The Meta navigation core publishes terminal status only on GOAL_REACHED
+# ticks, and racy interactions with the driver's sticky reached/failed state
+# can leak the previous segment's terminal status into the next poll cycle.
+# For multi-waypoint patrol that manifests as a waypoint being skipped a
+# fraction of a second after the next segment starts. The window is anchored
+# at poller start (= after navigate_to RPC returns), so 1.5 s comfortably
+# covers the observed leakage without delaying a real "reached" by a
+# noticeable amount on legitimate segments (next poll tick is at most 0.5 s).
 _NAV_REACHED_GRACE_SEC = 1.5
 
 
@@ -74,10 +74,6 @@ class NavigationMixin:
             # 生成唯一 goal_id，用时间戳标识本次导航任务
             goal_id = f"nav_{int(time.time() * 1000)}"
             overrides = _filter_overrides(config)
-            # 抓 monotonic 时间戳用于后续 stale-reached 判定。要在 RPC 之前抓，
-            # 而不是 RPC 之后——RPC 内部会同步阻塞 wait_plan_timeout 至多
-            # _NAV_PLAN_WAIT_SEC 秒，如果在返回后才记时间，grace 窗口会被吃掉。
-            nav_start = time.monotonic()
             result = self._nav.navigate_to(
                 x=x, y=y, yaw=theta, goal_id=goal_id,
                 overrides=overrides or None,
@@ -98,7 +94,7 @@ class NavigationMixin:
                 plan_result.get("success"),
                 float(plan_result.get("plan_latency_ms") or 0.0),
             )
-            self._start_nav_status_poller(my_gen, goal_id, nav_start=nav_start)
+            self._start_nav_status_poller(my_gen, goal_id)
             return {"success": result.get("status") == "success",
                     "message": result.get("message", ""),
                     "plan_result": plan_result}
@@ -136,19 +132,27 @@ class NavigationMixin:
             return {}
         return cached
 
-    def _start_nav_status_poller(self, generation: int, goal_id: str = "", nav_start: float = 0.0):
+    def _start_nav_status_poller(self, generation: int, goal_id: str = ""):
         """Poll Meta navigation status until terminal state for the given generation.
 
-        Args:
-            generation: nav generation counter (to detect superseded goals)
-            goal_id: expected goal_id from navigate_to
-            nav_start: monotonic timestamp when navigate_to was called; used to
-                       discard stale "reached"/"failed" status within the grace
-                       window (_NAV_REACHED_GRACE_SEC) to prevent premature
-                       completion signals from previous goals.
+        A "stale-reached" guard is enforced for the first
+        ``_NAV_REACHED_GRACE_SEC`` seconds **after the poller starts**: terminal
+        statuses (reached/failed) seen inside this window are dropped on the
+        assumption they are residual state from the previous goal that hasn't
+        been overwritten yet by the Meta core. Real terminal status is still
+        picked up on subsequent ticks once the segment actually completes.
+
+        The grace timer is anchored at the poller's start (i.e. after the
+        synchronous navigate_to RPC returns), not at the navigate_to call site,
+        because that RPC blocks for up to ``_NAV_PLAN_WAIT_SEC`` waiting on
+        plan_result and would eat the grace window if measured from earlier.
         """
         with self._lock:
             self._nav_polling = True
+
+        # Anchor the stale-reached grace window at poller start (= first poll
+        # is no earlier than ~0.5 s from now). See class docstring above.
+        poller_start = time.monotonic()
 
         def _poll():
             try:
@@ -198,21 +202,20 @@ class NavigationMixin:
                         continue
 
                     if state in ("reached", "failed"):
-                        # Stale-status guard: within the grace window after
-                        # navigate_to, treat reached/failed as residual status
+                        # Stale-status guard: within the grace window after the
+                        # poller starts, treat reached/failed as residual status
                         # from the previous goal (Meta core publishes terminal
                         # status only on GOAL_REACHED ticks; sticky state in
                         # navigation_driver can leak the previous segment's
                         # reached into the next poll cycle).
-                        if nav_start > 0.0:
-                            elapsed = time.monotonic() - nav_start
-                            if elapsed < _NAV_REACHED_GRACE_SEC:
-                                log_throttled(logger, f"nav.stale.gen{generation}", 5.0, "info",
-                                              "[nav] poller gen=%d DISCARD stale state=%s "
-                                              "(elapsed=%.2fs < grace=%.2fs goal_id=%s)",
-                                              generation, state, elapsed,
-                                              _NAV_REACHED_GRACE_SEC, goal_id)
-                                continue
+                        elapsed = time.monotonic() - poller_start
+                        if elapsed < _NAV_REACHED_GRACE_SEC:
+                            log_throttled(logger, f"nav.stale.gen{generation}", 5.0, "info",
+                                          "[nav] poller gen=%d DISCARD stale state=%s "
+                                          "(elapsed=%.2fs < grace=%.2fs goal_id=%s)",
+                                          generation, state, elapsed,
+                                          _NAV_REACHED_GRACE_SEC, goal_id)
+                            continue
                         success = state == "reached"
                         logger.info("[nav] %s Meta nav result: state=%s (gen=%d goal_id=%s)",
                                     _ts(), state, generation, goal_id)
