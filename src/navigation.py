@@ -59,6 +59,7 @@ _NAV_REACHED_GRACE_SEC = 1.5
 _NAV_REACHED_MAX_DISTANCE_M = 0.1
 
 
+
 def _filter_overrides(config: dict | None) -> dict:
     """Strip the inbound web payload to the override whitelist.
 
@@ -244,13 +245,17 @@ class NavigationMixin:
                             cur = status.get("current_pose") or {}
                             tgt = status.get("target_pose") or {}
                             try:
-                                dist = math.hypot(
-                                    float(tgt.get("x", 0.0)) - float(cur.get("x", 0.0)),
-                                    float(tgt.get("y", 0.0)) - float(cur.get("y", 0.0)),
-                                )
+                                cx, cy = float(cur.get("x", 0.0)), float(cur.get("y", 0.0))
+                                tx, ty = float(tgt.get("x", 0.0)), float(tgt.get("y", 0.0))
+                                dist = math.hypot(tx - cx, ty - cy)
                             except (TypeError, ValueError):
+                                cx = cy = 0.0
                                 dist = 0.0  # missing pose → don't block, fall through
-                            if dist > _NAV_REACHED_MAX_DISTANCE_M:
+                            # current_pose == (0, 0) likely means the status field
+                            # is uninitialized or the driver has no pose callback —
+                            # skip the distance check to avoid false positives.
+                            pose_valid = (cx != 0.0 or cy != 0.0)
+                            if pose_valid and dist > _NAV_REACHED_MAX_DISTANCE_M:
                                 log_throttled(logger, f"nav.farreach.gen{generation}", 2.0, "warning",
                                               "[nav] poller gen=%d DISCARD reached far from target "
                                               "(dist=%.2fm > %.2fm cur=(%.2f,%.2f) tgt=(%.2f,%.2f) goal_id=%s)",

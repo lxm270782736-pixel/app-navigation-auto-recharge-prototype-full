@@ -152,6 +152,20 @@ class PatrolMixin:
                 with self._lock:
                     if not self._patrol_active:
                         return
+                # Force-clear Meta driver's sticky terminal state (the previous
+                # segment's reached) before dispatching the next waypoint. Without
+                # this the upstream navigation_driver keeps _state="reached" until
+                # the C++ core pushes a new status, so the next segment's poller
+                # can read the stale reached and mis-detect an instant arrival,
+                # causing the waypoint to be silently skipped. Calling Meta cancel
+                # directly (not patrol.cancel_navigation, which would also reset
+                # patrol's own _patrol_active flag) clears just the driver state.
+                if self._nav_state == "active" and self._nav:
+                    try:
+                        self._nav.cancel_navigation()
+                        print("[patrol] pre-segment cancel → Meta link")
+                    except Exception as e:
+                        print(f"[patrol] pre-segment cancel failed: {e}")
                 self._navigate_to_current_waypoint()
             threading.Thread(target=_send_next, daemon=True).start()
         else:
