@@ -1,5 +1,6 @@
 """Single-point navigation — all calls go through Meta navigation service."""
 import logging
+import math
 import threading
 import time
 from datetime import datetime
@@ -41,6 +42,21 @@ _NAV_PLAN_WAIT_SEC = 3.0
 # covers the observed leakage without delaying a real "reached" by a
 # noticeable amount on legitimate segments (next poll tick is at most 0.5 s).
 _NAV_REACHED_GRACE_SEC = 1.5
+
+# Distance sanity check on "reached": a genuine arrival requires the robot to
+# physically be at the goal. If the driver reports reached while current_pose
+# is still farther than this from target_pose, that "reached" is sticky
+# residue from the previous goal (the Meta navigation_driver keeps the last
+# terminal state until the C++ core pushes a new status, which it only does on
+# real state transitions — so between two patrol segments the previous
+# segment's reached can persist and be read by the next segment's poller).
+# This is the root-cause guard: regardless of timing / cancel races, a reached
+# that violates physics is rejected. The threshold is the goal_tolerance
+# whitelist max (0.5 m) — a real arrival is always within that (default
+# tolerance is 0.01 m), while sticky residue leaves the robot at the previous
+# waypoint, typically 0.5–several m away. failed is NOT distance-checked: a
+# failed can be a legitimate planner rejection that must propagate.
+_NAV_REACHED_MAX_DISTANCE_M = 0.5
 
 
 def _filter_overrides(config: dict | None) -> dict:
@@ -216,6 +232,33 @@ class NavigationMixin:
                                           generation, state, elapsed,
                                           _NAV_REACHED_GRACE_SEC, goal_id)
                             continue
+
+                        # Root-cause guard: a real "reached" requires the robot
+                        # to physically be at the goal. A reached reported while
+                        # the robot is still far from target is sticky residue
+                        # from the previous segment, not a real arrival — drop
+                        # it and keep polling until the robot actually arrives
+                        # (or a new goal supersedes this generation). Not applied
+                        # to "failed": that can be a genuine planner rejection.
+                        if state == "reached":
+                            cur = status.get("current_pose") or {}
+                            tgt = status.get("target_pose") or {}
+                            try:
+                                dist = math.hypot(
+                                    float(tgt.get("x", 0.0)) - float(cur.get("x", 0.0)),
+                                    float(tgt.get("y", 0.0)) - float(cur.get("y", 0.0)),
+                                )
+                            except (TypeError, ValueError):
+                                dist = 0.0  # missing pose → don't block, fall through
+                            if dist > _NAV_REACHED_MAX_DISTANCE_M:
+                                log_throttled(logger, f"nav.farreach.gen{generation}", 2.0, "warning",
+                                              "[nav] poller gen=%d DISCARD reached far from target "
+                                              "(dist=%.2fm > %.2fm cur=(%.2f,%.2f) tgt=(%.2f,%.2f) goal_id=%s)",
+                                              generation, dist, _NAV_REACHED_MAX_DISTANCE_M,
+                                              float(cur.get("x", 0.0)), float(cur.get("y", 0.0)),
+                                              float(tgt.get("x", 0.0)), float(tgt.get("y", 0.0)), goal_id)
+                                continue
+
                         success = state == "reached"
                         logger.info("[nav] %s Meta nav result: state=%s (gen=%d goal_id=%s)",
                                     _ts(), state, generation, goal_id)
