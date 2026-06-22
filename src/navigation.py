@@ -56,7 +56,7 @@ _NAV_REACHED_GRACE_SEC = 1.5
 # tolerance is 0.01 m), while sticky residue leaves the robot at the previous
 # waypoint, typically 0.5–several m away. failed is NOT distance-checked: a
 # failed can be a legitimate planner rejection that must propagate.
-_NAV_REACHED_MAX_DISTANCE_M = 0.5
+_NAV_REACHED_MAX_DISTANCE_M = 0.1
 
 
 def _filter_overrides(config: dict | None) -> dict:
