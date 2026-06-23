@@ -331,6 +331,27 @@ class ApiService {
     }
   }
 
+  /** Fetch live 2D point cloud snapshot (world frame). Backed by the meta
+   *  service's `get_cloud_snapshot` RPC; same source as the ROS2
+   *  `/pcd_baselink_2D` topic. Returns null on any failure / no-data so the
+   *  caller can keep showing the previous frame without flicker. */
+  async getCloudSnapshot(maxPoints: number = 720, stride: number = 1): Promise<{
+    frame_id: string;
+    stamp_ns: number;
+    point_count: number;
+    points: Array<{ x: number; y: number }>;
+  } | null> {
+    try {
+      const r: any = await this._get(
+        `/api/navigation/cloud?max_points=${maxPoints}&stride=${stride}`,
+      );
+      if (!r || !r.success || !r.data) return null;
+      return r.data;
+    } catch {
+      return null;
+    }
+  }
+
   /** Fetch combined MPC + planner debug state. Prefer SSE `nav_debug` when
    *  possible; this endpoint exists for on-demand refresh. */
   async getNavigationDebug(): Promise<{

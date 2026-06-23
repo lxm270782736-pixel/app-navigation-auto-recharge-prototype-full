@@ -443,6 +443,38 @@ class NavigationMixin:
             logger.debug("[nav] get_occ_snapshot failed: %s", e)
             return _stale_reply(str(e))
 
+    def get_cloud_snapshot(self, max_points: int = 720, stride: int = 1) -> dict:
+        """Fetch live 2D point cloud from meta.astribot_navigation.
+
+        Caches the last successful frame so the overlay survives transient
+        RPC failures (Meta restart / brief inactivity). Marked ``stale=True``
+        when the upstream call fails but a cached frame is available. Cache
+        is intentionally NOT cleared on cancel: the cloud is the latest
+        sensor reading regardless of whether a goal is active.
+        """
+        cached = getattr(self, '_last_cloud_snapshot', None)
+
+        def _stale_reply(msg: str) -> dict:
+            if cached is not None:
+                return {"success": True, "stale": True, "message": msg, "data": cached}
+            return {"success": False, "message": msg}
+
+        if self._nav_state != "active" or not self._nav:
+            return _stale_reply("Navigation service not active")
+        try:
+            result = self._nav.get_cloud_snapshot(
+                max_points=int(max_points), stride=int(stride),
+            )
+            if isinstance(result, dict) and result.get("success") and result.get("data"):
+                self._last_cloud_snapshot = result["data"]
+                return result
+            return _stale_reply(
+                (result or {}).get("message", "Cloud snapshot not available") if isinstance(result, dict) else "Cloud snapshot not available"
+            )
+        except Exception as e:
+            logger.debug("[nav] get_cloud_snapshot failed: %s", e)
+            return _stale_reply(str(e))
+
     def get_nav_debug_snapshot(self) -> dict:
         """Combined MPC + planner debug in a single Meta RPC."""
         if self._nav_state != "active" or not self._nav:

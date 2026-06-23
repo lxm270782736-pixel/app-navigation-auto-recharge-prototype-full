@@ -79,6 +79,7 @@ export function Navigation() {
   const [navigationPath, setNavigationPath] = useState<PathPoint[]>([]);
   const [jpsPath, setJpsPath] = useState<PathPoint[]>([]);
   const [esdfData, setEsdfData] = useState<MapData | null>(null);
+  const [cloudPoints, setCloudPoints] = useState<Array<{ x: number; y: number }>>([]);
   const [navDebug, setNavDebug] = useState<{ mpc?: any; planner?: any } | null>(null);
   const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [isMapRealtime, setIsMapRealtime] = useState(false);
@@ -133,6 +134,7 @@ export function Navigation() {
     esdf: false,
     horizon: false,
     jps: true,
+    cloud: false,
   });
 
   // 任何路径点编辑（add / delete / drag / move / config / clear）都会替换 waypoints 引用，
@@ -373,6 +375,30 @@ export function Navigation() {
       window.clearInterval(timer);
     };
   }, [layers.esdf, connectionStatus, isNavigating, isPatrolActive]);
+
+  // 实时点云 polling — 5 Hz。点云是 SDFmap 内部 cloud_ 的快照 (world frame)，
+  // 与导航是否在进行无关：只要图层打开 + 连接正常就拉。点数上限 720（默认 1°
+  // 步长的 360° 激光为 360 点，留余量），传输量 ~10KB/帧。RPC 失败/暂时无数
+  // 据时返回 null，保留上一帧避免闪烁。
+  useEffect(() => {
+    if (!layers.cloud || connectionStatus !== ConnectionStatus.CONNECTED) {
+      setCloudPoints([]);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await apiService.getCloudSnapshot(720, 1);
+      if (cancelled) return;
+      if (!snap || !Array.isArray(snap.points)) return;
+      setCloudPoints(snap.points);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [layers.cloud, connectionStatus]);
 
   // MPC horizon + FSM debug polling — layer on + navigating. When idle the
   // MPC horizon is stale and the FSM sits in IDLE, so polling is pointless.
@@ -788,6 +814,8 @@ export function Navigation() {
             path={layers.path ? navigationPath : undefined}
             jpsPath={layers.jps ? jpsPath : undefined}
             esdfData={layers.esdf ? esdfData : null}
+            cloudPoints={layers.cloud ? cloudPoints : null}
+            showCloud={layers.cloud}
             horizonPath={layers.horizon && navDebug?.mpc?.horizon ? navDebug.mpc.horizon : undefined}
             onMapClick={handleMapClick}
             showCoordinateSystem={layers.coordinateSystem}
@@ -818,6 +846,7 @@ export function Navigation() {
                 { key: 'grid', label: '栅格' },
                 { key: 'esdf', label: 'ESDF 距离场' },
                 { key: 'horizon', label: 'MPC 预测' },
+                { key: 'cloud', label: '实时点云' },
               ].map(({ key, label }) => (
                 <div key={key} className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">{label}</span>
