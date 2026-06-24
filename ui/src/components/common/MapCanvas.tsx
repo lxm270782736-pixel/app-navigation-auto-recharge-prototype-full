@@ -259,6 +259,23 @@ const LaserScanOverlay: React.FC<{
   );
 });
 
+/** 实时 2D 点云覆盖层 — 点已经在 world frame（由 SDFmap 在 C++ 侧做完 TF），
+ *  直接 worldToMap 即可。同源于 ROS2 /pcd_baselink_2D，由 Meta RPC 拉过来。 */
+const CloudPointsOverlay: React.FC<{
+  points: Array<{ x: number; y: number }>; mapData: MapData; scale: number;
+}> = React.memo(({ points, mapData, scale }) => {
+  const mapped = useMemo(
+    () => points.map((p) => worldToMap(p.x, p.y, mapData)),
+    [points, mapData],
+  );
+  const r = 1.5 / scale;
+  return (
+    <g fill="rgba(255,0,0,0.6)">
+      {mapped.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={r} />)}
+    </g>
+  );
+});
+
 /** 初始位姿标记 - 紫色准星 + 朝向 */
 const InitialPoseMarker: React.FC<{
   pose: Pose; mapData: MapData; scale: number;
@@ -396,6 +413,10 @@ interface MapCanvasProps {
   brushSize?: number;
   laserScan?: LaserScan | null;
   showLaserScan?: boolean;
+  /** Optional live 2D point cloud (points already in world frame). Same
+   *  source as ROS2 /pcd_baselink_2D, fetched via Meta RPC. */
+  cloudPoints?: Array<{ x: number; y: number }> | null;
+  showCloud?: boolean;
   showGrid?: boolean;
   gridSize?: number;
   /** Optional ESDF grid overlay. Same shape as MapData; values 0-100 = distance
@@ -425,7 +446,7 @@ interface MapCanvasProps {
   /** Force specific layer toggles to appear in the panel even if no data
    *  is currently provided (so the user can turn them on to trigger
    *  on-demand polling via onLayerVisibilityChange). */
-  availableLayers?: Array<'esdf' | 'horizon' | 'laserScan' | 'jps'>;
+  availableLayers?: Array<'esdf' | 'horizon' | 'laserScan' | 'jps' | 'cloud'>;
   /** Controlled layer visibility. If provided, MapCanvas does NOT keep
    *  internal state; the parent owns truth. Pair with onLayerVisibilityChange.
    *  If omitted, MapCanvas uses sensible defaults derived from data presence. */
@@ -447,6 +468,7 @@ export type LayerVisibility = {
   goalPose: boolean;
   initialPose: boolean;
   laserScan: boolean;
+  cloud: boolean;
   waypoints: boolean;
   esdf: boolean;
   horizon: boolean;
@@ -469,6 +491,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   brushSize = 0,
   laserScan = null,
   showLaserScan = false,
+  cloudPoints = null,
+  showCloud = false,
   showGrid = false,
   gridSize = 1.0,
   esdfData = null,
@@ -552,6 +576,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     goalPose: true,
     initialPose: true,
     laserScan: showLaserScan,
+    cloud: showCloud,
     waypoints: true,
     esdf: true,
     horizon: true,
@@ -585,6 +610,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     goalPose: effectiveVisibility.goalPose,
     initialPose: effectiveVisibility.initialPose,
     laserScan: showLaserScan && effectiveVisibility.laserScan,
+    cloud: showCloud && effectiveVisibility.cloud,
     waypoints: effectiveVisibility.waypoints,
     esdf: effectiveVisibility.esdf,
     horizon: effectiveVisibility.horizon,
@@ -1080,6 +1106,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           { key: 'goalPose', label: '目标点', available: Boolean(goalPose) },
           { key: 'initialPose', label: '初始位姿', available: Boolean(initialPose) },
           { key: 'laserScan', label: '激光扫描', available: forced.has('laserScan') || (showLaserScan && Boolean(laserScan)) },
+          { key: 'cloud', label: '实时点云', available: forced.has('cloud') || (showCloud && Boolean(cloudPoints && cloudPoints.length > 0)) },
           { key: 'waypoints', label: '路径点', available: Boolean(waypoints && waypoints.length > 0) },
           { key: 'esdf', label: 'ESDF 距离场', available: forced.has('esdf') || Boolean(esdfData && esdfData.data && esdfData.data.length > 0) },
           { key: 'horizon', label: 'MPC 预测', available: forced.has('horizon') || Boolean(horizonPath && horizonPath.length > 1) },
@@ -1221,6 +1248,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* 雷达扫描 */}
           {layerOn.laserScan && laserScan && robotPose && (
             <LaserScanOverlay laserScan={laserScan} robotPose={robotPose} mapData={mapData} scale={scale} />
+          )}
+
+          {/* 实时点云 — world frame，已在后端做完 TF */}
+          {layerOn.cloud && cloudPoints && cloudPoints.length > 0 && (
+            <CloudPointsOverlay points={cloudPoints} mapData={mapData} scale={scale} />
           )}
 
           {/* 初始位姿（重定位标记） */}

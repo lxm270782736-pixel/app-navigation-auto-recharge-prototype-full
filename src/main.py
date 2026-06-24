@@ -264,6 +264,17 @@ def get_navigation_occ():
     return logic.get_occ_snapshot()
 
 
+@app.get("/api/navigation/cloud")
+def get_navigation_cloud(max_points: int = 720, stride: int = 1):
+    """Return latest 2D point cloud snapshot (world frame) from SDFmap.
+
+    Same source as the ROS2 ``/pcd_baselink_2D`` topic but transported via
+    Meta RPC since app_navigation has no rclpy. UI polls this at ~5 Hz to
+    overlay live laser hits on the navigation map.
+    """
+    return logic.get_cloud_snapshot(max_points=max_points, stride=stride)
+
+
 @app.get("/api/navigation/debug")
 def get_navigation_debug():
     """Combined MPC + planner debug; identical shape to the SSE `nav_debug` field."""
