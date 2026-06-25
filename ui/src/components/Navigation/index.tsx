@@ -735,7 +735,7 @@ export function Navigation() {
         </div>
 
         <Dialog open={applyMapModalVisible} onOpenChange={setApplyMapModalVisible}>
-          <DialogContent className="max-w-5xl">
+          <DialogContent className="flex max-h-[85vh] max-w-5xl flex-col">
             <DialogHeader>
               <DialogTitle>应用历史地图</DialogTitle>
               <DialogDescription>选择一张已保存的地图作为当前导航地图。</DialogDescription>
@@ -745,7 +745,7 @@ export function Navigation() {
             ) : availableMaps.length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground">暂无可用地图。</div>
             ) : (
-              <div className="grid max-h-[60vh] gap-4 overflow-y-auto md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid min-h-0 flex-1 auto-rows-min gap-4 overflow-y-auto md:grid-cols-2 xl:grid-cols-3">
                 {availableMaps.map((map) => (
                   <Card key={map.id} className="overflow-hidden border-border bg-card/80">
                     <div className="flex h-44 items-center justify-center overflow-hidden bg-secondary/40">
@@ -969,7 +969,7 @@ export function Navigation() {
       </Suspense>
 
       <Dialog open={applyMapModalVisible} onOpenChange={setApplyMapModalVisible}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="flex max-h-[85vh] max-w-5xl flex-col">
           <DialogHeader>
             <DialogTitle>应用历史地图</DialogTitle>
             <DialogDescription>选择地图后将立即切换为当前导航地图。</DialogDescription>
@@ -979,7 +979,7 @@ export function Navigation() {
           ) : availableMaps.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">暂无可用地图。</div>
           ) : (
-            <div className="grid max-h-[60vh] gap-4 overflow-y-auto md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-h-0 flex-1 auto-rows-min gap-4 overflow-y-auto md:grid-cols-2 xl:grid-cols-3">
               {availableMaps.map((map) => (
                 <Card key={map.id} className="overflow-hidden border-border bg-card/80">
                   <div className="flex h-40 items-center justify-center bg-secondary/40">
