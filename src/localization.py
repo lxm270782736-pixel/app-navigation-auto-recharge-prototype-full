@@ -30,6 +30,14 @@ class LocalizationMixin:
     def get_localization_status(self) -> dict:
         return self._loc_call("get_status")
 
+    def get_localization_state(self) -> dict:
+        """运行时健康度（来自 /localization/state，1Hz）。"""
+        return self._loc_call("get_localization_state")
+
+    def get_relocalization_status(self) -> dict:
+        """重定位事件状态（来自 /relocalizer/status，事件留存）。"""
+        return self._loc_call("get_relocalization_status")
+
     def get_pose(self) -> dict:
         return self._loc_call("get_pose")
 

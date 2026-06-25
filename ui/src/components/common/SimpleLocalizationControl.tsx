@@ -33,6 +33,58 @@ const MODE_META: Record<LocalizationMode, { text: string; className: string }> =
   localization_auto: { text: '定位模式（自动）', className: 'bg-sky-500/15 text-sky-200' },
 };
 
+// 定位运行时健康度三态文案 + 颜色
+const HEALTH_META: Record<string, { text: string; color: string }> = {
+  OK: { text: '正常', color: 'text-emerald-400' },
+  DEGRADED: { text: '质量下降', color: 'text-amber-400' },
+  LOST: { text: '定位丢失', color: 'text-red-400' },
+};
+
+// 重定位 7 态 → 3 态收敛 + 中文映射（RUNNING 不对外暴露）
+// 后端 driver.get_relocalization_status() 返回的 state 是字符串（state_name）：
+// IDLE/RUNNING/SUCCESS/FAILED_LOW_FITNESS/FAILED_TIMEOUT/FAILED_NO_SCAN/CANCELED_MAP_CHANGED
+const RELOC_REDUCE: Record<string, { kind: 'IDLE' | 'SUCCESS' | 'FAILED'; reason: string }> = {
+  IDLE:                 { kind: 'IDLE',    reason: '' },
+  RUNNING:              { kind: 'IDLE',    reason: '' },
+  SUCCESS:              { kind: 'SUCCESS', reason: '重定位成功' },
+  FAILED_LOW_FITNESS:   { kind: 'FAILED',  reason: '匹配质量过低' },
+  FAILED_TIMEOUT:       { kind: 'FAILED',  reason: '重定位超时' },
+  FAILED_NO_SCAN:       { kind: 'FAILED',  reason: '无激光数据' },
+  CANCELED_MAP_CHANGED: { kind: 'FAILED',  reason: '地图已切换' },
+};
+
+// 后端来的原始负载形状不稳定（Meta 可能返回 success:false、字段缺失、类型变化）
+// 这里做运行时归一化，确保渲染层只面对干净的窄类型。
+type LocHealth = { health: 'OK' | 'DEGRADED' | 'LOST' };
+type RelocStatus = { state: string; fitness: number; reason: string };
+
+function normalizeHealth(raw: any): LocHealth | null {
+  if (!raw || raw.success === false) return null;
+  const h = raw.health;
+  if (h === 'OK' || h === 'DEGRADED' || h === 'LOST') return { health: h };
+  return null;
+}
+
+function normalizeReloc(raw: any): RelocStatus | null {
+  if (!raw || raw.success === false) return null;
+  // 后端 state 是字符串（state_name）；做白名单校验，未知值统一兜底为 IDLE 显示
+  const state = typeof raw.state === 'string' ? raw.state : '';
+  if (!state) return null;
+  const fitness = typeof raw.fitness === 'number' && isFinite(raw.fitness) ? raw.fitness : 0;
+  // reason 只用于调试参考，不直接渲染（渲染走 RELOC_REDUCE 白名单文案）
+  const reason = typeof raw.reason === 'string' ? raw.reason : '';
+  return { state, fitness, reason };
+}
+
+function describeReloc(r: RelocStatus | null): { text: string; color: string } {
+  if (!r) return { text: '未开始', color: 'text-muted-foreground' };
+  const m = RELOC_REDUCE[r.state];
+  if (!m || m.kind === 'IDLE') return { text: '未开始', color: 'text-muted-foreground' };
+  if (m.kind === 'SUCCESS') return { text: `成功 (${r.fitness.toFixed(3)})`, color: 'text-emerald-400' };
+  // 只用白名单映射文案，不直接拼后端 reason（避免暴露内部错误字符串）
+  return { text: `失败：${m.reason}`, color: 'text-red-400' };
+}
+
 export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps> = ({
   onModeChange,
   onRelocalizationStart,
@@ -50,6 +102,20 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   const [switchingModalVisible, setSwitchingModalVisible] = useState(false);
   const [waitingForInitialPoseModalVisible, setWaitingForInitialPoseModalVisible] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // 来自后端 SSE：定位运行时健康度（1Hz） + 重定位事件状态（latched）
+  const [locHealth, setLocHealth] = useState<LocHealth | null>(null);
+  const [relocStatus, setRelocStatus] = useState<RelocStatus | null>(null);
+
+  useEffect(() => {
+    const onHealth = (s: any) => setLocHealth(normalizeHealth(s));
+    const onReloc = (s: any) => setRelocStatus(normalizeReloc(s));
+    apiService.on('localization-health', onHealth);
+    apiService.on('relocalization-status', onReloc);
+    return () => {
+      apiService.off('localization-health', onHealth);
+      apiService.off('relocalization-status', onReloc);
+    };
+  }, []);
 
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
@@ -176,6 +242,9 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
   };
 
   const modeMeta = MODE_META[currentMode];
+  // 派生：先算一次，render 里复用，避免重复调用
+  const healthMeta = HEALTH_META[locHealth?.health ?? ''];
+  const relocMeta = describeReloc(relocStatus);
 
   return (
     <>
@@ -198,6 +267,18 @@ export const SimpleLocalizationControl: React.FC<SimpleLocalizationControlProps>
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">状态信息</span>
               <span className="font-medium text-foreground">{statusMessage}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground shrink-0">运行状态</span>
+              <span className={`font-medium truncate text-right ${healthMeta?.color ?? 'text-muted-foreground'}`}>
+                ● {healthMeta?.text ?? '未获取'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground shrink-0">重定位</span>
+              <span className={`font-medium truncate text-right ${relocMeta.color}`}>
+                {relocMeta.text}
+              </span>
             </div>
             <div className="border-t border-border/60 pt-2">
               <div className="mb-2 text-muted-foreground">机器人位置</div>

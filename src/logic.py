@@ -118,6 +118,8 @@ class BusinessLogic(
 
         # Cached pose updated by background poller to avoid blocking SSE
         self._cached_pose: dict | None = None
+        self._cached_loc_health: dict | None = None
+        self._cached_reloc_status: dict | None = None
         self._cached_nav_debug: dict | None = None
         self._pose_poller_thread: threading.Thread | None = None
         self._pose_poller_stop = threading.Event()
@@ -139,6 +141,18 @@ class BusinessLogic(
                         self._cached_pose = self._loc.get_pose()
                     except Exception:
                         pass
+                    try:
+                        self._cached_loc_health = self._loc.get_localization_state()
+                    except Exception:
+                        pass
+                    try:
+                        self._cached_reloc_status = self._loc.get_relocalization_status()
+                    except Exception:
+                        pass
+                else:
+                    # 非 active 时清空缓存，避免 UI 残留旧值
+                    self._cached_loc_health = None
+                    self._cached_reloc_status = None
                 # Poll MPC/planner debug only while a navigation task is
                 # actually in flight. When idle the MPC horizon is stale and
                 # the FSM sits in IDLE — polling just burns Meta RPC cycles.
@@ -206,6 +220,8 @@ class BusinessLogic(
                 "dock_status": self.get_dock_status(),
                 "current_map_name": self._current_map_name,
                 "pose": pose,
+                "localization_health": self._cached_loc_health,
+                "relocalization_status": self._cached_reloc_status,
                 "patrol": {
                     "active": self._patrol_active,
                     "status": self._patrol_status,

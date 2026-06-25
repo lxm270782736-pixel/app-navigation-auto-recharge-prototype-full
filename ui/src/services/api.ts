@@ -133,6 +133,19 @@ class ApiService {
           this.emit('dock-status', state.dock_status);
         }
 
+        // Dispatch localization runtime health (1Hz from /localization/state).
+        // 注意：后端 inactive 时会把字段置 null，这里也要 emit 让 UI 清空旧状态。
+        // 用 'in' 检查而非 truthy，避免 null 不 emit 导致 UI 残留旧值。
+        if ('localization_health' in state) {
+          this.emit('localization-health', state.localization_health);
+        }
+
+        // Dispatch relocalization event status (latched from /relocalizer/status).
+        // 同上：null 也要 emit。
+        if ('relocalization_status' in state) {
+          this.emit('relocalization-status', state.relocalization_status);
+        }
+
         // Dispatch room patrol state
         if (state.room_patrol) {
           state.room_patrol.nav_fail_reason = state.nav_fail_reason || null;
