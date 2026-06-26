@@ -473,13 +473,25 @@ export function Navigation() {
       setNavigationStatus(data.text);
     };
 
+    // Sync isNavigating from backend nav_status so polling guards work even when
+    // navigation starts via voice/remote/API (not UI button). Terminal states
+    // ("idle"/"succeeded"/"failed") → false; "navigating" → true.
+    const handleState = (state: any) => {
+      const ns = state?.nav_status;
+      if (!ns) return;
+      const shouldBeNavigating = ns === 'navigating';
+      setIsNavigating((prev) => (prev === shouldBeNavigating ? prev : shouldBeNavigating));
+    };
+
     apiService.on('navigation-result', handleNavigationResult);
     apiService.on('navigation-feedback', handleNavigationFeedback);
     apiService.on('navigation-status', handleNavigationStatus);
+    apiService.on('state', handleState);
     return () => {
       apiService.off('navigation-result', handleNavigationResult);
       apiService.off('navigation-feedback', handleNavigationFeedback);
       apiService.off('navigation-status', handleNavigationStatus);
+      apiService.off('state', handleState);
     };
   }, [isPatrolActive]);
 
