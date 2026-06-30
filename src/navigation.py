@@ -1,13 +1,10 @@
 """Single-point navigation — all calls go through Meta navigation service."""
-import logging
 import math
 import threading
 import time
 from datetime import datetime
 
-from ._utils import log_throttled
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 
 # Per-goal soft-parameter overrides supported by meta.astribot_navigation.
@@ -105,11 +102,10 @@ class NavigationMixin:
                 self._nav_last_plan_result = plan_result
                 my_gen = self._nav_generation
             logger.info(
-                "[nav] %s Meta navigate_to(%.3f, %.3f, %.3f) goal_id=%s overrides=%s "
-                "plan_success=%s plan_latency_ms=%.1f",
-                _ts(), x, y, theta, goal_id, overrides,
-                plan_result.get("success"),
-                float(plan_result.get("plan_latency_ms") or 0.0),
+                f"[nav] {_ts()} Meta navigate_to({x:.3f}, {y:.3f}, {theta:.3f}) "
+                f"goal_id={goal_id} overrides={overrides} "
+                f"plan_success={plan_result.get('success')} "
+                f"plan_latency_ms={float(plan_result.get('plan_latency_ms') or 0.0):.1f}"
             )
             self._start_nav_status_poller(my_gen, goal_id)
             return {"success": result.get("status") == "success",
@@ -117,7 +113,7 @@ class NavigationMixin:
                     "plan_result": plan_result}
         except Exception as e:
             msg = str(e)
-            logger.error("[nav] navigate_to failed: %s", e)
+            logger.error(f"[nav] navigate_to failed: {e}")
             with self._lock:
                 self._nav_status = "failed"
                 if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
@@ -143,8 +139,8 @@ class NavigationMixin:
                     self._nav_last_plan_result = result
                 return result
         except Exception as e:
-            log_throttled(logger, "nav.plan_result.rpc_fail", 5.0, "warning",
-                          "[nav] get_last_plan_result failed: %s", e)
+            logger.warn_every(5000, f"[nav] get_last_plan_result failed: {e}",
+                              key="nav.plan_result.rpc_fail")
         if goal_id and cached.get("goal_id") != goal_id:
             return {}
         return cached
@@ -179,7 +175,7 @@ class NavigationMixin:
                         break
                     with self._lock:
                         if getattr(self, '_nav_generation', 0) != generation:
-                            logger.info("[nav] poller gen=%d superseded, exiting", generation)
+                            logger.info(f"[nav] poller gen={generation} superseded, exiting")
                             break
                         if self._nav_status not in ("navigating",):
                             break
@@ -189,33 +185,35 @@ class NavigationMixin:
                         msg = str(e)
                         # meta 掉线 / 未 active：没必要继续 poll，直接失败给前端报错。
                         if "unconfigured" in msg or "inactive" in msg or "expected active" in msg:
-                            logger.warning("[nav] Meta navigation disconnected during poll: %s", e)
+                            logger.warn(f"[nav] Meta navigation disconnected during poll: {e}")
                             self._on_nav_completed(False, {
                                 "state": "failed",
                                 "fail_reason": "meta_disconnected",
                                 "message": "导航 Meta 未连接或未激活，请检查 meta.astribot_navigation 服务",
                             })
                             break
-                        logger.warning("[nav] Meta status poll error: %s", e)
+                        logger.warn(f"[nav] Meta status poll error: {e}")
                         continue
 
                     state = status.get("state", "idle")
                     returned_goal_id = status.get("goal_id", "")
-                    log_throttled(logger, f"nav.poll.gen{generation}", 5.0, "info",
-                                  "[nav] poller gen=%d poll: state=%s returned_goal_id=%r expected=%r",
-                                  generation, state, returned_goal_id, goal_id)
+                    logger.info_every(5000,
+                                      f"[nav] poller gen={generation} poll: state={state} "
+                                      f"returned_goal_id={returned_goal_id!r} expected={goal_id!r}",
+                                      key=f"nav.poll.gen{generation}")
 
                     with self._lock:
                         if getattr(self, '_nav_generation', 0) != generation:
-                            logger.info("[nav] poller gen=%d superseded after RPC, exiting", generation)
+                            logger.info(f"[nav] poller gen={generation} superseded after RPC, exiting")
                             break
                         self._nav_feedback = status
 
                     # goal_id 不匹配 → 旧任务残留，跳过
                     if goal_id and returned_goal_id and returned_goal_id != goal_id:
-                        log_throttled(logger, f"nav.discard.gen{generation}", 5.0, "info",
-                                      "[nav] poller gen=%d DISCARD stale goal_id (got=%r expected=%r) state=%s",
-                                      generation, returned_goal_id, goal_id, state)
+                        logger.info_every(5000,
+                                          f"[nav] poller gen={generation} DISCARD stale goal_id "
+                                          f"(got={returned_goal_id!r} expected={goal_id!r}) state={state}",
+                                          key=f"nav.discard.gen{generation}")
                         continue
 
                     if state in ("reached", "failed"):
@@ -227,11 +225,11 @@ class NavigationMixin:
                         # reached into the next poll cycle).
                         elapsed = time.monotonic() - poller_start
                         if elapsed < _NAV_REACHED_GRACE_SEC:
-                            log_throttled(logger, f"nav.stale.gen{generation}", 5.0, "info",
-                                          "[nav] poller gen=%d DISCARD stale state=%s "
-                                          "(elapsed=%.2fs < grace=%.2fs goal_id=%s)",
-                                          generation, state, elapsed,
-                                          _NAV_REACHED_GRACE_SEC, goal_id)
+                            logger.info_every(5000,
+                                              f"[nav] poller gen={generation} DISCARD stale state={state} "
+                                              f"(elapsed={elapsed:.2f}s < grace={_NAV_REACHED_GRACE_SEC:.2f}s "
+                                              f"goal_id={goal_id})",
+                                              key=f"nav.stale.gen{generation}")
                             continue
 
                         # Root-cause guard: a real "reached" requires the robot
@@ -256,17 +254,18 @@ class NavigationMixin:
                             # skip the distance check to avoid false positives.
                             pose_valid = (cx != 0.0 or cy != 0.0)
                             if pose_valid and dist > _NAV_REACHED_MAX_DISTANCE_M:
-                                log_throttled(logger, f"nav.farreach.gen{generation}", 2.0, "warning",
-                                              "[nav] poller gen=%d DISCARD reached far from target "
-                                              "(dist=%.2fm > %.2fm cur=(%.2f,%.2f) tgt=(%.2f,%.2f) goal_id=%s)",
-                                              generation, dist, _NAV_REACHED_MAX_DISTANCE_M,
-                                              float(cur.get("x", 0.0)), float(cur.get("y", 0.0)),
-                                              float(tgt.get("x", 0.0)), float(tgt.get("y", 0.0)), goal_id)
+                                logger.warn_every(2000,
+                                                  f"[nav] poller gen={generation} DISCARD reached far from target "
+                                                  f"(dist={dist:.2f}m > {_NAV_REACHED_MAX_DISTANCE_M:.2f}m "
+                                                  f"cur=({float(cur.get('x', 0.0)):.2f},{float(cur.get('y', 0.0)):.2f}) "
+                                                  f"tgt=({float(tgt.get('x', 0.0)):.2f},{float(tgt.get('y', 0.0)):.2f}) "
+                                                  f"goal_id={goal_id})",
+                                                  key=f"nav.farreach.gen{generation}")
                                 continue
 
                         success = state == "reached"
-                        logger.info("[nav] %s Meta nav result: state=%s (gen=%d goal_id=%s)",
-                                    _ts(), state, generation, goal_id)
+                        logger.info(f"[nav] {_ts()} Meta nav result: state={state} "
+                                    f"(gen={generation} goal_id={goal_id})")
                         self._on_nav_completed(success, status)
                         break
             finally:
@@ -289,7 +288,7 @@ class NavigationMixin:
 
         # Signal room patrol thread
         if hasattr(self, '_nav_done_event') and getattr(self, '_room_patrol_active', False):
-            logger.info("[nav] %s Signaling room_patrol: success=%s", _ts(), success)
+            logger.info(f"[nav] {_ts()} Signaling room_patrol: success={success}")
             self._nav_done_success = success
             self._nav_result_seq = getattr(self, '_nav_done_seq', 0)
             self._nav_done_event.set()
@@ -320,9 +319,10 @@ class NavigationMixin:
             # Throttled: the frontend polls this at 2 Hz; if the cached state
             # is stale (meta restart, pending auto-recovery) this branch fires
             # continuously. One log line every 5 s is enough to diagnose.
-            log_throttled(logger, "nav.path.not_active", 5.0, "info",
-                          "[nav] get_navigation_path skipped: nav_state=%s, proxy=%s",
-                          self._nav_state, "yes" if self._nav else "no")
+            logger.info_every(5000,
+                              f"[nav] get_navigation_path skipped: nav_state={self._nav_state}, "
+                              f"proxy={'yes' if self._nav else 'no'}",
+                              key="nav.path.not_active")
             return []
         if getattr(self, '_nav_path_unsupported', False):
             return []
@@ -334,8 +334,8 @@ class NavigationMixin:
                 self._nav_path_unsupported = True
                 logger.info("[nav] get_navigation_path not supported by this nav service, disabling")
             else:
-                log_throttled(logger, "nav.path.rpc_fail", 5.0, "warning",
-                              "[nav] get_navigation_path failed: %s", e)
+                logger.warn_every(5000, f"[nav] get_navigation_path failed: {e}",
+                                  key="nav.path.rpc_fail")
             return []
 
     def get_jps_path(self) -> list[dict]:
@@ -357,8 +357,8 @@ class NavigationMixin:
                 self._nav_jps_path_unsupported = True
                 logger.info("[nav] get_jps_path not supported by this nav service, disabling")
             else:
-                log_throttled(logger, "nav.jps_path.rpc_fail", 5.0, "warning",
-                              "[nav] get_jps_path failed: %s", e)
+                logger.warn_every(5000, f"[nav] get_jps_path failed: {e}",
+                                  key="nav.jps_path.rpc_fail")
             return []
 
     def cancel_navigation(self) -> dict:
@@ -367,7 +367,7 @@ class NavigationMixin:
                 self._nav.cancel_navigation()
                 logger.info("[nav] cancel → Meta link")
             except Exception as e:
-                logger.warning("[nav] Meta cancel failed: %s", e)
+                logger.warn(f"[nav] Meta cancel failed: {e}")
 
         with self._lock:
             # 递增 generation，让所有正在运行的 poller 线程退出
@@ -418,7 +418,7 @@ class NavigationMixin:
                 (result or {}).get("message", "ESDF not available") if isinstance(result, dict) else "ESDF not available"
             )
         except Exception as e:
-            logger.debug("[nav] get_esdf_snapshot failed: %s", e)
+            logger.debug(f"[nav] get_esdf_snapshot failed: {e}")
             return _stale_reply(str(e))
 
     def get_occ_snapshot(self) -> dict:
@@ -440,7 +440,7 @@ class NavigationMixin:
                 (result or {}).get("message", "Occupancy grid not available") if isinstance(result, dict) else "Occupancy grid not available"
             )
         except Exception as e:
-            logger.debug("[nav] get_occ_snapshot failed: %s", e)
+            logger.debug(f"[nav] get_occ_snapshot failed: {e}")
             return _stale_reply(str(e))
 
     def get_cloud_snapshot(self, max_points: int = 720, stride: int = 1) -> dict:
@@ -472,7 +472,7 @@ class NavigationMixin:
                 (result or {}).get("message", "Cloud snapshot not available") if isinstance(result, dict) else "Cloud snapshot not available"
             )
         except Exception as e:
-            logger.debug("[nav] get_cloud_snapshot failed: %s", e)
+            logger.debug(f"[nav] get_cloud_snapshot failed: {e}")
             return _stale_reply(str(e))
 
     def get_nav_debug_snapshot(self) -> dict:
@@ -482,5 +482,5 @@ class NavigationMixin:
         try:
             return self._nav.get_debug_snapshot()
         except Exception as e:
-            logger.debug("[nav] get_debug_snapshot failed: %s", e)
+            logger.debug(f"[nav] get_debug_snapshot failed: {e}")
             return {"success": False, "message": str(e)}

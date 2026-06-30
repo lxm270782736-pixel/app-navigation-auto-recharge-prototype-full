@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ._logger import logger
+
 
 class JsonDayStorage:
     """Store JSON records in data/{category}/{YYYY-MM-DD}/{record_id}.json"""
@@ -37,7 +39,7 @@ class JsonDayStorage:
             tmp.rename(p)
             return True
         except Exception as e:
-            print(f"[storage] save failed {category}/{date}/{record_id}: {e}")
+            logger.error(f"[storage] save failed {category}/{date}/{record_id}: {e}")
             return False
 
     def load(self, category: str, record_id: str, date: str) -> dict | None:
@@ -48,7 +50,7 @@ class JsonDayStorage:
                 with open(p) as f:
                     return json.load(f)
         except Exception as e:
-            print(f"[storage] load failed {category}/{date}/{record_id}: {e}")
+            logger.error(f"[storage] load failed {category}/{date}/{record_id}: {e}")
         return None
 
     def list_by_date(self, category: str, date: str) -> list[dict]:
@@ -62,7 +64,7 @@ class JsonDayStorage:
                 with open(p) as f:
                     results.append(json.load(f))
         except Exception as e:
-            print(f"[storage] list_by_date failed {category}/{date}: {e}")
+            logger.error(f"[storage] list_by_date failed {category}/{date}: {e}")
         return results
 
     def list_recent(self, category: str, days: int = 7) -> list[dict]:
@@ -91,5 +93,5 @@ class JsonDayStorage:
                 p.unlink()
                 return True
         except Exception as e:
-            print(f"[storage] delete failed {category}/{date}/{record_id}: {e}")
+            logger.error(f"[storage] delete failed {category}/{date}/{record_id}: {e}")
         return False

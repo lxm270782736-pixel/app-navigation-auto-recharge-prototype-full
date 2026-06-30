@@ -4,6 +4,8 @@ import re
 import time
 from pathlib import Path
 
+from ._logger import logger
+
 
 _CUSTOM_STEPS_FILE = Path(__file__).parent.parent / "saved_nav_configs" / "custom_step_types.json"
 
@@ -21,7 +23,7 @@ class CustomStepsMixin:
                 with open(_CUSTOM_STEPS_FILE) as f:
                     return json.load(f)
         except Exception as e:
-            print(f"[custom_steps] Failed to load: {e}")
+            logger.error(f"[custom_steps] Failed to load: {e}")
         return {"custom_step_types": []}
 
     def get_custom_step_definition(self, step_id: str) -> dict | None:

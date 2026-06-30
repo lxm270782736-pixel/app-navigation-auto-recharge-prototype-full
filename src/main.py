@@ -7,16 +7,15 @@ Serves the built frontend SPA from ui/dist/ when available.
 """
 import json
 import asyncio
-import logging
 import os
 from pathlib import Path
 from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+from ._logger import logger, init_logger
+
+# Initialize logging before importing modules that bind their own `logger`,
+# so every submodule lands in /opt/astribot_ros/log/app_navigation/.
+init_logger("app_navigation")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,7 +55,7 @@ def launch_required_meta_processes():
         logger.info("[meta_process] auto launch disabled")
         return
     result = meta_process_launcher.launch_all()
-    logger.info("[meta_process] auto launch result: %s", result)
+    logger.info(f"[meta_process] auto launch result: {result}")
 
 
 @app.on_event("shutdown")
@@ -64,9 +63,9 @@ def stop_started_meta_processes():
     """Deactivate Meta services, then stop processes started by this app instance."""
     try:
         result = logic.deactivate_meta()
-        logger.info("[meta] deactivate on shutdown: %s", result)
+        logger.info(f"[meta] deactivate on shutdown: {result}")
     except Exception as e:
-        logger.warning("[meta] deactivate on shutdown failed: %s", e)
+        logger.warn(f"[meta] deactivate on shutdown failed: {e}")
     meta_process_launcher.terminate_started()
 
 
@@ -98,31 +97,37 @@ async def state_stream():
 
 @app.post("/api/localization/start-mapping")
 def start_mapping():
+    logger.info("[api] /api/localization/start-mapping received")
     return logic.start_mapping()
 
 
 @app.post("/api/localization/stop-mapping")
 def stop_mapping():
+    logger.info("[api] /api/localization/stop-mapping received")
     return logic.stop_mapping()
 
 
 @app.post("/api/localization/start")
 def start_localization():
+    logger.info("[api] /api/localization/start received")
     return logic.start_localization()
 
 
 @app.post("/api/localization/start-auto")
 def start_localization_auto():
+    logger.info("[api] /api/localization/start-auto received")
     return logic.start_localization_auto()
 
 
 @app.post("/api/localization/start-obstacle-avoidance")
 def start_obstacle_avoidance():
+    logger.info("[api] /api/localization/start-obstacle-avoidance received")
     return logic.start_obstacle_avoidance()
 
 
 @app.post("/api/localization/stop")
 def stop_localization():
+    logger.info("[api] /api/localization/stop received")
     return logic.stop_localization()
 
 
@@ -159,11 +164,13 @@ def stop_joystick():
 
 @app.post("/api/system/start-slam")
 def start_slam_node():
+    logger.info("[api] /api/system/start-slam received")
     return logic.start_slam_node()
 
 
 @app.post("/api/system/start-nav")
 def start_navigation_node():
+    logger.info("[api] /api/system/start-nav received")
     return logic.start_navigation_node()
 
 
@@ -191,6 +198,7 @@ def load_map(map_name: str):
 
 @app.post("/api/maps/apply")
 def apply_map(req: MapNameRequest):
+    logger.info(f"[api] /api/maps/apply received: map_name={req.map_name!r}")
     return logic.apply_map(req.map_name)
 
 
@@ -222,6 +230,9 @@ class NavigateRequest(BaseModel):
 
 @app.post("/api/navigation/go")
 def navigate_to(req: NavigateRequest):
+    logger.info(f"[api] /api/navigation/go received: x={req.x:.3f} y={req.y:.3f} "
+                f"theta={req.theta:.3f} has_config={req.config is not None} "
+                f"tasks={len(req.tasks) if req.tasks else 0}")
     return logic.navigate_to(req.x, req.y, req.theta, req.config, req.tasks)
 
 
@@ -283,6 +294,7 @@ def get_navigation_debug():
 
 @app.post("/api/navigation/cancel")
 def cancel_navigation():
+    logger.info("[api] /api/navigation/cancel received")
     return logic.cancel_navigation()
 
 
@@ -294,6 +306,7 @@ class LocalNavRequest(BaseModel):
 
 @app.post("/api/navigation/local-go")
 def send_local_navigation_goal(req: LocalNavRequest):
+    logger.info(f"[api] /api/navigation/local-go received: x={req.x:.3f} y={req.y:.3f} theta={req.theta:.3f}")
     return logic.send_local_navigation_goal(req.x, req.y, req.theta)
 
 
@@ -318,12 +331,15 @@ class UpdateWaypointsRequest(BaseModel):
 
 @app.post("/api/patrol/start")
 def start_patrol(req: StartPatrolRequest):
+    logger.info(f"[api] /api/patrol/start received: waypoints={len(req.waypoints)} "
+                f"start_index={req.start_index}")
     waypoints = [w.model_dump() for w in req.waypoints]
     return logic.start_patrol(waypoints, req.start_index)
 
 
 @app.post("/api/patrol/stop")
 def stop_patrol():
+    logger.info("[api] /api/patrol/stop received")
     return logic.stop_patrol()
 
 
@@ -419,21 +435,25 @@ class StartRoomPatrolRequest(BaseModel):
 
 @app.post("/api/room-patrol/start")
 def start_room_patrol(req: StartRoomPatrolRequest):
+    logger.info(f"[api] /api/room-patrol/start received: has_task_config={req.task_config is not None}")
     return logic.start_room_patrol(req.task_config)
 
 
 @app.post("/api/room-patrol/stop")
 def stop_room_patrol():
+    logger.info("[api] /api/room-patrol/stop received")
     return logic.stop_room_patrol()
 
 
 @app.post("/api/room-patrol/pause")
 def pause_room_patrol():
+    logger.info("[api] /api/room-patrol/pause received")
     return logic.pause_room_patrol()
 
 
 @app.post("/api/room-patrol/resume")
 def resume_room_patrol():
+    logger.info("[api] /api/room-patrol/resume received")
     return logic.resume_room_patrol()
 
 
@@ -480,12 +500,14 @@ def save_task_config(req: SaveTaskConfigRequest):
 @app.post("/api/fall/ack")
 def acknowledge_fall():
     """护工点击「已处理」，清除跌倒事件"""
+    logger.info("[api] /api/fall/ack received")
     return logic.acknowledge_fall()
 
 
 @app.post("/api/stuck/ack")
 def acknowledge_stuck():
     """护工点击「已处理」，清除机器人卡住事件"""
+    logger.info("[api] /api/stuck/ack received")
     return logic.acknowledge_stuck()
 
 
@@ -552,6 +574,7 @@ class PoseRequest(BaseModel):
 
 @app.post("/api/chassis/initial-pose")
 def set_initial_pose(req: PoseRequest):
+    logger.info(f"[api] /api/chassis/initial-pose received: x={req.x:.3f} y={req.y:.3f} theta={req.theta:.3f}")
     return logic.set_initial_pose(req.x, req.y, req.theta)
 
 
@@ -578,6 +601,7 @@ class DockRequest(BaseModel):
 
 @app.post("/api/dock/dock")
 def send_dock_goal(req: DockRequest):
+    logger.info(f"[api] /api/dock/dock received: force_retry={req.force_retry}")
     return logic.send_dock_goal(req.force_retry)
 
 
@@ -587,11 +611,13 @@ class UndockRequest(BaseModel):
 
 @app.post("/api/dock/undock")
 def send_undock_goal(req: UndockRequest):
+    logger.info(f"[api] /api/dock/undock received: save_position={req.save_position}")
     return logic.send_undock_goal(req.save_position)
 
 
 @app.post("/api/dock/cancel")
 def cancel_dock():
+    logger.info("[api] /api/dock/cancel received")
     return logic.cancel_dock()
 
 
@@ -659,21 +685,25 @@ def delete_custom_step_type(step_id: str):
 @app.post("/api/meta/start")
 def start_meta():
     """一键启动：connect → configure → activate all"""
+    logger.info("[api] /api/meta/start received")
     return logic.start_meta()
 
 
 @app.post("/api/meta/connect")
 def connect_meta():
+    logger.info("[api] /api/meta/connect received")
     return logic.connect_meta()
 
 
 @app.post("/api/meta/activate")
 def activate_meta():
+    logger.info("[api] /api/meta/activate received")
     return logic.activate_meta()
 
 
 @app.post("/api/meta/deactivate")
 def deactivate_meta():
+    logger.info("[api] /api/meta/deactivate received")
     return logic.deactivate_meta()
 
 
@@ -695,6 +725,7 @@ _LEGACY_SERVICE_ALIAS = {
 @app.post("/api/meta/control")
 def meta_control(req: MetaControlRequest):
     """单服务控制。service 接受完整 meta 名(meta.xxx)或兼容短名;action: start|stop。"""
+    logger.info(f"[api] /api/meta/control received: service={req.service!r} action={req.action!r}")
     if req.action not in ("start", "stop"):
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")

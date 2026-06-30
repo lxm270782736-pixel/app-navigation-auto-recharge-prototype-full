@@ -2,9 +2,7 @@
 
 Dock/undock calls go through meta.astribot_dock via the MetaBridge proxy.
 """
-import logging
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 
 class ChassisMixin:
@@ -28,7 +26,7 @@ class ChassisMixin:
             success = result.get("status") == "success"
             return {"success": success, "message": result.get("message", "")}
         except Exception as e:
-            logger.error("[dock] start_dock failed: %s", e)
+            logger.error(f"[dock] start_dock failed: {e}")
             return {"success": False, "message": str(e)}
 
     def send_undock_goal(self, save_position: bool = True) -> dict:
@@ -40,7 +38,7 @@ class ChassisMixin:
             success = result.get("status") == "success"
             return {"success": success, "message": result.get("message", "")}
         except Exception as e:
-            logger.error("[dock] start_undock failed: %s", e)
+            logger.error(f"[dock] start_undock failed: {e}")
             return {"success": False, "message": str(e)}
 
     def cancel_dock(self) -> dict:
@@ -50,7 +48,7 @@ class ChassisMixin:
             result = self._dock.cancel_dock()
             return {"success": True, "message": result.get("message", "Cancelled")}
         except Exception as e:
-            logger.error("[dock] cancel_dock failed: %s", e)
+            logger.error(f"[dock] cancel_dock failed: {e}")
             return {"success": False, "message": str(e)}
 
     def get_dock_status(self) -> dict:
@@ -60,5 +58,5 @@ class ChassisMixin:
         try:
             return self._dock.get_dock_status()
         except Exception as e:
-            logger.debug("[dock] get_dock_status failed: %s", e)
+            logger.debug(f"[dock] get_dock_status failed: {e}")
             return {"dock_state": "idle", "undock_state": "idle", "is_charging": False}

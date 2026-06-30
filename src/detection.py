@@ -2,9 +2,7 @@
 
 No local simulation fallback. If meta.detection is unavailable, returns safe defaults.
 """
-import logging
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 
 class DetectionMixin:
@@ -13,12 +11,16 @@ class DetectionMixin:
         """在床检测 — 调用 meta.detection.detect_bed()。"""
         result = self._detection_call("detect_bed", room_id=room_id)
         if isinstance(result, dict) and "is_abnormal" in result:
-            logger.info("[detection] detect_bed room=%s is_abnormal=%s in_bed=%s person_detected=%s confidence=%s description=%s",
-                        room_id, result.get("is_abnormal"), result.get("in_bed"),
-                        result.get("person_detected"), result.get("confidence"),
-                        result.get("description", ""))
+            logger.info(
+                f"[detection] detect_bed room={room_id} "
+                f"is_abnormal={result.get('is_abnormal')} "
+                f"in_bed={result.get('in_bed')} "
+                f"person_detected={result.get('person_detected')} "
+                f"confidence={result.get('confidence')} "
+                f"description={result.get('description', '')}"
+            )
             return result
-        logger.warning("[detection] detect_bed unavailable for room %s", room_id)
+        logger.warn(f"[detection] detect_bed unavailable for room {room_id}")
         return {
             "is_abnormal": False,
             "in_bed": True,
@@ -45,13 +47,19 @@ class DetectionMixin:
         if isinstance(result, dict) and "clutter" in result:
             clutter = result.get("clutter") or {}
             water = result.get("water") or {}
-            logger.info("[detection] detect_floor room=%s clutter={is_abnormal:%s, confidence:%s} water=%s any_abnormal=%s",
-                        room_id,
-                        clutter.get("is_abnormal"), clutter.get("confidence"),
-                        "{is_abnormal:%s, confidence:%s}" % (water.get("is_abnormal"), water.get("confidence")) if water else "N/A",
-                        result.get("any_abnormal"))
+            water_desc = (
+                f"{{is_abnormal:{water.get('is_abnormal')}, confidence:{water.get('confidence')}}}"
+                if water else "N/A"
+            )
+            logger.info(
+                f"[detection] detect_floor room={room_id} "
+                f"clutter={{is_abnormal:{clutter.get('is_abnormal')}, "
+                f"confidence:{clutter.get('confidence')}}} "
+                f"water={water_desc} "
+                f"any_abnormal={result.get('any_abnormal')}"
+            )
             return result
-        logger.warning("[detection] detect_floor unavailable for room %s", room_id)
+        logger.warn(f"[detection] detect_floor unavailable for room {room_id}")
         return {
             "clutter": {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},
             "water":   {"is_abnormal": False, "confidence": 0.0, "photo": None, "photo_meta": None},

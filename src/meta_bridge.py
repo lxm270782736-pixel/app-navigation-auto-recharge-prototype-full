@@ -4,7 +4,6 @@ All services (startup or on-demand) maintain persistent connections after first 
 Service list and startup configuration driven by saved_nav_configs/meta_services.json.
 """
 import json
-import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,9 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ._utils import log_throttled
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 # Meta lifecycle states (align with meta_base standard)
 META_DISCONNECTED = "disconnected"   # astribot_link not connected
@@ -106,11 +103,11 @@ class MetaBridgeMixin:
             with open(_SERVICES_CONFIG_FILE) as f:
                 data = json.load(f)
             service_defs = data.get("services", _DEFAULT_SERVICES)
-            logger.info("[meta] Loaded %d service configs from %s", len(service_defs), _SERVICES_CONFIG_FILE)
+            logger.info(f"[meta] Loaded {len(service_defs)} service configs from {_SERVICES_CONFIG_FILE}")
         except FileNotFoundError:
             logger.debug("[meta] meta_services.json not found, using defaults")
         except Exception as e:
-            logger.warning("[meta] Failed to load meta_services.json: %s, using defaults", e)
+            logger.warn(f"[meta] Failed to load meta_services.json: {e}, using defaults")
 
         for svc in service_defs:
             name = svc["name"]
@@ -146,12 +143,12 @@ class MetaBridgeMixin:
                     from astribot_link import connect
                     entry.proxy = connect(name)
                     entry.state = META_UNCONFIGURED  # will probe below
-                    logger.info("[meta] Connected to %s", name)
+                    logger.info(f"[meta] Connected to {name}")
                 except ImportError:
-                    logger.warning("[meta] astribot_link not installed")
+                    logger.warn("[meta] astribot_link not installed")
                     return None
                 except Exception as e:
-                    logger.warning("[meta] Failed to connect %s: %s", name, e)
+                    logger.warn(f"[meta] Failed to connect {name}: {e}")
                     entry.proxy = None
                     entry.state = META_DISCONNECTED
                     return None
@@ -174,26 +171,26 @@ class MetaBridgeMixin:
             if entry.state == META_UNCONFIGURED:
                 try:
                     result = entry.proxy.configure(entry.config)
-                    logger.info("[meta] %s.configure() → %s", name, result)
+                    logger.info(f"[meta] {name}.configure() → {result}")
                     if not _is_success(result):
-                        logger.error("[meta] %s configure failed: %s", name, result)
+                        logger.error(f"[meta] {name} configure failed: {result}")
                         return None
                     entry.state = META_INACTIVE
                 except Exception as e:
-                    logger.error("[meta] %s configure error: %s", name, e)
+                    logger.error(f"[meta] {name} configure error: {e}")
                     return None
 
             # Activate if inactive
             if entry.state == META_INACTIVE:
                 try:
                     result = entry.proxy.activate()
-                    logger.info("[meta] %s.activate() → %s", name, result)
+                    logger.info(f"[meta] {name}.activate() → {result}")
                     if not _is_success(result):
-                        logger.error("[meta] %s activate failed: %s", name, result)
+                        logger.error(f"[meta] {name} activate failed: {result}")
                         return None
                     entry.state = META_ACTIVE
                 except Exception as e:
-                    logger.error("[meta] %s activate error: %s", name, e)
+                    logger.error(f"[meta] {name} activate error: {e}")
                     return None
 
             if entry.state == META_ACTIVE:
@@ -215,8 +212,8 @@ class MetaBridgeMixin:
             return {"success": False, "message": f"{name} unavailable"}
 
         try:
-            log_throttled(logger, f"meta_call.{name}.{method_name}", 5.0, "info",
-                          "[meta_call] Calling %s.%s()", name, method_name)
+            logger.info_every(5000, f"[meta_call] Calling {name}.{method_name}()",
+                              key=f"meta_call.{name}.{method_name}")
             result = getattr(entry.proxy, method_name)(*args, **kwargs)
             if result is None:
                 return {"success": False, "message": f"{method_name} returned None"}
@@ -235,7 +232,7 @@ class MetaBridgeMixin:
             new_state = META_INACTIVE
 
         if new_state:
-            logger.warning("[meta] %s went to %s, re-activating", entry.name, new_state)
+            logger.warn(f"[meta] {entry.name} went to {new_state}, re-activating")
             with entry._lock:
                 entry.state = new_state
             if entry.startup:
@@ -249,7 +246,7 @@ class MetaBridgeMixin:
                     except Exception as e2:
                         return {"success": False, "message": str(e2)}
         else:
-            logger.error("[meta] %s.%s failed: %s", entry.name, method_name, error)
+            logger.error(f"[meta] {entry.name}.{method_name} failed: {error}")
         return {"success": False, "message": msg}
 
     # =================== Auto-recovery ===================
@@ -259,7 +256,7 @@ class MetaBridgeMixin:
         with self._lock:
             key = name or "_all"
             if self._recovery_in_progress.get(key):
-                logger.info("[meta] Recovery already in progress for %s, skipping", key)
+                logger.info(f"[meta] Recovery already in progress for {key}, skipping")
                 return
             self._recovery_in_progress[key] = True
 
@@ -267,7 +264,7 @@ class MetaBridgeMixin:
             try:
                 time.sleep(1.0)
                 if name:
-                    logger.info("[meta] Auto-recovery: re-activating %s", name)
+                    logger.info(f"[meta] Auto-recovery: re-activating {name}")
                     self._ensure_service_active(name)
                 else:
                     logger.info("[meta] Auto-recovery: re-activating all startup services")
@@ -286,7 +283,7 @@ class MetaBridgeMixin:
             return META_DISCONNECTED
         try:
             status = proxy.get_status()
-            logger.info("[meta] probe %s: status=%s", name, status)
+            logger.info(f"[meta] probe {name}: status={status}")
             state_str = status.get("state", "")
             if state_str == "active":       return META_ACTIVE
             if state_str == "inactive":     return META_INACTIVE
@@ -295,7 +292,7 @@ class MetaBridgeMixin:
             return META_UNCONFIGURED
         except Exception as e:
             msg = str(e)
-            logger.info("[meta] probe %s → exception: %s", name, msg)
+            logger.info(f"[meta] probe {name} → exception: {msg}")
             if "inactive"     in msg: return META_INACTIVE
             if "unconfigured" in msg: return META_UNCONFIGURED
             return META_DISCONNECTED
@@ -336,10 +333,10 @@ class MetaBridgeMixin:
             try:
                 entry.proxy = connect(name)
                 entry.state = self._probe_service_state(entry.proxy, name)
-                logger.info("[meta] Connected to %s (state=%s)", name, entry.state)
+                logger.info(f"[meta] Connected to {name} (state={entry.state})")
             except Exception as e:
                 errors.append(f"{name}: {e}")
-                logger.warning("[meta] Failed to connect %s: %s", name, e)
+                logger.warn(f"[meta] Failed to connect {name}: {e}")
 
         connected = any(e.proxy is not None for e in self._services.values() if e.startup)
         if errors:
@@ -365,10 +362,10 @@ class MetaBridgeMixin:
             try:
                 entry.proxy.deactivate()
                 entry.state = META_INACTIVE
-                logger.info("[meta] %s deactivated", name)
+                logger.info(f"[meta] {name} deactivated")
                 return short, "deactivated"
             except Exception as e:
-                logger.warning("[meta] %s deactivate failed: %s", name, e)
+                logger.warn(f"[meta] {name} deactivate failed: {e}")
                 return short, f"failed: {e}"
 
         results = {}
@@ -459,7 +456,7 @@ class MetaBridgeMixin:
                     continue
                 probed = self._probe_service_state(entry.proxy, name)
                 if probed != entry.state:
-                    logger.info("[meta] refresh %s: %s → %s", name, entry.state, probed)
+                    logger.info(f"[meta] refresh {name}: {entry.state} → {probed}")
                 entry.state = probed
                 if probed == META_DISCONNECTED:
                     try:
@@ -570,7 +567,7 @@ class MetaBridgeMixin:
             result = getattr(loc, method_name)(*args, **kwargs)
             return result if result is not None else {"success": False, "message": "returned None"}
         except Exception as e:
-            logger.error("[loc] %s (timeout=%.0fs) failed: %s", method_name, timeout, e)
+            logger.error(f"[loc] {method_name} (timeout={timeout:.0f}s) failed: {e}")
             return {"success": False, "message": str(e)}
         finally:
             if loc:

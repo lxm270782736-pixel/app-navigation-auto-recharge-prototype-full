@@ -4,6 +4,8 @@ import threading
 import time
 from pathlib import Path
 
+from ._logger import logger
+
 
 class PatrolMixin:
     """Multi-waypoint patrol management."""
@@ -45,7 +47,7 @@ class PatrolMixin:
             self._patrol_error = ""
             self._patrol_started_at = time.time()
 
-        print(f"[patrol] Starting patrol with {len(waypoints)} waypoints from index {start_index}")
+        logger.info(f"[patrol] Starting patrol with {len(waypoints)} waypoints from index {start_index}")
         self._save_patrol_config()
         self._navigate_to_current_waypoint()
         return {"success": True, "message": f"Patrol started with {len(waypoints)} waypoints"}
@@ -65,7 +67,7 @@ class PatrolMixin:
             was_active = self._patrol_active
         self.cancel_navigation()
         if was_active:
-            print("[patrol] Patrol stopped by user")
+            logger.info("[patrol] Patrol stopped by user")
         return {"success": True, "message": "Patrol stopped"}
 
     def get_patrol_status(self) -> dict:
@@ -108,7 +110,8 @@ class PatrolMixin:
         tasks = wp.get("tasks", [])
         action_config = wp.get("actionConfig")
 
-        print(f"[patrol] Navigating to waypoint {idx + 1}: ({x:.2f}, {y:.2f}, {theta:.2f}) mode={nav_mode}")
+        logger.info(f"[patrol] Navigating to waypoint {idx + 1}: "
+                    f"({x:.2f}, {y:.2f}, {theta:.2f}) mode={nav_mode}")
 
         if nav_mode == "local_navigation":
             self.send_local_navigation_goal(x, y, theta)
@@ -132,7 +135,7 @@ class PatrolMixin:
                 return
             self._patrol_completed.append(expected_index)
             self._nav_status = "idle"
-            print(f"[patrol] Waypoint {expected_index + 1} (local nav) completed")
+            logger.info(f"[patrol] Waypoint {expected_index + 1} (local nav) completed")
         self._advance_patrol()
 
     def _advance_patrol(self):
@@ -163,9 +166,9 @@ class PatrolMixin:
                 if self._nav_state == "active" and self._nav:
                     try:
                         self._nav.cancel_navigation()
-                        print("[patrol] pre-segment cancel → Meta link")
+                        logger.info("[patrol] pre-segment cancel → Meta link")
                     except Exception as e:
-                        print(f"[patrol] pre-segment cancel failed: {e}")
+                        logger.warn(f"[patrol] pre-segment cancel failed: {e}")
                 self._navigate_to_current_waypoint()
             threading.Thread(target=_send_next, daemon=True).start()
         else:
@@ -176,7 +179,7 @@ class PatrolMixin:
                 self._patrol_active = False
                 self._patrol_current_index = -1
             self._delete_patrol_config()
-            print(f"[patrol] Patrol complete: {completed_count} succeeded, {skipped_count} skipped")
+            logger.info(f"[patrol] Patrol complete: {completed_count} succeeded, {skipped_count} skipped")
             def _reset():
                 time.sleep(2)
                 with self._lock:
@@ -209,7 +212,7 @@ class PatrolMixin:
                 json.dump(config, f, indent=2)
             tmp.rename(self._PATROL_CONFIG_FILE)
         except Exception as e:
-            print(f"[patrol] Failed to save config: {e}")
+            logger.error(f"[patrol] Failed to save config: {e}")
 
     def _load_patrol_config(self) -> dict | None:
         """Load patrol config from disk."""
@@ -218,7 +221,7 @@ class PatrolMixin:
                 with open(self._PATROL_CONFIG_FILE) as f:
                     return json.load(f)
         except Exception as e:
-            print(f"[patrol] Failed to load config: {e}")
+            logger.error(f"[patrol] Failed to load config: {e}")
         return None
 
     def _delete_patrol_config(self):
@@ -227,7 +230,7 @@ class PatrolMixin:
             if self._PATROL_CONFIG_FILE.exists():
                 self._PATROL_CONFIG_FILE.unlink()
         except Exception as e:
-            print(f"[patrol] Failed to delete config: {e}")
+            logger.error(f"[patrol] Failed to delete config: {e}")
 
     def _try_resume_patrol(self):
         """Called at startup to check for saved patrol config.
@@ -251,6 +254,6 @@ class PatrolMixin:
             self._patrol_status = "interrupted"
             self._patrol_current_index = current_index
             self._patrol_error = ""
-        print(f"[patrol] Found saved patrol config: index={current_index}, "
-              f"completed={len(self._patrol_completed)}, total={len(waypoints)}. "
-              f"Waiting for frontend to resume.")
+        logger.info(f"[patrol] Found saved patrol config: index={current_index}, "
+                    f"completed={len(self._patrol_completed)}, total={len(waypoints)}. "
+                    f"Waiting for frontend to resume.")

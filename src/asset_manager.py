@@ -3,12 +3,11 @@
 Manages 4 categories (迎宾/引领/展厅讲解/告别) with local storage
 and RPC sync to meta.sales_replay + meta.sales_audio.
 """
-import logging
 import os
 import re
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 ASSET_CATEGORIES = {
     "yingbin": "迎宾",
@@ -31,7 +30,7 @@ class AssetManagerMixin:
         for cat in ASSET_CATEGORIES:
             os.makedirs(_HDF5_DIR / cat, exist_ok=True)
             os.makedirs(_AUDIO_DIR / cat, exist_ok=True)
-        logger.info("[assets] Directories initialized under %s", _PROJECT_ROOT / "assets")
+        logger.info(f"[assets] Directories initialized under {_PROJECT_ROOT / 'assets'}")
 
     # ---- List ----
 
@@ -110,7 +109,7 @@ class AssetManagerMixin:
             saved.append(str(mp3_path))
             self._rpc_upload_to_metas(f"audio/{category}", f"{category}_{idx}.mp3", mp3_data)
 
-        logger.info("[assets] Uploaded pair #%d to %s: %s", idx, category, saved)
+        logger.info(f"[assets] Uploaded pair #{idx} to {category}: {saved}")
         return {"success": True, "message": f"Uploaded pair #{idx}", "pair_index": idx}
 
     # ---- Delete ----
@@ -136,7 +135,7 @@ class AssetManagerMixin:
         if not deleted:
             return {"success": False, "message": f"No files found for pair #{pair_index}"}
 
-        logger.info("[assets] Deleted pair #%d from %s: %s", pair_index, category, deleted)
+        logger.info(f"[assets] Deleted pair #{pair_index} from {category}: {deleted}")
         return {"success": True, "message": f"Deleted pair #{pair_index}", "deleted": deleted}
 
 
@@ -190,9 +189,9 @@ class AssetManagerMixin:
                             entry.proxy.upload_asset(subdir, filename, data)
                         else:
                             raise
-                    logger.info("[assets] RPC uploaded %s/%s to %s", subdir, filename, svc)
+                    logger.info(f"[assets] RPC uploaded {subdir}/{filename} to {svc}")
             except Exception as e:
-                logger.error("[assets] RPC upload to %s failed: %s", svc, e)
+                logger.error(f"[assets] RPC upload to {svc} failed: {e}")
 
     def _rpc_delete_from_metas(self, subdir: str, filename: str):
         for svc in ["meta.sales_replay", "meta.sales_audio"]:
@@ -200,6 +199,6 @@ class AssetManagerMixin:
                 entry = self._ensure_service_active(svc)
                 if entry and entry.proxy:
                     entry.proxy.delete_asset(subdir, filename)
-                    logger.info("[assets] RPC deleted %s/%s from %s", subdir, filename, svc)
+                    logger.info(f"[assets] RPC deleted {subdir}/{filename} from {svc}")
             except Exception as e:
-                logger.error("[assets] RPC delete from %s failed: %s", svc, e)
+                logger.error(f"[assets] RPC delete from {svc} failed: {e}")
