@@ -1,15 +1,12 @@
 """Room patrol orchestration — executes room-by-room inspection sequence."""
 import json
-import logging
 import threading
 import time
 import uuid
 from pathlib import Path
 
 from .storage import JsonDayStorage
-from ._utils import log_throttled
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 
 # Default step template for a standard room inspection
@@ -62,7 +59,7 @@ class RoomPatrolMixin:
         poll_interval = 0.5
         max_backoff = 10.0  # detection 持续失败时最大退避到 10s
         current_interval = poll_interval
-        logger.info("[fall] Monitor loop started, polling every %ss", poll_interval)
+        logger.info(f"[fall] Monitor loop started, polling every {poll_interval}s")
 
         stop_event = getattr(self, '_fall_stop_event', None)
 
@@ -94,9 +91,10 @@ class RoomPatrolMixin:
                 # 成功后恢复正常轮询间隔
                 current_interval = poll_interval
 
-                log_throttled(logger, "fall.poll", 5.0, "info",
-                              "[fall] poll: is_fall=%s has_photo=%s",
-                              status.get("is_fall"), bool(status.get("photo")))
+                logger.info_every(5000,
+                                  f"[fall] poll: is_fall={status.get('is_fall')} "
+                                  f"has_photo={bool(status.get('photo'))}",
+                                  key="fall.poll")
 
                 # New fall detected
                 if status.get("is_fall") and not self._fall_event:
@@ -112,8 +110,8 @@ class RoomPatrolMixin:
                         "confidence": status.get("confidence", 0.0),
                         "photo": status.get("photo"),
                     }
-                    logger.info("[fall] DETECTED at %s (confidence=%.2f)",
-                                self._fall_event["location"], self._fall_event["confidence"])
+                    logger.info(f"[fall] DETECTED at {self._fall_event['location']} "
+                                f"(confidence={self._fall_event['confidence']:.2f})")
                     self._on_fall_event(self._fall_event)
 
                 # Nurse acknowledged, clear event
@@ -122,7 +120,7 @@ class RoomPatrolMixin:
                     self._fall_event = None
 
             except Exception as e:
-                logger.debug("[fall] Monitor poll error: %s", e)
+                logger.debug(f"[fall] Monitor poll error: {e}")
 
         logger.info("[fall] Monitor thread stopped")
 
@@ -154,7 +152,7 @@ class RoomPatrolMixin:
                 if isinstance(result, dict) and result.get("success"):
                     # 记住被暂停的 replay_id，恢复时验证
                     self._paused_replay_id = result.get("replay_id", "")
-                    logger.info("[replay] Paused by %s (replay_id=%s)", reason, self._paused_replay_id)
+                    logger.info(f"[replay] Paused by {reason} (replay_id={self._paused_replay_id})")
                     return True
         except Exception:
             pass
@@ -166,7 +164,7 @@ class RoomPatrolMixin:
             return
         try:
             self._call_service("meta.sales_replay", "resume_replay")
-            logger.info("[replay] Resumed after %s", reason)
+            logger.info(f"[replay] Resumed after {reason}")
         except Exception:
             pass
         self._replay_paused_by = None
@@ -194,15 +192,15 @@ class RoomPatrolMixin:
         """统一暂停入口：按当前 step 类型调度对应 meta 服务的 pause。"""
         with self._patrol_state_lock:
             if self._pause_reason is not None:
-                logger.info("[pause] Already paused (reason=%s), ignoring new reason=%s",
-                            self._pause_reason, reason)
+                logger.info(f"[pause] Already paused (reason={self._pause_reason}), "
+                            f"ignoring new reason={reason}")
                 return
             self._pause_reason = reason
             step_type = getattr(self, '_room_patrol_current_step', '') or ''
             self._paused_step_type = step_type
 
         service = self._step_meta_service(step_type)
-        logger.info("[pause] Entered pause (reason=%s, step=%s, service=%s)", reason, step_type, service)
+        logger.info(f"[pause] Entered pause (reason={reason}, step={step_type}, service={service})")
 
         if service == "meta.astribot_navigation":
             try:
@@ -231,7 +229,7 @@ class RoomPatrolMixin:
             return
 
         service = self._step_meta_service(step_type)
-        logger.info("[pause] Exiting pause (reason=%s, step=%s, service=%s)", reason, step_type, service)
+        logger.info(f"[pause] Exiting pause (reason={reason}, step={step_type}, service={service})")
 
         if service == "meta.astribot_navigation":
             try:
@@ -308,7 +306,7 @@ class RoomPatrolMixin:
             "room_id": room_id,
         }
         self._stuck_event = stuck
-        logger.info("[stuck] Robot stuck in room %s", room_id)
+        logger.info(f"[stuck] Robot stuck in room {room_id}")
         alert = self.create_alert(
             getattr(self, '_room_patrol_id', ''),
             room_id,
@@ -388,7 +386,7 @@ class RoomPatrolMixin:
                 with open(_PRESETS_FILE) as f:
                     return json.load(f)
         except Exception as e:
-            print(f"[room_patrol] Failed to load presets: {e}")
+            logger.error(f"[room_patrol] Failed to load presets: {e}")
 
         # Migration: old room_task_config.json → first preset
         if _TASK_CONFIG_FILE.exists():
@@ -407,10 +405,10 @@ class RoomPatrolMixin:
                 }
                 data = {"presets": [preset], "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 self._save_presets_file(data)
-                print("[room_patrol] Migrated old task config to presets")
+                logger.info("[room_patrol] Migrated old task config to presets")
                 return data
             except Exception as e:
-                print(f"[room_patrol] Migration failed: {e}")
+                logger.error(f"[room_patrol] Migration failed: {e}")
 
         return {"presets": []}
 
@@ -550,7 +548,8 @@ class RoomPatrolMixin:
             nav_targets.discard("start_position")
             missing = nav_targets - set(wp_dict.keys())
             if missing:
-                print(f"[room_patrol] Room {rid} missing waypoints: {missing} (available: {list(wp_dict.keys())}), skipping")
+                logger.warn(f"[room_patrol] Room {rid} missing waypoints: {missing} "
+                            f"(available: {list(wp_dict.keys())}), skipping")
                 continue
             room_with_coords = {**room, "waypoints": wp_dict}
             valid_rooms.append(room_with_coords)
@@ -590,7 +589,7 @@ class RoomPatrolMixin:
                 "room_results": [],
             }
 
-        print(f"[room_patrol] Starting patrol {patrol_id} with {len(valid_rooms)} rooms")
+        logger.info(f"[room_patrol] Starting patrol {patrol_id} with {len(valid_rooms)} rooms")
 
         # Reset per-patrol state
         self._last_photo = None
@@ -652,7 +651,7 @@ class RoomPatrolMixin:
                 self._paused_step_type = ''
             self._pause_event.set()
             self._step_advance_event.set()
-            print("[room_patrol] Stopped by user")
+            logger.info("[room_patrol] Stopped by user")
 
         return {"success": True, "message": "Room patrol stopped"}
 
@@ -743,7 +742,7 @@ class RoomPatrolMixin:
             steps = room.get("steps", DEFAULT_ROOM_STEPS)
             waypoints = room.get("waypoints", {})
 
-            print(f"[room_patrol] === Room {idx + 1}/{len(rooms)}: {room_name} ===")
+            logger.info(f"[room_patrol] === Room {idx + 1}/{len(rooms)}: {room_name} ===")
 
             room_result = {
                 "room_id": room_id,
@@ -777,7 +776,8 @@ class RoomPatrolMixin:
                         "status": "skipped", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     })
-                    print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → SKIPPED (disabled)")
+                    logger.info(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: "
+                                f"{step_type}({step_target}) → SKIPPED (disabled)")
                     step_idx += 1
                     continue
 
@@ -802,7 +802,8 @@ class RoomPatrolMixin:
                     self._room_patrol_current_step = step_type
                     self._room_patrol_current_step_index = step_idx
 
-                print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → START")
+                logger.info(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: "
+                            f"{step_type}({step_target}) → START")
 
                 success = False
                 detail = None
@@ -821,10 +822,10 @@ class RoomPatrolMixin:
                             step_params["_deactivate_after"] = step["deactivate_after"]
                         success, detail = self._execute_custom_step(custom_id, step_params)
                     else:
-                        print(f"[room_patrol] Unknown step type: {step_type}")
+                        logger.warn(f"[room_patrol] Unknown step type: {step_type}")
                         success, detail = True, None
                 except Exception as e:
-                    print(f"[room_patrol] Step {step_type} error: {e}")
+                    logger.error(f"[room_patrol] Step {step_type} error: {e}")
                     success = False
 
                 step_result["status"] = "success" if success else "failed"
@@ -837,18 +838,20 @@ class RoomPatrolMixin:
                     self._skip_step_requested = False
                     step_result["status"] = "skipped"
                     room_result["steps"].append(step_result)
-                    print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → SKIPPED (user)")
+                    logger.info(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: "
+                                f"{step_type}({step_target}) → SKIPPED (user)")
                     step_idx += 1
                     continue
 
-                logger.info("[room_patrol] step=%s success=%s alert_interrupted=%s fall_event=%s",
-                            step_type, success, getattr(self, '_alert_interrupted', False), bool(getattr(self, '_fall_event', None)))
+                logger.info(f"[room_patrol] step={step_type} success={success} "
+                            f"alert_interrupted={getattr(self, '_alert_interrupted', False)} "
+                            f"fall_event={bool(getattr(self, '_fall_event', None))}")
 
                 # 步骤被告警中断
                 if getattr(self, '_alert_interrupted', False):
                     if success:
                         # 步骤已完成，等待护工确认后继续下一步
-                        logger.info("[room_patrol] Step %s completed before alert ack, waiting then continuing", step_type)
+                        logger.info(f"[room_patrol] Step {step_type} completed before alert ack, waiting then continuing")
                         self._handle_fall_blocking()
                         self._handle_stuck_blocking()
                         if not self._room_patrol_active:
@@ -856,16 +859,17 @@ class RoomPatrolMixin:
                         # 不重试，继续下一步
                     else:
                         # 步骤被中断未完成，等待护工确认后重试
-                        logger.info("[room_patrol] Step %s interrupted by alert, retrying after ack", step_type)
+                        logger.info(f"[room_patrol] Step {step_type} interrupted by alert, retrying after ack")
                         self._handle_fall_blocking()
                         self._handle_stuck_blocking()
                         if not self._room_patrol_active:
                             break
-                        logger.info("[room_patrol] Retrying step %s", step_type)
+                        logger.info(f"[room_patrol] Retrying step {step_type}")
                         continue
 
                 room_result["steps"].append(step_result)
-                print(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: {step_type}({step_target}) → {'OK' if success else 'FAIL'}")
+                logger.info(f"[room_patrol] [{room_id}] Step {step_idx + 1}/{len(steps)}: "
+                            f"{step_type}({step_target}) → {'OK' if success else 'FAIL'}")
                 step_idx += 1
 
                 # 内置步骤的 deactivate_after（custom 步骤在 _execute_custom_step 内部处理）
@@ -884,9 +888,9 @@ class RoomPatrolMixin:
                                     entry.proxy.deactivate()
                                     with entry._lock:
                                         entry.state = META_INACTIVE
-                                    logger.info("[step] %s deactivated after builtin step %s", service, step_type)
+                                    logger.info(f"[step] {service} deactivated after builtin step {step_type}")
                                 except Exception as e:
-                                    logger.warning("[step] deactivate %s failed: %s", service, e)
+                                    logger.warn(f"[step] deactivate {service} failed: {e}")
 
                 # 手动推进模式：步骤完成后（成功或失败）等待用户操作
                 if (self._step_advance_mode == "manual"
@@ -908,7 +912,7 @@ class RoomPatrolMixin:
                         self._step_jump_target = -1
                         if 0 <= jump < len(steps):
                             step_idx = jump
-                            logger.info("[room_patrol] Jump to step %d", jump)
+                            logger.info(f"[room_patrol] Jump to step {jump}")
                             continue
                     # 手动模式下用户已决定，跳过自动失败处理
                     if not success:
@@ -931,7 +935,7 @@ class RoomPatrolMixin:
                         break
                     else:
                         room_result["error"] = f"{step_type} failed"
-                        print(f"[room_patrol] {step_type} failed, skipping room {room_id}")
+                        logger.warn(f"[room_patrol] {step_type} failed, skipping room {room_id}")
                         room_success = False
                         skip_room = True
                         break
@@ -980,7 +984,8 @@ class RoomPatrolMixin:
             effective_retry = step_retry if isinstance(step_retry, int) and step_retry > 0 else retry_limit
             ok = self._patrol_navigate_and_wait(pose, effective_retry)
             return ok, None
-        print(f"[room_patrol] Unknown nav target: '{target}' (available: {list(waypoints.keys()) + ['start_position']})")
+        logger.warn(f"[room_patrol] Unknown nav target: '{target}' "
+                    f"(available: {list(waypoints.keys()) + ['start_position']})")
         return False, None
 
     def _step_open_door(self, room_id, step, waypoints, retry_limit, room_result):
@@ -1076,7 +1081,7 @@ class RoomPatrolMixin:
 
             # dispatch 失败（如 nav service 未 active）立即失败，避免等满 120s 超时
             if isinstance(dispatch, dict) and not dispatch.get("success"):
-                logger.warning("[nav] navigate_to dispatch failed: %s", dispatch.get("message"))
+                logger.warn(f"[nav] navigate_to dispatch failed: {dispatch.get('message')}")
                 time.sleep(1)
                 continue
 
@@ -1089,17 +1094,17 @@ class RoomPatrolMixin:
 
             # 验证序列号，防止旧回调的结果被误用
             if getattr(self, '_nav_result_seq', 0) != nav_seq:
-                logger.warning("[nav] Stale nav result (expected seq=%d), treating as failed", nav_seq)
+                logger.warn(f"[nav] Stale nav result (expected seq={nav_seq}), treating as failed")
                 # 等待让 fall monitor 有时间设置 _alert_interrupted
                 time.sleep(0.3)
                 # stale 结果通常是告警取消导致的，直接返回 False 让上层处理
                 return False
 
             if self._nav_done_success:
-                print("nav success")
+                logger.info("[room_patrol] nav success")
                 return True
 
-            print(f"[room_patrol] Nav attempt {attempt + 1}/{retry_limit} failed, retrying...")
+            logger.warn(f"[room_patrol] Nav attempt {attempt + 1}/{retry_limit} failed, retrying...")
             time.sleep(1)
 
         return False
@@ -1110,7 +1115,7 @@ class RoomPatrolMixin:
             with self._lock:
                 if not self._room_patrol_active:
                     return False
-            print(f"[room_patrol] Opening door (attempt {attempt + 1})...")
+            logger.info(f"[room_patrol] Opening door (attempt {attempt + 1})...")
             time.sleep(3)
             # Always succeed in mock mode
             return True
@@ -1122,7 +1127,7 @@ class RoomPatrolMixin:
             with self._lock:
                 if not self._room_patrol_active:
                     return False
-            print(f"[room_patrol] Closing door (attempt {attempt + 1})...")
+            logger.info(f"[room_patrol] Closing door (attempt {attempt + 1})...")
             time.sleep(2)
             return True
         return False
@@ -1161,8 +1166,8 @@ class RoomPatrolMixin:
         storage = self._get_storage()
         date = time.strftime("%Y-%m-%d")
         storage.save("records", patrol_id, record, date)
-        print(f"[room_patrol] Patrol {patrol_id} finished: "
-              f"{record['rooms_completed']} completed, {record['rooms_failed']} failed")
+        logger.info(f"[room_patrol] Patrol {patrol_id} finished: "
+                    f"{record['rooms_completed']} completed, {record['rooms_failed']} failed")
 
     # ------ History ------
 
@@ -1195,12 +1200,12 @@ class RoomPatrolMixin:
         """Execute a user-defined custom step."""
         definition = self.get_custom_step_definition(step_id)
         if not definition:
-            print(f"[room_patrol] Custom step '{step_id}' not found")
+            logger.warn(f"[room_patrol] Custom step '{step_id}' not found")
             return False, {"error": f"Custom step '{step_id}' not found"}
 
         action = definition.get("action", {})
         action_type = action.get("type", "")
-        print(f"[room_patrol] Custom step '{step_id}' action={action_type}")
+        logger.info(f"[room_patrol] Custom step '{step_id}' action={action_type}")
 
         try:
             if action_type == "service":
@@ -1265,7 +1270,7 @@ class RoomPatrolMixin:
                                 time.sleep(0.5)
                             if not getattr(self, '_room_patrol_active', False):
                                 return False, {"error": "patrol stopped"}
-                            logger.info("[meta_poll] Pause cleared, resuming poll for %s.%s", meta_service, poll_method)
+                            logger.info(f"[meta_poll] Pause cleared, resuming poll for {meta_service}.{poll_method}")
                             deadline = time.time() + timeout  # 重置超时
                         time.sleep(interval)
                         # fall_detection 使用持久连接
@@ -1304,18 +1309,18 @@ class RoomPatrolMixin:
                             entry.proxy.deactivate()
                             with entry._lock:
                                 entry.state = META_INACTIVE
-                            logger.info("[step] %s deactivated after step", meta_service)
+                            logger.info(f"[step] {meta_service} deactivated after step")
                         except Exception as e:
-                            logger.warning("[step] deactivate %s failed: %s", meta_service, e)
+                            logger.warn(f"[step] deactivate {meta_service} failed: {e}")
                     else:
-                        logger.info("[step] skip deactivate %s: not active", meta_service)
+                        logger.info(f"[step] skip deactivate {meta_service}: not active")
                 return ok, result
 
             else:
                 return False, {"error": f"Unknown action type: {action_type}"}
 
         except Exception as e:
-            print(f"[room_patrol] Custom step '{step_id}' error: {e}")
+            logger.error(f"[room_patrol] Custom step '{step_id}' error: {e}")
             return False, {"error": str(e)}
 
     @staticmethod

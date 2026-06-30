@@ -6,7 +6,6 @@ activate Meta services; lifecycle control stays in meta_bridge.py.
 from __future__ import annotations
 
 import base64
-import logging
 import os
 import shlex
 import signal
@@ -16,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 ROBOT_ENV = Path("/opt/astribot_ros/robot_system_ctrl/robot_env.sh")
 NAVIGATION_SETUP = Path("/opt/astribot_os/meta/meta_astribot_navigation/install/setup.bash")
@@ -100,7 +99,7 @@ class MetaProcessLauncher:
             try:
                 results[name] = self.launch(name)
             except Exception as exc:
-                logger.exception("[meta_process] launch failed for %s", name)
+                logger.log_exception(f"[meta_process] launch failed for {name}")
                 results[name] = {"success": False, "running": False, "message": str(exc)}
         return {
             "success": any(item.get("running") for item in results.values()),
@@ -151,7 +150,7 @@ class MetaProcessLauncher:
             )
         except Exception as exc:
             log_file.close()
-            logger.exception("[meta_process] failed to launch %s", name)
+            logger.log_exception(f"[meta_process] failed to launch {name}")
             return {"success": False, "running": False, "message": str(exc), "log": str(log_path)}
         finally:
             if not log_file.closed:
@@ -168,7 +167,7 @@ class MetaProcessLauncher:
                 "log": str(log_path),
             }
 
-        logger.info("[meta_process] launched %s pid=%s", name, proc.pid)
+        logger.info(f"[meta_process] launched {name} pid={proc.pid}")
         return {"success": True, "running": True, "pid": proc.pid, "log": str(log_path)}
 
     def status_all(self) -> dict:
@@ -204,14 +203,14 @@ class MetaProcessLauncher:
             spec = self._specs.get(name)
             if not spec or not spec.remote_host:
                 continue
-            logger.info("[meta_process] terminating remote %s pid=%s host=%s", name, pid, spec.remote_host)
+            logger.info(f"[meta_process] terminating remote {name} pid={pid} host={spec.remote_host}")
             self._terminate_remote(spec, pid, timeout)
             self._remote_pids.pop(name, None)
 
         for name, proc in list(self._processes.items()):
             if proc.poll() is not None:
                 continue
-            logger.info("[meta_process] terminating %s pid=%s", name, proc.pid)
+            logger.info(f"[meta_process] terminating {name} pid={proc.pid}")
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
                 proc.wait(timeout=timeout)
@@ -251,7 +250,7 @@ class MetaProcessLauncher:
         try:
             proc = self._ssh(spec, remote_script, timeout=10)
         except subprocess.TimeoutExpired:
-            logger.warning("[meta_process] remote launch timed out for %s on %s", spec.name, spec.remote_host)
+            logger.warn(f"[meta_process] remote launch timed out for {spec.name} on {spec.remote_host}")
             existing_pid = self._find_existing_pid(spec)
             if existing_pid:
                 self._remote_pids[spec.name] = existing_pid
@@ -302,7 +301,7 @@ class MetaProcessLauncher:
             }
 
         self._remote_pids[spec.name] = pid
-        logger.info("[meta_process] launched remote %s pid=%s host=%s", spec.name, pid, spec.remote_host)
+        logger.info(f"[meta_process] launched remote {spec.name} pid={pid} host={spec.remote_host}")
         return {"success": True, "running": True, "pid": pid, "host": spec.remote_host, "log": remote_log_path}
 
     def _remote_missing_prerequisites(self, spec: MetaProcessSpec) -> list[str]:

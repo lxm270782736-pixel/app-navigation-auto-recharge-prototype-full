@@ -5,6 +5,8 @@ import re
 import time
 from pathlib import Path
 
+from ._logger import logger
+
 
 _CONFIG_DIR = Path(__file__).parent.parent / "saved_nav_configs"
 _CONFIG_FILE = _CONFIG_DIR / "room_patrol_config.json"
@@ -57,7 +59,7 @@ class RoomConfigMixin:
                     config = json.load(f)
                 return _migrate_config(config)
         except Exception as e:
-            print(f"[room_config] Failed to load: {e}")
+            logger.error(f"[room_config] Failed to load: {e}")
         return dict(_DEFAULT_CONFIG)
 
     def save_room_config(self, config: dict) -> dict:

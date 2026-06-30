@@ -1,4 +1,5 @@
 astribot_link
+ast_logger_v2
 fastapi
 python-multipart
 sse-starlette

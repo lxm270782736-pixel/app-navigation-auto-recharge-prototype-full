@@ -1,7 +1,5 @@
 """Map management — all calls go through Meta localization service."""
-import logging
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 
 class MapManagerMixin:
@@ -26,9 +24,9 @@ class MapManagerMixin:
         if not map_name_clean:
             return {"success": False, "message": "Empty map name"}
 
-        logger.warning("[map] apply_map: %r", map_name_clean)
+        logger.warn(f"[map] apply_map: {map_name_clean!r}")
         result = self._loc_call("apply_map", map_name_clean)
-        logger.warning("[map] apply_map result: %s", result)
+        logger.warn(f"[map] apply_map result: {result}")
         if result.get("success"):
             with self._lock:
                 self._current_map_name = map_name_clean
@@ -52,7 +50,7 @@ class MapManagerMixin:
             return result
         og = result.get("map_data")
         if not isinstance(og, dict):
-            logger.error("[map] load_map: map_data has unexpected type: %s", type(og))
+            logger.error(f"[map] load_map: map_data has unexpected type: {type(og)}")
             return {"success": False, "message": f"map_data has unexpected type: {type(og)}"}
         try:
             info = og["info"]
@@ -72,10 +70,10 @@ class MapManagerMixin:
                 "zones_json": result.get("zones_json", ""),
             }
         except (KeyError, TypeError) as e:
-            logger.error("[map] load_map: map_data missing field: %s", e)
+            logger.error(f"[map] load_map: map_data missing field: {e}")
             return {"success": False, "message": f"Failed to read map_data fields: {e}"}
         except Exception as e:
-            logger.error("[map] load_map: serialization failed: %s", e)
+            logger.error(f"[map] load_map: serialization failed: {e}")
             return {"success": False, "message": f"Failed to serialize map: {e}"}
 
     def delete_map(self, map_name: str) -> dict:

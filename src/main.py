@@ -7,16 +7,15 @@ Serves the built frontend SPA from ui/dist/ when available.
 """
 import json
 import asyncio
-import logging
 import os
 from pathlib import Path
 from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+from ._logger import logger, init_logger
+
+# Initialize logging before importing modules that bind their own `logger`,
+# so every submodule lands in /opt/astribot_ros/log/app_navigation/.
+init_logger("app_navigation")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,7 +55,7 @@ def launch_required_meta_processes():
         logger.info("[meta_process] auto launch disabled")
         return
     result = meta_process_launcher.launch_all()
-    logger.info("[meta_process] auto launch result: %s", result)
+    logger.info(f"[meta_process] auto launch result: {result}")
 
 
 @app.on_event("shutdown")
@@ -64,9 +63,9 @@ def stop_started_meta_processes():
     """Deactivate Meta services, then stop processes started by this app instance."""
     try:
         result = logic.deactivate_meta()
-        logger.info("[meta] deactivate on shutdown: %s", result)
+        logger.info(f"[meta] deactivate on shutdown: {result}")
     except Exception as e:
-        logger.warning("[meta] deactivate on shutdown failed: %s", e)
+        logger.warn(f"[meta] deactivate on shutdown failed: {e}")
     meta_process_launcher.terminate_started()
 
 

@@ -1,11 +1,9 @@
 """Alert management — create, query, confirm, close alerts."""
-import logging
 import time
 import uuid
 
 from .storage import JsonDayStorage
-
-logger = logging.getLogger(__name__)
+from ._logger import logger
 
 # Alert message templates (from PRD)
 _ALERT_MESSAGES = {
@@ -61,8 +59,8 @@ class AlertMixin:
             "closed_at": None,
         }
         storage.save("alerts", alert_id, alert, date)
-        logger.info("[alert] created: type=%s room=%s id=%s is_abnormal_photo=%s",
-                    alert_type, room_id, alert_id, photo is not None)
+        logger.info(f"[alert] created: type={alert_type} room={room_id} id={alert_id} "
+                    f"is_abnormal_photo={photo is not None}")
 
         # 放入待推送队列（加锁保证线程安全）
         if hasattr(self, '_pending_alerts'):
@@ -71,7 +69,7 @@ class AlertMixin:
                 # 只保留最近 N 条
                 if len(self._pending_alerts) > self._pending_alerts_max:
                     self._pending_alerts = self._pending_alerts[-self._pending_alerts_max:]
-                logger.info("[alert] queued for SSE push, queue_size=%d", len(self._pending_alerts))
+                logger.info(f"[alert] queued for SSE push, queue_size={len(self._pending_alerts)}")
 
         return alert
 
@@ -82,7 +80,7 @@ class AlertMixin:
         with self._pending_alerts_lock:
             new = [a for a in self._pending_alerts if a["id"] not in seen_ids]
         if new:
-            logger.info("[alert] SSE get_pending: returning %d new alerts", len(new))
+            logger.info(f"[alert] SSE get_pending: returning {len(new)} new alerts")
         return new
 
     def pop_pending_alerts(self) -> list:
