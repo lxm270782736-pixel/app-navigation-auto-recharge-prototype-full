@@ -42,7 +42,7 @@ class MapManagerMixin:
             created_at = map_data.get("created_at", 0)
             thumbnail = map_data.get("thumbnail", "")
             og_data = map_data.get("map_data", map_data)
-        return self._loc_call("save_map", map_name, og_data, created_at, thumbnail)
+        return self._loc_call_timeout("save_map", 360, map_name, og_data, created_at, thumbnail)
 
     def load_map(self, map_name: str) -> dict:
         result = self._loc_call("load_map", map_name)

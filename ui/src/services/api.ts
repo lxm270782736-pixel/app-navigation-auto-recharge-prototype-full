@@ -39,6 +39,18 @@ import { getBaseUrl } from '@/config';
 // Backend base URL — supports both standalone and Stardust Desktop embedded modes.
 const API_BASE = getBaseUrl();
 
+export type MapSaveResult = {
+  success: boolean;
+  message: string;
+  changed_cells?: number;
+  candidate_frames?: number;
+  frames_modified?: number;
+  points_removed?: number;
+  elapsed_ms?: number;
+  pgm_sha256?: string;
+  pcd_sha256?: string;
+};
+
 class ApiService {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   // Cache latest state for late-subscribing components
@@ -726,7 +738,7 @@ class ApiService {
     }
   }
 
-  async saveMap(mapData: MapData): Promise<{ success: boolean; message: string }> {
+  async saveMap(mapData: MapData): Promise<MapSaveResult> {
     return this._post('/api/maps/save', {
       map_name: mapData.name,
       map_data: {

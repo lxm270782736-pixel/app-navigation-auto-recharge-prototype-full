@@ -148,7 +148,7 @@ const GridOverlay: React.FC<{
   mapData: MapData; gridSize: number; scale: number;
 }> = React.memo(({ mapData, gridSize, scale }) => {
   const lines = useMemo(() => {
-    const result: JSX.Element[] = [];
+    const result: React.ReactElement[] = [];
     const spacing = gridSize / mapData.resolution;
     const origin = worldToMap(0, 0, mapData);
     let k = 0;
