@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Eraser,
   Grid3X3,
+  LoaderCircle,
   Map as MapIcon,
   Pencil,
   Redo2,
@@ -50,6 +51,7 @@ export const MapEditor: React.FC = () => {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [pendingHistorySave, setPendingHistorySave] = useState<number[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -246,6 +248,9 @@ export const MapEditor: React.FC = () => {
       setNotice(`地图名称已规范化为: ${sanitizedName}`);
     }
 
+    setIsSaving(true);
+    setNotice('正在保存并同步 2D/3D 地图...');
+
     try {
       const updatedMap: MapData = {
         ...mapData,
@@ -253,15 +258,26 @@ export const MapEditor: React.FC = () => {
         name: sanitizedName,
       };
 
-      await apiService.saveMap(updatedMap);
-      setMapData(updatedMap);
-      setMapName(updatedMap.name);
+      const result = await apiService.saveMap(updatedMap);
+      if (!result.success) {
+        setNotice(`保存失败: ${result.message || '未知错误'}`);
+        return;
+      }
+
+      const reloaded = await apiService.loadMap(updatedMap.name);
+      const finalMap = reloaded ?? updatedMap;
+      setMapData(finalMap);
+      setMapName(finalMap.name);
       setIsEditing(false);
       setHasUnsavedChanges(false);
-      setNotice('地图已保存');
+      const removed = result.points_removed ?? 0;
+      const frames = result.frames_modified ?? 0;
+      setNotice(`地图已保存，删除点数 ${removed}，修改关键帧 ${frames}`);
     } catch (error) {
       console.error('保存地图失败:', error);
       setNotice('保存地图失败');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -366,9 +382,9 @@ export const MapEditor: React.FC = () => {
               >
                 取消
               </Button>
-              <Button type="button" onClick={() => void handleSave()}>
+              <Button type="button" onClick={() => void handleSave()} disabled={isSaving}>
                 <Save className="mr-2 h-4 w-4" />
-                保存{hasUnsavedChanges ? ' *' : ''}
+                {isSaving ? '保存中...' : `保存${hasUnsavedChanges ? ' *' : ''}`}
               </Button>
             </>
           ) : (
@@ -376,9 +392,9 @@ export const MapEditor: React.FC = () => {
               <Button type="button" variant="outline" onClick={() => setIsEditing(true)}>
                 编辑名称
               </Button>
-              <Button type="button" onClick={() => void handleSave()} disabled={!hasUnsavedChanges}>
+              <Button type="button" onClick={() => void handleSave()} disabled={!hasUnsavedChanges || isSaving}>
                 <Save className="mr-2 h-4 w-4" />
-                保存地图{hasUnsavedChanges ? ' *' : ''}
+                {isSaving ? '保存中...' : `保存地图${hasUnsavedChanges ? ' *' : ''}`}
               </Button>
               <Button type="button" variant="destructive" onClick={() => void handleDelete()}>
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -482,6 +498,18 @@ export const MapEditor: React.FC = () => {
             {editTool !== EditTool.NONE && <div className="mt-1">左键点击或拖动编辑地图</div>}
             <div className="mt-1">Ctrl+Z 撤销 | Ctrl+Y 重做</div>
           </div>
+
+          {isSaving && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-5 py-4 text-sm shadow-lg">
+                <LoaderCircle className="h-5 w-5 animate-spin text-primary" />
+                <div>
+                  <div className="font-medium text-foreground">正在保存并同步 2D/3D 地图...</div>
+                  <div className="mt-1 text-xs text-muted-foreground">地图和点云正在更新</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
