@@ -107,6 +107,12 @@ def stop_mapping():
     return logic.stop_mapping()
 
 
+@app.get("/api/localization/map")
+def get_localization_map():
+    """Return latest 2D map snapshot (map frame) from /map topic during mapping."""
+    return logic.get_map_snapshot()
+
+
 @app.post("/api/localization/start")
 def start_localization():
     logger.info("[api] /api/localization/start received")

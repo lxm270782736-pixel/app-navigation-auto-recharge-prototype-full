@@ -8,7 +8,8 @@ class LocalizationMixin:
         return self._loc_call("start_mapping")
 
     def stop_mapping(self) -> dict:
-        return self._loc_call("stop_mapping")
+        # 停止建图后触发 PGO + pcd2pgm 后处理，driver 端最长等 120s，给足超时
+        return self._loc_call_timeout("stop_mapping", 150)
 
     def start_localization(self) -> dict:
         return self._loc_call("start_localization")
@@ -40,6 +41,10 @@ class LocalizationMixin:
 
     def get_pose(self) -> dict:
         return self._loc_call("get_pose")
+
+    def get_map_snapshot(self) -> dict:
+        """获取建图实时 2D 地图快照（来自 /map topic）"""
+        return self._loc_call("get_map_snapshot")
 
     def set_initial_pose(self, x: float, y: float, theta: float) -> dict:
         return self._loc_call("set_initial_pose", x, y, theta)
