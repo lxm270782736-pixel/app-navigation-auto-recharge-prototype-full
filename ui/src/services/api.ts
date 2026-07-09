@@ -392,6 +392,37 @@ class ApiService {
     }
   }
 
+  /** Fetch real-time mapping 2D occupancy grid from meta.localization.
+   *  Returns null when mapping is not active or no data available.
+   *  `isStale` 为 true 表示 /map 长时间无新帧（发布端可能已停止）。 */
+  async getMapSnapshot(): Promise<{
+    width: number;
+    height: number;
+    resolution: number;
+    origin: { x: number; y: number; orientation: number };
+    data: number[];
+    isStale: boolean;
+  } | null> {
+    try {
+      const r: any = await this._get('/api/localization/map');
+      if (!r || !r.success) return null;
+      return {
+        width: r.width,
+        height: r.height,
+        resolution: r.resolution,
+        origin: {
+          x: r.origin.x,
+          y: r.origin.y,
+          orientation: r.origin.orientation || 0,
+        },
+        data: r.data,
+        isStale: r.is_stale ?? false,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   sendLocalNavigationGoal(pose: Pose): void {
     this._post('/api/navigation/local-go', {
       x: pose.x,

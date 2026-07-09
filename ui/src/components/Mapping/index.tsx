@@ -76,33 +76,36 @@ export const Mapping: React.FC = () => {
     };
   }, []);
 
+  // 实时地图轮询 — 1Hz，仅在建图模式下从 meta.localization.get_map_snapshot 获取
   useEffect(() => {
-    if (connectionStatus !== ConnectionStatus.CONNECTED) {
+    if (connectionStatus !== ConnectionStatus.CONNECTED || !isMapping) {
+      setCurrentMapData(null);
       return;
     }
 
-    const unsubscribe = apiService.subscribeTopic<any>(
-      '/map',
-      MESSAGE_TYPES.OCCUPANCY_GRID,
-      (mapMsg) => {
+    let cancelled = false;
+    const poll = async () => {
+      const snapshot = await apiService.getMapSnapshot();
+      if (cancelled) return;
+      // 数据过期（发布端停止）时跳过更新，保留上一帧，避免误显示陈旧地图
+      if (snapshot && !snapshot.isStale) {
         setCurrentMapData({
-          width: mapMsg.info.width,
-          height: mapMsg.info.height,
-          resolution: mapMsg.info.resolution,
-          origin: {
-            x: mapMsg.info.origin.position.x,
-            y: mapMsg.info.origin.position.y,
-            orientation: mapMsg.info.origin.orientation.z,
-          },
-          data: mapMsg.data,
+          width: snapshot.width,
+          height: snapshot.height,
+          resolution: snapshot.resolution,
+          origin: snapshot.origin,
+          data: snapshot.data,
         });
       }
-    );
-
-    return () => {
-      unsubscribe();
     };
-  }, [connectionStatus]);
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [connectionStatus, isMapping]);
 
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
