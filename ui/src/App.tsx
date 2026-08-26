@@ -18,7 +18,8 @@ export function getStandaloneBasename() {
   if (typeof window === 'undefined') return '/';
   const pathname = window.location.pathname;
   if (pathname === '/') return '/';
-  return pathname.endsWith('/') ? pathname : pathname.replace(/\/[^/]*$/, '/');
+  const base = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname.replace(/\/[^/]*$/, '');
+  return base || '/';
 }
 
 const MapManager = lazy(() => import('@/components/MapManager').then((module) => ({ default: module.MapManager })));
