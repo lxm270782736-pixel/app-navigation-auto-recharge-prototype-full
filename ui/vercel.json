@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build:standalone",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

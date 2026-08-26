@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   BatteryCharging,
@@ -13,12 +13,20 @@ import {
   Settings2,
   Wifi,
 } from 'lucide-react';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@astribot/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@astribot/ui';
 import { apiService } from '@/services/api';
 import { MESSAGE_TYPES } from '@/config/messageTypes';
 import { MetaLauncher } from '@/components/common/MetaLauncher';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus, type Pose } from '@/types';
+import { RechargeEntryControl } from '@/components/common/RechargeEntryControl';
 
 type MetricCardProps = {
   title: string;
@@ -26,6 +34,7 @@ type MetricCardProps = {
   subtitle: string;
   icon: ComponentType<{ className?: string }>;
   tone?: 'default' | 'success' | 'warning';
+  onClick?: () => void;
 };
 
 type ActionCardProps = {
@@ -39,7 +48,7 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
 }
 
-function MetricCard({ title, value, subtitle, icon: Icon, tone = 'default' }: MetricCardProps) {
+function MetricCard({ title, value, subtitle, icon: Icon, tone = 'default', onClick }: MetricCardProps) {
   const toneClass =
     tone === 'success'
       ? 'bg-green-500/10 text-green-500'
@@ -47,7 +56,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, tone = 'default' }: Me
         ? 'bg-yellow-500/10 text-yellow-500'
         : 'bg-primary/10 text-primary';
 
-  return (
+  const card = (
     <Card className="border-border bg-card/80 shadow-sm">
       <CardContent className="flex items-start justify-between p-4">
         <div className="space-y-1">
@@ -60,6 +69,12 @@ function MetricCard({ title, value, subtitle, icon: Icon, tone = 'default' }: Me
         </div>
       </CardContent>
     </Card>
+  );
+  if (!onClick) return card;
+  return (
+    <button type="button" onClick={onClick} className="text-left transition-transform hover:-translate-y-0.5" aria-label="打开工作区入口">
+      {card}
+    </button>
   );
 }
 
@@ -86,10 +101,24 @@ function ActionCard({ title, description, icon: Icon, onClick }: ActionCardProps
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { connectionStatus } = useRobot();
   const [robotPose, setRobotPose] = useState<Pose | null>(null);
-  const [batteryLevel] = useState<number>(85);
+  const [batteryLevel] = useState<number>(searchParams.get('strategy') === 'emergency' ? 4 : 85);
+  const setupReady = searchParams.get('setup') !== 'missing';
+  const mapReady = searchParams.get('map') !== 'missing';
   const [velocity, setVelocity] = useState({ linear: 0, angular: 0 });
+  const rechargeStatusParam = searchParams.get('rechargeStatus')
+    || (searchParams.get('prototype') === 'failed' ? 'failed' : '');
+  const rechargeStatus = rechargeStatusParam;
+  const mockState = searchParams.get('mock');
+  const rechargeButtonState = !setupReady || !mapReady
+    ? 'setup'
+    : rechargeStatus === 'charging'
+      ? 'charging'
+      : rechargeStatus === 'returning'
+        ? 'returning'
+        : 'ready';
 
   useEffect(() => {
     if (connectionStatus !== ConnectionStatus.CONNECTED) {
@@ -179,6 +208,20 @@ export function Dashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <RechargeEntryControl
+            batteryLevel={batteryLevel}
+            setupReady={setupReady}
+            mapReady={mapReady}
+            state={rechargeButtonState}
+            disabledReason="正在充电，暂不可发起一键回充"
+            onStartRecharge={() => {
+              const params = new URLSearchParams({ rechargeStatus: 'returning' });
+              if (mockState) params.set('mock', mockState);
+              if (mockState) params.set('mockTrigger', mockState);
+              navigate('/?' + params.toString());
+            }}
+            onStopRecharge={() => navigate('/')}
+            />
             <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
               <Wifi className="h-4 w-4" />
               ROS / FastAPI
@@ -193,7 +236,13 @@ export function Dashboard() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="电池" value={`${batteryLevel}%`} subtitle="当前为模拟值，等待真实话题接入" icon={BatteryCharging} tone={batteryLevel > 60 ? 'success' : 'warning'} />
+        <MetricCard
+          title="电池"
+          value={`${batteryLevel}%`}
+          subtitle="续航正常"
+          icon={BatteryCharging}
+          tone="success"
+        />
         <MetricCard title="位置" value={positionText} subtitle="X / Y 坐标" icon={Map} />
         <MetricCard title="朝向" value={headingText} subtitle="机器人当前朝向角" icon={Compass} />
         <MetricCard title="速度" value={speedText} subtitle={speedSubtitle} icon={Activity} />
@@ -219,6 +268,8 @@ export function Dashboard() {
 
         <MetaLauncher />
       </section>
+
+
     </div>
   );
 }

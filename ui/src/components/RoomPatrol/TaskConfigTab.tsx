@@ -18,13 +18,14 @@ import {
   TooltipTrigger,
   cn,
 } from '@astribot/ui';
-import { ChevronDown, ChevronUp, CircleAlert, Copy, Pencil, Plus, Settings2, Star, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleAlert, Clock3, Copy, Pencil, Plus, Settings2, Star, Trash2 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useRobot } from '@/contexts/RobotContext';
 import { ConnectionStatus } from '@/types';
 import type { RoomConfig, RoomTaskStep, TaskPreset } from '@/types';
 import type { CustomStepDefinition } from '@/types';
 import { CustomStepManager } from './CustomStepManager';
+import { RechargeRecoveryDialog } from './RechargeRecoveryDialog';
 
 // Available step types
 const STEP_OPTIONS = [
@@ -50,6 +51,36 @@ const DEFAULT_STEPS: RoomTaskStep[] = [
   { type: 'navigate', target: 'door_outside', retry_limit: 30 },
   { type: 'close_door' },
 ];
+
+const RECOVERY_MOCK_ROOMS: RoomConfig[] = [
+  {
+    room_id: 'exhibition_hall',
+    room_name: '展厅',
+    door_type: 'open',
+    enabled: true,
+    waypoints: [
+      { id: 'welcome_point', name: '迎宾点', type: 'guide', pose: { x: 1.2, y: 2.4, theta: 0 } },
+      { id: 'task_start', name: '任务起点', type: 'start', pose: { x: 0, y: 0, theta: 0 } },
+      { id: 'hall_entrance', name: '展厅入口', type: 'guide', pose: { x: 3.5, y: 1.1, theta: 1.57 } },
+    ],
+  },
+];
+
+const RECOVERY_MOCK_PRESET: TaskPreset = {
+  id: 'hall_standard_tour',
+  name: '展厅标准导览',
+  description: '',
+  is_default: true,
+  rooms: [{
+    room_id: 'exhibition_hall',
+    room_name: '展厅',
+    enabled: true,
+    steps: [{ type: 'navigate', target: 'welcome_point', retry_limit: 30 }],
+  }],
+  retry_limit: 3,
+  fall_detection_enabled: true,
+  recharge_resume: { mode: 'scheduled', time: '09:00', waypoint_id: 'welcome_point' },
+};
 
 const buildNavTargetOptions = (roomConfig?: RoomConfig | null) => {
   const options = (roomConfig?.waypoints || []).map((wp) => ({
@@ -192,7 +223,15 @@ const StepOrderItem: React.FC<{
   );
 };
 
-export const TaskConfigTab: React.FC = () => {
+type TaskConfigTabProps = {
+  initialRecoveryOpen?: boolean;
+  recoverySaveFails?: boolean;
+};
+
+export const TaskConfigTab: React.FC<TaskConfigTabProps> = ({
+  initialRecoveryOpen = false,
+  recoverySaveFails = false,
+}) => {
   const { connectionStatus } = useRobot();
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [presets, setPresets] = useState<TaskPreset[]>([]);
@@ -203,6 +242,7 @@ export const TaskConfigTab: React.FC = () => {
   const [showManager, setShowManager] = useState(false);
   const [newPresetModal, setNewPresetModal] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
+  const [recoveryOpen, setRecoveryOpen] = useState(initialRecoveryOpen);
 
   // Resizable column widths
   const [col1Width, setCol1Width] = useState(180);
@@ -234,6 +274,13 @@ export const TaskConfigTab: React.FC = () => {
 
   // Load all data
   const loadData = useCallback(async () => {
+    if (initialRecoveryOpen) {
+      setRoomConfigs(RECOVERY_MOCK_ROOMS);
+      setCustomStepTypes([]);
+      setPresets([RECOVERY_MOCK_PRESET]);
+      setSelectedPresetId(RECOVERY_MOCK_PRESET.id);
+      return;
+    }
     if (connectionStatus !== ConnectionStatus.CONNECTED) return;
     try {
       const [roomData, presetsData, customData] = await Promise.all([
@@ -241,10 +288,10 @@ export const TaskConfigTab: React.FC = () => {
         apiService.getTaskPresets().catch(() => ({ presets: [] })),
         apiService.getCustomStepTypes().catch(() => ({ custom_step_types: [] })),
       ]);
-      const rooms = (roomData.rooms || []) as RoomConfig[];
+      let rooms = (roomData.rooms || []) as RoomConfig[];
+      let loadedPresets = (presetsData.presets || []) as TaskPreset[];
       setRoomConfigs(rooms);
       setCustomStepTypes(customData.custom_step_types || []);
-      const loadedPresets = presetsData.presets || [];
       setPresets(loadedPresets);
 
       // Auto-select default or first preset
@@ -259,7 +306,7 @@ export const TaskConfigTab: React.FC = () => {
     } catch (e) {
       console.warn('Failed to load:', e);
     }
-  }, [connectionStatus]);
+  }, [connectionStatus, initialRecoveryOpen]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -300,6 +347,25 @@ export const TaskConfigTab: React.FC = () => {
   }, [selectedPresetId, presets, roomConfigs]);
 
   const selectedRoom = editingPreset?.rooms.find(r => r.room_id === selectedRoomId);
+
+  const recoveryWaypointOptions = useMemo(() => {
+    const options = roomConfigs.flatMap(room =>
+      (room.waypoints || [])
+        .filter(waypoint => waypoint.pose !== null)
+        .map(waypoint => ({ value: waypoint.id, label: `${room.room_name} · ${waypoint.name}` }))
+    );
+    if (options.length > 0 || !initialRecoveryOpen) return options;
+    return [
+      { value: 'welcome_point', label: '迎宾点' },
+      { value: 'task_start', label: '任务起点' },
+      { value: 'hall_entrance', label: '展厅入口' },
+    ];
+  }, [initialRecoveryOpen, roomConfigs]);
+
+  const recoveryPointLabel = useMemo(() => {
+    const target = editingPreset?.recharge_resume?.waypoint_id;
+    return recoveryWaypointOptions.find(option => option.value === target)?.label;
+  }, [editingPreset?.recharge_resume?.waypoint_id, recoveryWaypointOptions]);
 
   // Update rooms in editing preset
   const updateRooms = (rooms: TaskPreset['rooms']) => {
@@ -372,14 +438,37 @@ export const TaskConfigTab: React.FC = () => {
   // Save current editing preset to backend
   const handleSave = async () => {
     if (!editingPreset) return;
-    const result = await apiService.saveTaskPreset(editingPreset);
-    if (result.success) {
-      setNotice({ tone: 'success', text: '已保存' });
-      setIsDirty(false);
-      loadData();
-    } else {
-      setNotice({ tone: 'error', text: result.message });
+    if (recoverySaveFails) {
+      setNotice({ tone: 'error', text: '保存失败，当前修改已保留，请重试。' });
+      return;
     }
+    try {
+      const result = await apiService.saveTaskPreset(editingPreset);
+      if (result.success) {
+        setNotice({ tone: 'success', text: '已保存' });
+        setIsDirty(false);
+        loadData();
+      } else {
+        setNotice({ tone: 'error', text: result.message });
+      }
+    } catch {
+      setNotice({ tone: 'error', text: '保存失败，当前修改已保留，请重试。' });
+    }
+  };
+
+  const handleRecoverySave = (rechargeResume: NonNullable<TaskPreset['recharge_resume']>) => {
+    if (!editingPreset) return;
+    setEditingPreset({ ...editingPreset, recharge_resume: rechargeResume });
+    setIsDirty(true);
+    setNotice({ tone: 'success', text: '回充后恢复设置已更新，请保存任务配置。' });
+  };
+
+  const handleRecoveryClear = () => {
+    if (!editingPreset) return;
+    const { recharge_resume: _removed, ...presetWithoutRecovery } = editingPreset;
+    setEditingPreset(presetWithoutRecovery);
+    setIsDirty(true);
+    setNotice({ tone: 'success', text: '已恢复默认设置，请保存任务配置。' });
   };
 
   // Preset management
@@ -642,6 +731,21 @@ export const TaskConfigTab: React.FC = () => {
             <Plus className="mr-2 h-4 w-4" />
             添加步骤
           </UIButton>
+          <UIButton
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setRecoveryOpen(true)}
+            disabled={!editingPreset || recoveryWaypointOptions.length === 0}
+            title={editingPreset?.recharge_resume?.mode === 'scheduled'
+              ? `已设置 ${editingPreset.recharge_resume.time} · ${recoveryPointLabel || '固定恢复点'}`
+              : '默认充满后回到任务起点并从第一步开始'}
+          >
+            <Clock3 className="mr-2 h-4 w-4" />
+            {editingPreset?.recharge_resume?.mode === 'scheduled'
+              ? `回充后恢复 · ${editingPreset.recharge_resume.time}`
+              : '回充后恢复 · 自动'}
+          </UIButton>
           <UIButton type="button" size="sm" onClick={handleSave} disabled={!editingPreset}>
             {isDirty ? '保存配置 *' : '保存配置'}
           </UIButton>
@@ -806,6 +910,16 @@ export const TaskConfigTab: React.FC = () => {
           )}
         </div>
       </div>
+
+      <RechargeRecoveryDialog
+        open={recoveryOpen}
+        onOpenChange={setRecoveryOpen}
+        taskName={editingPreset?.name || '当前任务'}
+        value={editingPreset?.recharge_resume}
+        waypointOptions={recoveryWaypointOptions}
+        onApply={handleRecoverySave}
+        onClear={handleRecoveryClear}
+      />
 
       {/* Modals */}
       <CustomStepManager open={showManager} onClose={() => { setShowManager(false); loadData(); }} />

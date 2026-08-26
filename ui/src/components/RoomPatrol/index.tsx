@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Tabs, TabsContent, TabsList, TabsTrigger } from '@astribot/ui';
 import { ArrowLeft, ClipboardList, History, MapPinned, Send } from 'lucide-react';
 import { useRobot } from '@/contexts/RobotContext';
@@ -8,13 +8,27 @@ import { WaypointRecordTab } from './WaypointRecordTab';
 import { TaskConfigTab } from './TaskConfigTab';
 import { TaskDispatchTab } from './TaskDispatchTab';
 import { HistoryTab } from './HistoryTab';
+import { RechargeEntryControl } from '@/components/common/RechargeEntryControl';
 
 type PatrolTab = 'waypoints' | 'tasks' | 'dispatch' | 'history';
 
 export const RoomPatrol: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { connectionStatus } = useRobot();
-  const [activeTab, setActiveTab] = useState<PatrolTab>('waypoints');
+  const [activeTab, setActiveTab] = useState<PatrolTab>(searchParams.get('tab') === 'tasks' ? 'tasks' : 'waypoints');
+  const batteryLevel = searchParams.get('strategy') === 'emergency' ? 4 : 85;
+  const setupReady = searchParams.get('setup') !== 'missing';
+  const mapReady = searchParams.get('map') !== 'missing';
+  const rechargeStatus = searchParams.get('rechargeStatus') ?? '';
+  const mockState = searchParams.get('mock');
+  const rechargeButtonState = !setupReady || !mapReady
+    ? 'setup'
+    : rechargeStatus === 'charging'
+      ? 'charging'
+      : rechargeStatus === 'returning'
+        ? 'returning'
+        : 'ready';
 
   const connectionBadge = useMemo(
     () =>
@@ -35,7 +49,21 @@ export const RoomPatrol: React.FC = () => {
           <div className="text-base font-semibold text-foreground">导览任务</div>
           <div className="text-sm text-muted-foreground">点位录制、任务编排、任务下发和历史记录。</div>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <RechargeEntryControl
+            batteryLevel={batteryLevel}
+            setupReady={setupReady}
+            mapReady={mapReady}
+            state={rechargeButtonState}
+            disabledReason="正在充电，暂不可发起一键回充"
+            onStartRecharge={() => {
+              const params = new URLSearchParams({ rechargeStatus: 'returning' });
+              if (mockState) params.set('mock', mockState);
+              if (mockState) params.set('mockTrigger', mockState);
+              navigate('/room-patrol?' + params.toString());
+            }}
+            onStopRecharge={() => navigate('/room-patrol')}
+          />
           <Badge className={connectionBadge.className}>{connectionBadge.label}</Badge>
         </div>
       </div>
@@ -73,7 +101,10 @@ export const RoomPatrol: React.FC = () => {
         </TabsContent>
         <TabsContent value="tasks" className="mt-0 min-h-0 flex-1">
           <div className="h-full">
-            <TaskConfigTab />
+            <TaskConfigTab
+              initialRecoveryOpen={searchParams.get('mock') === 'recharge-recovery'}
+              recoverySaveFails={searchParams.get('recoverySave') === 'fail'}
+            />
           </div>
         </TabsContent>
         <TabsContent value="dispatch" className="mt-0 min-h-0 flex-1">
@@ -87,6 +118,7 @@ export const RoomPatrol: React.FC = () => {
           </div>
         </TabsContent>
       </Tabs>
+
     </div>
   );
 };

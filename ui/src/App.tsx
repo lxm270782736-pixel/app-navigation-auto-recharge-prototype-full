@@ -5,11 +5,13 @@
  * so it must behave like an isolated component rather than taking over the
  * browser history. Standalone bootstrapping lives in `main.tsx`.
  */
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import type { ReactNode } from 'react';
 import { RobotProvider } from '@/contexts/RobotContext';
 import { Dashboard } from '@/components/Dashboard';
+import { RechargeMockPanel } from '@/components/common/RechargeMockPanel';
+import { RechargeRuntimeDialogs } from '@/components/Settings/RechargeRuntimeDialogs';
 import './app.css';
 
 const MapManager = lazy(() => import('@/components/MapManager').then((module) => ({ default: module.MapManager })));
@@ -33,7 +35,17 @@ type NavigationRoutesProps = {
 
 export function NavigationRoutes({ chromeClassName = 'app-shell' }: NavigationRoutesProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isFullScreen = fullScreenRoutes.some(route => location.pathname.startsWith(route));
+
+  function openRechargeSettings(mock?: string) {
+    const params = new URLSearchParams({ tab: 'recharge', mockPanel: '1' });
+    if (mock) params.set('mock', mock);
+    if (searchParams.get('setup') === 'missing') params.set('setup', 'missing');
+    if (searchParams.get('map') === 'missing') params.set('map', 'missing');
+    navigate('/settings?' + params.toString());
+  }
 
   return (
     <div className={isFullScreen ? 'app-shell app-shell--fullscreen' : chromeClassName}>
@@ -49,6 +61,8 @@ export function NavigationRoutes({ chromeClassName = 'app-shell' }: NavigationRo
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>
+      <RechargeRuntimeDialogs />
+      <RechargeMockPanel onOpenRecharge={openRechargeSettings} />
     </div>
   );
 }

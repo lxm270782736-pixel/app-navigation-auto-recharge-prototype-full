@@ -305,6 +305,12 @@ export interface PatrolTaskConfig {
   updated_at?: string;
 }
 
+export interface RechargeResumeConfig {
+  mode: 'immediate' | 'scheduled';
+  time?: string;
+  waypoint_id?: string;
+}
+
 // 任务预设
 export interface TaskPreset {
   id: string;
@@ -315,6 +321,7 @@ export interface TaskPreset {
   retry_limit: number;
   fall_detection_enabled?: boolean;
   waypoint_template?: RoomWaypoint[];
+  recharge_resume?: RechargeResumeConfig;
   created_at?: string;
   updated_at?: string;
 }

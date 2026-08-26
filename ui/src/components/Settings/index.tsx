@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bot, Info, SlidersHorizontal } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, BatteryCharging, Bot, Info, SlidersHorizontal } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -18,8 +18,11 @@ import { RobotShapeType, type RobotShapeConfig } from '@/types';
 const MetaServicesPanel = lazy(() =>
   import('./MetaServicesPanel').then((module) => ({ default: module.MetaServicesPanel })),
 );
+const RechargeSettingsPanel = lazy(() =>
+  import('./RechargeSettingsPanel').then((module) => ({ default: module.RechargeSettingsPanel })),
+);
 
-type SettingsTab = 'robot-shape' | 'meta-services' | 'about';
+type SettingsTab = 'robot-shape' | 'meta-services' | 'recharge' | 'about';
 
 function getRectangleSize(shape: RobotShapeConfig) {
   if (shape.type !== RobotShapeType.POLYGON || !shape.vertices || shape.vertices.length < 4) {
@@ -49,7 +52,9 @@ function buildPolygonShape(length: number, width: number): RobotShapeConfig {
 
 export function Settings() {
   const navigate = useNavigate();
-  const [selectedTab, setSelectedTab] = useState<SettingsTab>('robot-shape');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'recharge' ? 'recharge' : 'robot-shape';
+  const [selectedTab, setSelectedTab] = useState<SettingsTab>(initialTab);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const [robotShape, setRobotShape] = useState<RobotShapeConfig>(settingsService.getRobotShape());
@@ -78,12 +83,11 @@ export function Settings() {
   }, [dimensions.length, dimensions.width, radius, robotShape.type]);
 
   function handleShapeTypeChange(type: RobotShapeType) {
-    setRobotShape((prev) => {
-      if (type === RobotShapeType.CIRCLE) {
-        return { type: RobotShapeType.CIRCLE, radius: Number(radius) || 0.3 };
-      }
-      return buildPolygonShape(dimensions.length, dimensions.width);
-    });
+    setRobotShape(
+      type === RobotShapeType.CIRCLE
+        ? { type: RobotShapeType.CIRCLE, radius: Number(radius) || 0.3 }
+        : buildPolygonShape(dimensions.length, dimensions.width),
+    );
   }
 
   function saveRobotShape() {
@@ -116,7 +120,7 @@ export function Settings() {
           <div className="space-y-1">
             <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">System Settings</div>
             <h1 className="text-2xl font-semibold text-foreground">系统设置</h1>
-            <p className="text-sm text-muted-foreground">统一管理导航 App 的碰撞边界、Meta 服务配置和应用说明。</p>
+            <p className="text-sm text-muted-foreground">统一管理导航 App 的回充能力、碰撞边界、Meta 服务和应用说明。</p>
           </div>
         </div>
 
@@ -128,6 +132,10 @@ export function Settings() {
           <Button variant={selectedTab === 'meta-services' ? 'default' : 'secondary'} onClick={() => setSelectedTab('meta-services')}>
             <SlidersHorizontal className="mr-2 h-4 w-4" />
             Meta 服务
+          </Button>
+          <Button variant={selectedTab === 'recharge' ? 'default' : 'secondary'} onClick={() => setSelectedTab('recharge')}>
+            <BatteryCharging className="mr-2 h-4 w-4" />
+            回充设置
           </Button>
           <Button variant={selectedTab === 'about' ? 'default' : 'secondary'} onClick={() => setSelectedTab('about')}>
             <Info className="mr-2 h-4 w-4" />
@@ -246,6 +254,12 @@ export function Settings() {
         </Suspense>
       )}
 
+      {selectedTab === 'recharge' && (
+        <Suspense fallback={<Card className="border-border bg-card/80"><CardContent className="p-6 text-sm text-muted-foreground">正在加载回充设置...</CardContent></Card>}>
+          <RechargeSettingsPanel />
+        </Suspense>
+      )}
+
       {selectedTab === 'about' && (
         <Card className="max-w-3xl border-border bg-card/80 shadow-sm">
           <CardHeader>
@@ -262,6 +276,7 @@ export function Settings() {
           </CardContent>
         </Card>
       )}
+
     </div>
   );
 }
