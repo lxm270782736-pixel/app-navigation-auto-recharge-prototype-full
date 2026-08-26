@@ -14,6 +14,13 @@ import { RechargeMockPanel } from '@/components/common/RechargeMockPanel';
 import { RechargeRuntimeDialogs } from '@/components/Settings/RechargeRuntimeDialogs';
 import './app.css';
 
+export function getStandaloneBasename() {
+  if (typeof window === 'undefined') return '/';
+  const pathname = window.location.pathname;
+  if (pathname === '/') return '/';
+  return pathname.endsWith('/') ? pathname : pathname.replace(/\/[^/]*$/, '/');
+}
+
 const MapManager = lazy(() => import('@/components/MapManager').then((module) => ({ default: module.MapManager })));
 const MapEditor = lazy(() => import('@/components/MapEditor').then((module) => ({ default: module.MapEditor })));
 const Mapping = lazy(() => import('@/components/Mapping').then((module) => ({ default: module.Mapping })));
