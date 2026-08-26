@@ -9,7 +9,8 @@ type RechargeMockPanelProps = {
 export function RechargeMockPanel({ onOpenRecharge }: RechargeMockPanelProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const setupReady = searchParams.get('setup') !== 'missing' && searchParams.get('map') !== 'missing';
-  const isCollapsed = searchParams.get('mockPanelCollapsed') === '1';
+  // Keep the mock entry resident without covering the product on first open.
+  const isCollapsed = searchParams.get('mockPanelCollapsed') !== '0' && searchParams.get('mockPanel') !== '1';
 
   function updateQuery(patch: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
