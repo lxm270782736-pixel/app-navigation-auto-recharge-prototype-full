@@ -32,7 +32,6 @@ type OneClickRechargeSetupDialogProps = {
 
 const SETUP_STEPS = [
   { label: '确认机器人当前位置', icon: Bot },
-  { label: '导航至充电桩前', icon: Route },
   { label: '识别充电桩', icon: Camera },
   { label: '对接充电桩', icon: Route },
   { label: '检测充电状态', icon: BatteryCharging },
@@ -94,12 +93,12 @@ export function OneClickRechargeSetupDialog({
   onComplete,
 }: OneClickRechargeSetupDialogProps) {
   const [stage, setStage] = useState<SetupStage>(initialStage);
-  const [activeIndex, setActiveIndex] = useState(initialStage === 'failure' ? 3 : initialStage === 'success' ? 5 : initialStage === 'running' ? 1 : 0);
+  const [activeIndex, setActiveIndex] = useState(initialStage === 'failure' ? 2 : initialStage === 'success' ? SETUP_STEPS.length : initialStage === 'running' ? 1 : 0);
 
   useEffect(() => {
     if (!open) return;
     setStage(initialStage);
-    setActiveIndex(initialStage === 'failure' ? 3 : initialStage === 'success' ? 5 : initialStage === 'running' ? 1 : 0);
+    setActiveIndex(initialStage === 'failure' ? 2 : initialStage === 'success' ? SETUP_STEPS.length : initialStage === 'running' ? 1 : 0);
   }, [initialStage, open]);
 
   useEffect(() => {
@@ -135,7 +134,7 @@ export function OneClickRechargeSetupDialog({
             <DialogHeader className="space-y-2">
               <DialogTitle className="flex items-center justify-between pr-5">设置回充位置</DialogTitle>
               <DialogDescription className="leading-6">
-                请先遥控机器人到充电桩前方约 30-50cm，确保摄像头能看到充电桩标识。
+                请先将机器人停在充电桩前方约 30-50cm，确保摄像头能看到充电桩标识。
               </DialogDescription>
             </DialogHeader>
             <SetupIllustration />
@@ -154,7 +153,7 @@ export function OneClickRechargeSetupDialog({
           <>
             <DialogHeader className="space-y-2">
               <DialogTitle className="flex items-center gap-2"><BatteryCharging className="h-5 w-5 text-primary" />设置一键回充中</DialogTitle>
-              <DialogDescription className="leading-6">机器人将导航到充电桩前并完成低速对接；设置成功前，请不要移动机器人或充电桩。</DialogDescription>
+              <DialogDescription className="leading-6">机器人将识别充电桩并完成低速对接；设置成功前，请不要移动机器人或充电桩。</DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
               {SETUP_STEPS.map((_, index) => <StepRow key={index} index={index} activeIndex={activeIndex} />)}
@@ -182,7 +181,7 @@ export function OneClickRechargeSetupDialog({
               <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-300" />一键回充设置失败</DialogTitle>
               <DialogDescription className="leading-6">
                 {failureAttempt === 'not-front'
-                  ? '机器人当前不在充电桩前方，无法设置回充位置。'
+                ? '机器人当前不在充电桩前方，无法设置回充位置。'
                   : failureAttempt?.startsWith('docking')
                     ? '未能完成充电桩低速对接，当前回充位置没有被覆盖。'
                     : '未能完成定位导航，当前回充位置没有被覆盖。'}
@@ -190,7 +189,7 @@ export function OneClickRechargeSetupDialog({
             </DialogHeader>
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm leading-6 text-foreground">
               {failureAttempt === 'not-front'
-                ? '请先遥控机器人到充电桩前，再点击“设置回充位置”。'
+                ? '请先将机器人停在充电桩前，再点击“设置回充位置”。'
                 : failureAttempt === 'position-repeat'
                   ? '连续多次定位失败，请进入导航功能进行手动重定位，或联系客服处理。'
                   : failureAttempt === 'docking-repeat'

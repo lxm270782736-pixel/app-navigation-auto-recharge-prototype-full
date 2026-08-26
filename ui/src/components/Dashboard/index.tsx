@@ -209,7 +209,6 @@ export function Dashboard() {
 
           <div className="flex flex-wrap items-center gap-3">
             <RechargeEntryControl
-            batteryLevel={batteryLevel}
             setupReady={setupReady}
             mapReady={mapReady}
             state={rechargeButtonState}

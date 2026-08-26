@@ -51,7 +51,6 @@ export const RoomPatrol: React.FC = () => {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <RechargeEntryControl
-            batteryLevel={batteryLevel}
             setupReady={setupReady}
             mapReady={mapReady}
             state={rechargeButtonState}

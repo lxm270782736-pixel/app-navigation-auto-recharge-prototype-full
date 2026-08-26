@@ -6,7 +6,6 @@ import { Badge, Button } from '@astribot/ui';
 type RechargeButtonState = 'setup' | 'ready' | 'returning' | 'charging';
 
 type RechargeEntryControlProps = {
-  batteryLevel: number;
   setupReady: boolean;
   mapReady?: boolean;
   state?: RechargeButtonState;
@@ -16,7 +15,6 @@ type RechargeEntryControlProps = {
 };
 
 export function RechargeEntryControl({
-  batteryLevel,
   setupReady,
   mapReady = true,
   state,
@@ -52,9 +50,9 @@ export function RechargeEntryControl({
   if (buttonState === 'setup') {
     return (
       <div className={slotClassName} data-testid="recharge-entry-setup-slot">
-        <Button type="button" className={buttonClassName} onClick={openRechargeSettings} data-testid="recharge-entry-setup" title="设置一键回充">
+        <Button type="button" className={buttonClassName} onClick={openRechargeSettings} data-testid="recharge-entry-setup" title="设置回充位置">
           <MapPinned className="mr-2 h-4 w-4" />
-          设置一键回充
+          设置回充位置
         </Button>
       </div>
     );
@@ -105,7 +103,6 @@ export function RechargeEntryControl({
       >
         <BatteryCharging className="mr-2 h-4 w-4" />
         长按一键回充
-        <span className="ml-2 text-xs opacity-80">{batteryLevel}%</span>
       </Button>
     </div>
   );
